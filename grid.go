@@ -32,6 +32,7 @@ type Grid struct {
 	producers []*sarama.Producer
 	ops       map[string]*op
 	wg        *sync.WaitGroup
+	mutex     *sync.Mutex
 }
 
 func NewHeader(topic string) Header {
@@ -48,7 +49,7 @@ func New(name string) (*Grid, error) {
 	cconfig := sarama.NewConsumerConfig()
 	cconfig.OffsetMethod = sarama.OffsetMethodNewest
 
-	grid := &Grid{
+	g := &Grid{
 		kafka:     kafka,
 		group:     name,
 		pconfig:   pconfig,
@@ -56,19 +57,24 @@ func New(name string) (*Grid, error) {
 		consumers: make([]*sarama.Consumer, 0),
 		ops:       make(map[string]*op),
 		wg:        new(sync.WaitGroup),
+		mutex:     new(sync.Mutex),
 	}
 
-	return grid, nil
+	g.wg.Add(1)
+
+	return g, nil
 }
 
 func (g *Grid) Start() error {
-	g.wg.Add(1)
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+
 	for fname, op := range g.ops {
 		if op.topic == "" {
 			return fmt.Errorf("grid: %v(): missing input topic", fname)
 		}
 
-		log.Printf("grid: starting %v()", fname)
+		log.Printf("grid: starting %v => %v()", op.topic, fname)
 		in, err := g.reader(op.topic)
 		if err != nil {
 			return fmt.Errorf("grid: %v(): failed to start input: %v", err)
@@ -86,10 +92,18 @@ func (g *Grid) Wait() {
 }
 
 func (g *Grid) Stop() {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+
+	if g.consumers == nil {
+		return
+	}
+
 	log.Printf("grid: shutting down")
 	for _, consumer := range g.consumers {
 		consumer.Close()
 	}
+	g.consumers = nil
 	g.wg.Done()
 }
 

@@ -40,7 +40,12 @@ func main() {
 	}()
 
 	// Start creating a grid of functions.
-	err = g.Of(1, f, "foo")
+	err = g.Of(1, adder, "foo")
+	if err != nil {
+		log.Printf("example: grid error: %v", err)
+	}
+
+	err = g.Of(1, multiplier, "out")
 	if err != nil {
 		log.Printf("example: grid error: %v", err)
 	}
@@ -49,7 +54,24 @@ func main() {
 	g.Wait()
 }
 
-func f(in <-chan grid.Mesg) <-chan grid.Mesg {
+func multiplier(in <-chan grid.Mesg) <-chan grid.Mesg {
+	out := make(chan grid.Mesg)
+	go func(in <-chan grid.Mesg, out chan<- grid.Mesg) {
+		defer close(out)
+		for m := range in {
+			numstr := string(m.Value())
+			if num, err := strconv.ParseInt(string(numstr), 10, 64); err != nil {
+				log.Printf("error: example: topic: %v message not a number: %v", m.Topic(), numstr)
+			} else {
+				newnumstr := strconv.FormatInt(2*num, 10)
+				out <- &mesg{grid.NewHeader("out2"), newnumstr, newnumstr}
+			}
+		}
+	}(in, out)
+	return out
+}
+
+func adder(in <-chan grid.Mesg) <-chan grid.Mesg {
 	out := make(chan grid.Mesg)
 	go func(in <-chan grid.Mesg, out chan<- grid.Mesg) {
 		defer close(out)
