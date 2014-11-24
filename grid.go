@@ -22,10 +22,9 @@ type Mesg interface {
 	Key() []byte
 	Value() []byte
 }
-
 type Grid struct {
 	kafka     *sarama.Client
-	group     string
+	name      string
 	pconfig   *sarama.ProducerConfig
 	cconfig   *sarama.ConsumerConfig
 	consumers []*sarama.Consumer
@@ -51,7 +50,7 @@ func New(name string) (*Grid, error) {
 
 	g := &Grid{
 		kafka:     kafka,
-		group:     name,
+		name:      name,
 		pconfig:   pconfig,
 		cconfig:   cconfig,
 		consumers: make([]*sarama.Consumer, 0),
@@ -74,15 +73,15 @@ func (g *Grid) Start() error {
 			return fmt.Errorf("grid: %v(): missing input topic", fname)
 		}
 
-		log.Printf("grid: starting %v => %v()", op.topic, fname)
-		in, err := g.reader(op.topic)
+		log.Printf("grid: starting %v => %v() :: %v", op.topic, fname, op.f)
+		in, err := g.reader(fname, op.topic)
 		if err != nil {
 			return fmt.Errorf("grid: %v(): failed to start input: %v", err)
 		}
 
-		go func(g *Grid, in <-chan Mesg) {
-			g.writer(op.f(in))
-		}(g, in)
+		go func(g *Grid, in <-chan Mesg, f func(<-chan Mesg) <-chan Mesg) {
+			g.writer(f(in))
+		}(g, in, op.f)
 	}
 	return nil
 }
@@ -112,12 +111,13 @@ func (g *Grid) Of(n int, f func(in <-chan Mesg) <-chan Mesg, topic string) error
 	if _, exists := g.ops[fname]; exists {
 		return fmt.Errorf("gird: function already added")
 	} else {
+		log.Printf("grid: adding: %v :: %v", fname, f)
 		g.ops[fname] = &op{f: f, n: n, topic: topic}
 		return nil
 	}
 }
 
-func (g *Grid) reader(topic string) (<-chan Mesg, error) {
+func (g *Grid) reader(fname string, topic string) (<-chan Mesg, error) {
 
 	parts, err := g.kafka.Partitions(topic)
 	if err != nil {
@@ -135,22 +135,22 @@ func (g *Grid) reader(topic string) (<-chan Mesg, error) {
 	out := make(chan Mesg, 0)
 
 	for _, part := range parts {
-		go func(g *Grid, part int32, out chan<- Mesg) {
+		go func(g *Grid, wg *sync.WaitGroup, part int32, out chan<- Mesg) {
 			defer wg.Done()
 
-			consumer, err := g.consumer(topic, part)
+			consumer, err := g.readfrom(fname, topic, part)
 			if err != nil {
 				return
 			}
 
 			for event := range consumer.Events() {
 				if event.Err != nil {
-					log.Printf("error: grid: consumer: %v partition: %v: %v", g.group, part, event.Err)
+					log.Printf("error: grid: %v: topic: %v: partition: %v: %v", g.name, topic, part, event.Err)
 					g.Stop()
 				}
 				out <- &mesg{header{event.Topic, event.Partition, event.Offset, event.Err}, event.Key, event.Value}
 			}
-		}(g, part, out)
+		}(g, wg, part, out)
 	}
 
 	// When the kafka consumers have exited, it means there is
@@ -181,7 +181,7 @@ func (g *Grid) writer(in <-chan Mesg) error {
 	return nil
 }
 
-func (g *Grid) consumer(topic string, part int32) (*sarama.Consumer, error) {
+func (g *Grid) readfrom(fname, topic string, part int32) (*sarama.Consumer, error) {
 	if topic == "" {
 		return nil, fmt.Errorf("grid: topic name cannot be empty")
 	}
@@ -189,7 +189,8 @@ func (g *Grid) consumer(topic string, part int32) (*sarama.Consumer, error) {
 		return nil, fmt.Errorf("grid: partition number cannnot be negative")
 	}
 
-	consumer, err := sarama.NewConsumer(g.kafka, topic, part, g.group, g.cconfig)
+	group := fmt.Sprintf("%v-%v-%v", g.name, fname, topic)
+	consumer, err := sarama.NewConsumer(g.kafka, topic, part, group, g.cconfig)
 	if err != nil {
 		return nil, err
 	}
