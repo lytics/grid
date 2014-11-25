@@ -12,14 +12,6 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-type Encoder interface {
-	Encode(e interface{}) error
-}
-
-type Decoder interface {
-	Decode(d interface{}) error
-}
-
 type Header interface {
 	Topic() string
 	Partition() int32
@@ -32,6 +24,7 @@ type Mesg interface {
 	Key() []byte
 	Value() []byte
 }
+
 type Grid struct {
 	kafka     *sarama.Client
 	name      string
@@ -78,15 +71,17 @@ func (g *Grid) Start() error {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
-	// Each reader/writer of these channels needs their
-	// own copy.
-	in, out, err := g.CtrlChan()
-	if err != nil {
-		return fmt.Errorf("grid: failed to start voter: %v", err)
-	}
+	go func() {
+		out := make(chan *VoterMesg)
+		defer close(out)
 
-	// Start the voter.
-	go voter(0, 1, 0, in, out)
+		in, err := g.CtrlTopic(out)
+		if err != nil {
+			return
+		}
+
+		voter(0, 1, 0, in, out)
+	}()
 
 	for fname, op := range g.ops {
 		log.Printf("grid: starting %v => %v()", op.topic, fname)
@@ -122,7 +117,7 @@ func (g *Grid) Stop() {
 	g.wg.Done()
 }
 
-func (g *Grid) Of(n int, f func(in <-chan Mesg) <-chan Mesg, topic string) error {
+func (g *Grid) Add(n int, f func(in <-chan Mesg) <-chan Mesg, topic string) error {
 	fname := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
 	if _, exists := g.ops[fname]; exists {
 		return fmt.Errorf("gird: already added: %v", fname)
@@ -132,7 +127,7 @@ func (g *Grid) Of(n int, f func(in <-chan Mesg) <-chan Mesg, topic string) error
 	}
 }
 
-func (g *Grid) CtrlChan() (<-chan *VoterMesg, chan<- *VoterMesg, error) {
+func (g *Grid) CtrlTopic(in <-chan *VoterMesg) (<-chan *VoterMesg, error) {
 	topic := fmt.Sprintf("%v-ctrl", g.name)
 
 	// Channels that represent Kafka, which take values of
@@ -140,21 +135,22 @@ func (g *Grid) CtrlChan() (<-chan *VoterMesg, chan<- *VoterMesg, error) {
 	kout := make(chan Mesg)
 	kin, err := g.reader("voter", topic)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	err = g.writer(kout)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Channels that a suitable for voters using VoterMesg.
+	// Channels that pass VoterMesg(s).
 	out := make(chan *VoterMesg)
-	in := make(chan *VoterMesg)
 
 	// Read data from Kafka, by transforming messages with a
 	// []byte value from the kafka-in channel, to type
 	// VoterMesg(s).
 	go func() {
+		defer close(out)
+
 		var buf bytes.Buffer
 		dec := gob.NewDecoder(&buf)
 
@@ -165,7 +161,7 @@ func (g *Grid) CtrlChan() (<-chan *VoterMesg, chan<- *VoterMesg, error) {
 			if err != nil {
 				log.Printf("error: grid: voter decoding: %v", err)
 			}
-			in <- vm
+			out <- vm
 		}
 	}()
 
@@ -173,10 +169,12 @@ func (g *Grid) CtrlChan() (<-chan *VoterMesg, chan<- *VoterMesg, error) {
 	// messages with a []byte value and write them to the
 	// kafka-out channel.
 	go func() {
+		defer close(kout)
+
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
 
-		for vm := range out {
+		for vm := range in {
 			err := enc.Encode(vm)
 			if err != nil {
 				log.Printf("error: grid: voter encoding: %v", err)
@@ -187,7 +185,7 @@ func (g *Grid) CtrlChan() (<-chan *VoterMesg, chan<- *VoterMesg, error) {
 		}
 	}()
 
-	return in, out, nil
+	return out, nil
 }
 
 func (g *Grid) reader(fname string, topic string) (<-chan Mesg, error) {

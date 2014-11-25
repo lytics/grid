@@ -2,10 +2,7 @@ package main
 
 import (
 	"log"
-	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
 
 	"github.com/mdmarek/grid"
 )
@@ -30,24 +27,14 @@ func main() {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
 
-	// Register signal handler.
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM)
-	go func() {
-		s := <-sig
-		log.Printf("example: stopping: got signal: %v", s)
-		g.Stop()
-	}()
-
-	// Start creating a grid of functions.
-	err = g.Of(1, add, "topic1")
+	err = g.Add(1, add, "topic1")
 	if err != nil {
-		log.Printf("example: grid error: %v", err)
+		log.Fatalf("error: example: %v", err)
 	}
 
-	err = g.Of(1, mul, "topic2")
+	err = g.Add(1, mul, "topic2")
 	if err != nil {
-		log.Printf("example: grid error: %v", err)
+		log.Fatalf("error: example: %v", err)
 	}
 
 	g.Start()
