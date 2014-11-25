@@ -6,7 +6,62 @@ import (
 	"time"
 )
 
-func TestElection(t *testing.T) {
+func TestElectionOf1(t *testing.T) {
+
+	const (
+		maxleadertime = 10 // Test hook, use 0 for normal use.
+		voters        = 1
+		quorum        = 1
+	)
+
+	p := newPartition()
+	wg := new(sync.WaitGroup)
+	wg.Add(voters)
+
+	for i := 0; i < voters; i++ {
+		out := make(chan *VoterMesg)
+		in := p.client(out)
+		go voter(i, quorum, maxleadertime, in, out)
+	}
+	time.Sleep(45 * time.Second)
+
+	// Election is finished, now check the partition data
+	// to see what sequence of messages were sent between
+	// voters.
+
+	if p.data[0] == nil {
+		t.Fatalf("no messages found")
+	}
+
+	switch data := p.data[0].Data.(type) {
+	case Election:
+	default:
+		t.Fatalf("first message should of been: Election but was: %v", data)
+	}
+
+	leaderelected := false
+	votes := make(map[int]int)
+	for i := 1; i < p.head; i++ {
+		switch data := p.data[i].Data.(type) {
+		case Election:
+		case Vote:
+			votes[data.Candidate] = 1 + votes[data.Candidate]
+		case Ping:
+			if !isleaderelected(quorum, votes) {
+				t.Fatalf("found ping from leader, but no leader elected: %v: votes: %v", data, votes)
+			}
+			leaderelected = true
+		default:
+			t.Fatalf("found unknown message type %T :: %v", data, data)
+		}
+	}
+
+	if !leaderelected {
+		t.Fatalf("failed to elect leader")
+	}
+}
+
+func TestElectionOf3(t *testing.T) {
 
 	const (
 		maxleadertime = 10 // Test hook, use 0 for normal use.
@@ -21,27 +76,31 @@ func TestElection(t *testing.T) {
 	for i := 0; i < voters; i++ {
 		out := make(chan *VoterMesg)
 		in := p.client(out)
-		go Voter(i, quorum, maxleadertime, in, out)
+		go voter(i, quorum, maxleadertime, in, out)
 	}
-	time.Sleep(25 * time.Second)
+	time.Sleep(45 * time.Second)
 
 	// Election is finished, now check the partition data
 	// to see what sequence of messages were sent between
 	// voters.
 
+	if p.data[0] == nil {
+		t.Fatalf("no messages found")
+	}
+
 	switch data := p.data[0].Data.(type) {
-	case *Election:
+	case Election:
 	default:
-		t.Fatalf("first message should of been: %v but was: %v", seeking, found)
+		t.Fatalf("first message should of been: Election but was: %v", data)
 	}
 
 	votes := make(map[int]int)
 	for i := 1; i < p.head; i++ {
 		switch data := p.data[i].Data.(type) {
-		case *Election:
-		case *Vote:
+		case Election:
+		case Vote:
 			votes[data.Candidate] = 1 + votes[data.Candidate]
-		case *Ping:
+		case Ping:
 			if !isleaderelected(quorum, votes) {
 				t.Fatalf("found ping from leader, but no leader elected: %v: votes: %v", data, votes)
 			}

@@ -1,7 +1,9 @@
 package grid
 
 import (
+	"encoding/gob"
 	"fmt"
+	"log"
 	"math/rand"
 	"time"
 )
@@ -9,8 +11,8 @@ import (
 const (
 	Skew         = 20
 	TickMillis   = 500
-	HeartTimeout = 2
-	ElectTimeout = 10
+	HeartTimeout = 6
+	ElectTimeout = 20
 )
 
 const (
@@ -45,35 +47,42 @@ type VoterMesg struct {
 	Data  interface{}
 }
 
-func NewPing(leader int) *Ping {
-	return &Ping{Leader: leader}
+func init() {
+	gob.Register(Ping{})
+	gob.Register(Vote{})
+	gob.Register(Election{})
+	gob.Register(VoterMesg{})
 }
 
-func (p *Ping) String() string {
+func newPing(leader int) Ping {
+	return Ping{Leader: leader}
+}
+
+func (p Ping) String() string {
 	return fmt.Sprintf("Ping{Leader: %d}", p.Leader)
 }
 
-func NewVote(candidate int, term uint32, from int) *Vote {
-	return &Vote{Term: term, Candidate: candidate, From: from}
+func newVote(candidate int, term uint32, from int) Vote {
+	return Vote{Term: term, Candidate: candidate, From: from}
 }
 
-func (v *Vote) String() string {
+func (v Vote) String() string {
 	return fmt.Sprintf("Vote{Term: %d, Candidate: %d, From: %d}", v.Term, v.Candidate, v.From)
 }
 
-func NewElection(candidate int, term uint32) *Election {
-	return &Election{Term: term, Votes: 1, Candidate: candidate}
+func newElection(candidate int, term uint32) Election {
+	return Election{Term: term, Votes: 1, Candidate: candidate}
 }
 
 func (e Election) Copy() *Election {
 	return &Election{Term: e.Term, Votes: e.Votes, Candidate: e.Candidate}
 }
 
-func (e *Election) String() string {
+func (e Election) String() string {
 	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %d}", e.Term, e.Votes, e.Candidate)
 }
 
-func NewVoterMesg(name int, state int, data interface{}) *VoterMesg {
+func newVoterMesg(name int, state int, data interface{}) *VoterMesg {
 	return &VoterMesg{From: name, State: state, Data: data}
 }
 
@@ -81,7 +90,7 @@ func (m *VoterMesg) String() string {
 	return fmt.Sprintf("VoterMesg{From: %d, State: %d, Data: %v}", m.From, m.State, m.Data)
 }
 
-// Voter implements a RAFT election voter. It requires that the messages
+// voter implements a RAFT election voter. It requires that the messages
 // sent to the output channel have the same total-ordering for all
 // voters participating in the elections.
 //
@@ -92,8 +101,8 @@ func (m *VoterMesg) String() string {
 //        not receive Ping message in HeartTimeout seconds
 //        assume leader is dead. Move to Candidate state
 //        and issue a new Election.
-//     3. Upon receiving an Election, vote, but never for
-//        yourself.
+//     3. Upon receiving an Election, vote, but never twice for
+//        the same election.
 //     4. Upon receiving a Vote check if it's Candidate and Term
 //        match the Candidate and Term of the current election,
 //        and upvote if they do.
@@ -108,7 +117,7 @@ func (m *VoterMesg) String() string {
 //     leaders to give up leadership in very short time periods.
 //     In normal running, set it to 0 to disable.
 //
-func Voter(name int, quorum uint32, maxleadertime int64, in <-chan *VoterMesg, out chan<- *VoterMesg) {
+func voter(name int, quorum uint32, maxleadertime int64, in <-chan *VoterMesg, out chan<- *VoterMesg) {
 	defer close(out)
 
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
@@ -132,31 +141,35 @@ func Voter(name int, quorum uint32, maxleadertime int64, in <-chan *VoterMesg, o
 				elect = nil
 			}
 			if state == Leader {
-				if time.Now().Unix() < termstart+maxleadertime && maxleadertime > 0 {
-					out <- &VoterMesg{From: name, State: state, Data: NewPing(name)}
+				if time.Now().Unix() < termstart+maxleadertime || maxleadertime == 0 {
+					vm := &VoterMesg{From: name, State: state, Data: newPing(name)}
+					out <- vm
 				}
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
 				state = Candidate
-				voted[term] = true
+				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
-				out <- &VoterMesg{From: name, State: state, Data: NewElection(name, term)}
+				out <- &VoterMesg{From: name, State: state, Data: newElection(name, term)}
 			}
 		case m := <-in:
 			switch data := m.Data.(type) {
-			case *Ping:
-				fmt.Printf("%v rx: %v\n", name, data)
+			case Ping:
+				log.Printf("%v rx: %v", name, data)
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				if name != data.Leader {
 					state = Follower
 				}
-			case *Vote:
-				fmt.Printf("%v rx: %v\n", name, data)
+			case Vote:
+				log.Printf("%v rx: %v", name, data)
 				if elect == nil {
 					continue
 				}
 				if elect.Candidate != data.From && elect.Candidate == data.Candidate && elect.Term == data.Term {
+					// Don't vote for yourself twice, election candidate must be same
+					// as the vote candidate, and election term must be same
+					// as vote term.
 					elect.Votes = elect.Votes + 1
 				}
 				if elect.Votes >= quorum && elect.Candidate == name {
@@ -170,20 +183,20 @@ func Voter(name int, quorum uint32, maxleadertime int64, in <-chan *VoterMesg, o
 					lasthearbeat = time.Now().Unix()
 					nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				}
-			case *Election:
-				fmt.Printf("%v rx: %v\n", name, data)
+			case Election:
+				log.Printf("%v rx: %v", name, data)
 				if elect != nil {
 					continue
 				}
-				fmt.Printf("%v accepting election: %v\n", name, data)
 				elect = data.Copy()
 				term++
 				if !voted[data.Term] && state != Leader {
 					voted[data.Term] = true
-					out <- &VoterMesg{From: name, State: state, Data: NewVote(data.Candidate, data.Term, name)}
+					vm := &VoterMesg{From: name, State: state, Data: newVote(data.Candidate, data.Term, name)}
+					out <- vm
 				}
 			default:
-				// Ignore anything not related to the election.
+				log.Printf("%v rx: unknonw type %T :: %v", name, data, data)
 			}
 		}
 	}
