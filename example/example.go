@@ -1,50 +1,49 @@
 package main
 
 import (
-	"encoding/gob"
+	"encoding/json"
 	"io"
 	"log"
 
 	"github.com/mdmarek/grid"
 )
 
-type MyMesg struct {
+const Key = ""
+
+type NumMesg struct {
 	Data int
 }
 
-type coder struct {
-	*gob.Encoder
-	*gob.Decoder
+func NewNumMesg(i int) *NumMesg {
+	return &NumMesg{i}
 }
 
-func (c *coder) New() interface{} {
-	return &MyMesg{}
+type numcoder struct {
+	*json.Encoder
+	*json.Decoder
 }
 
-func NewMyMesgDecoder(r io.Reader) grid.Decoder {
-	return &coder{nil, gob.NewDecoder(r)}
+func (c *numcoder) New() interface{} {
+	return &NumMesg{}
 }
 
-func NewMyMesgEncoder(w io.Writer) grid.Encoder {
-	return &coder{gob.NewEncoder(w), nil}
+func NewNumMesgDecoder(r io.Reader) grid.Decoder {
+	return &numcoder{nil, json.NewDecoder(r)}
+}
+
+func NewNumMesgEncoder(w io.Writer) grid.Encoder {
+	return &numcoder{json.NewEncoder(w), nil}
 }
 
 func main() {
-
-	gob.Register(MyMesg{})
 
 	g, err := grid.New("test-grid")
 	if err != nil {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
 
-	g.AddDecoder("topic1", NewMyMesgDecoder)
-	g.AddDecoder("topic2", NewMyMesgDecoder)
-	g.AddDecoder("topic3", NewMyMesgDecoder)
-
-	g.AddEncoder("topic1", NewMyMesgEncoder)
-	g.AddEncoder("topic2", NewMyMesgEncoder)
-	g.AddEncoder("topic3", NewMyMesgEncoder)
+	g.AddDecoder(NewNumMesgDecoder, "topic1", "topic2", "topic3")
+	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
 	err = g.Add(1, add, "topic1")
 	if err != nil {
@@ -65,12 +64,12 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
-		for m := range in {
-			switch mesg := m.Message().(type) {
-			case MyMesg:
-				out <- grid.NewWritable("topic2", "", MyMesg{Data: 1 + mesg.Data})
+		for e := range in {
+			switch mesg := e.Message().(type) {
+			case *NumMesg:
+				out <- grid.NewWritable("topic2", Key, NewNumMesg(1+mesg.Data))
 			default:
-				log.Printf("error: example: unknown message: %T :: %v", mesg, mesg)
+				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
 		}
 	}()
@@ -83,12 +82,12 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
-		for m := range in {
-			switch mesg := m.Message().(type) {
-			case MyMesg:
-				out <- grid.NewWritable("topic3", "", MyMesg{Data: 2 * mesg.Data})
+		for e := range in {
+			switch mesg := e.Message().(type) {
+			case *NumMesg:
+				out <- grid.NewWritable("topic3", Key, NewNumMesg(2*mesg.Data))
 			default:
-				log.Printf("error: example: unknown message: %T :: %v", mesg, mesg)
+				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
 		}
 	}()
