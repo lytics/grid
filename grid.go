@@ -2,8 +2,8 @@ package grid
 
 import (
 	"bytes"
-	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"reflect"
 	"runtime"
@@ -12,17 +12,13 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-type Header interface {
-	Topic() string
-	Partition() int32
-	Offset() int64
-	Err() error
+type Decoder interface {
+	New() interface{}
+	Decode(d interface{}) error
 }
 
-type Mesg interface {
-	Header
-	Key() []byte
-	Value() []byte
+type Encoder interface {
+	Encode(e interface{}) error
 }
 
 type Grid struct {
@@ -32,13 +28,11 @@ type Grid struct {
 	cconfig   *sarama.ConsumerConfig
 	consumers []*sarama.Consumer
 	producers []*sarama.Producer
+	encoders  map[string]func(io.Writer) Encoder
+	decoders  map[string]func(io.Reader) Decoder
 	ops       map[string]*op
 	wg        *sync.WaitGroup
 	mutex     *sync.Mutex
-}
-
-func NewHeader(topic string) Header {
-	return header{topic: topic}
 }
 
 func New(name string) (*Grid, error) {
@@ -57,12 +51,17 @@ func New(name string) (*Grid, error) {
 		pconfig:   pconfig,
 		cconfig:   cconfig,
 		consumers: make([]*sarama.Consumer, 0),
+		encoders:  make(map[string]func(io.Writer) Encoder),
+		decoders:  make(map[string]func(io.Reader) Decoder),
 		ops:       make(map[string]*op),
 		wg:        new(sync.WaitGroup),
 		mutex:     new(sync.Mutex),
 	}
 
 	g.wg.Add(1)
+
+	g.AddDecoder(fmt.Sprintf("%v-cmd", name), NewCmdMesgDecoder)
+	g.AddEncoder(fmt.Sprintf("%v-cmd", name), NewCmdMesgEncoder)
 
 	return g, nil
 }
@@ -72,10 +71,10 @@ func (g *Grid) Start() error {
 	defer g.mutex.Unlock()
 
 	go func() {
-		out := make(chan *VoterMesg)
+		out := make(chan *CmdMesg)
 		defer close(out)
 
-		in, err := g.CtrlTopic(out)
+		in, err := g.cmdTopicChannels(out)
 		if err != nil {
 			return
 		}
@@ -86,11 +85,12 @@ func (g *Grid) Start() error {
 	for fname, op := range g.ops {
 		log.Printf("grid: starting %v => %v()", op.topic, fname)
 		in, err := g.reader(fname, op.topic)
+
 		if err != nil {
 			return fmt.Errorf("grid: %v(): failed to start input: %v", fname, err)
 		}
 
-		go func(g *Grid, in <-chan Mesg, f func(<-chan Mesg) <-chan Mesg) {
+		go func(g *Grid, in <-chan Event, f func(<-chan Event) <-chan Event) {
 			g.writer(f(in))
 		}(g, in, op.f)
 	}
@@ -117,22 +117,33 @@ func (g *Grid) Stop() {
 	g.wg.Done()
 }
 
-func (g *Grid) Add(n int, f func(in <-chan Mesg) <-chan Mesg, topic string) error {
-	fname := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
-	if _, exists := g.ops[fname]; exists {
-		return fmt.Errorf("gird: already added: %v", fname)
-	} else {
-		g.ops[fname] = &op{f: f, n: n, topic: topic}
-		return nil
+func (g *Grid) AddDecoder(topic string, makeDecoder func(io.Reader) Decoder) {
+	if _, added := g.decoders[topic]; !added {
+		g.decoders[topic] = makeDecoder
 	}
 }
 
-func (g *Grid) CtrlTopic(in <-chan *VoterMesg) (<-chan *VoterMesg, error) {
-	topic := fmt.Sprintf("%v-ctrl", g.name)
+func (g *Grid) AddEncoder(topic string, makeEncoder func(io.Writer) Encoder) {
+	if _, added := g.encoders[topic]; !added {
+		g.encoders[topic] = makeEncoder
+	}
+}
 
-	// Channels that represent Kafka, which take values of
-	// type []byte.
-	kout := make(chan Mesg)
+func (g *Grid) Add(n int, f func(in <-chan Event) <-chan Event, topic string) error {
+	fname := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
+
+	if _, exists := g.ops[fname]; exists {
+		return fmt.Errorf("gird: already added: %v", fname)
+	}
+
+	g.ops[fname] = &op{f: f, n: n, topic: topic}
+	return nil
+}
+
+func (g *Grid) cmdTopicChannels(in <-chan *CmdMesg) (<-chan *CmdMesg, error) {
+	topic := fmt.Sprintf("%v-cmd", g.name)
+
+	kout := make(chan Event)
 	kin, err := g.reader("voter", topic)
 	if err != nil {
 		return nil, err
@@ -142,53 +153,25 @@ func (g *Grid) CtrlTopic(in <-chan *VoterMesg) (<-chan *VoterMesg, error) {
 		return nil, err
 	}
 
-	// Channels that pass VoterMesg(s).
-	out := make(chan *VoterMesg)
-
-	// Read data from Kafka, by transforming messages with a
-	// []byte value from the kafka-in channel, to type
-	// VoterMesg(s).
+	out := make(chan *CmdMesg)
 	go func() {
 		defer close(out)
-
-		var buf bytes.Buffer
-		dec := gob.NewDecoder(&buf)
-
-		for m := range kin {
-			buf.Write(m.Value())
-			vm := &VoterMesg{}
-			err := dec.Decode(vm)
-			if err != nil {
-				log.Printf("error: grid: voter decoding: %v", err)
-			}
-			out <- vm
+		for e := range kin {
+			out <- e.Message().(*CmdMesg)
 		}
 	}()
 
-	// Write data to Kafka, by transforming VoterMesg(s) to
-	// messages with a []byte value and write them to the
-	// kafka-out channel.
 	go func() {
 		defer close(kout)
-
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-
 		for vm := range in {
-			err := enc.Encode(vm)
-			if err != nil {
-				log.Printf("error: grid: voter encoding: %v", err)
-			}
-			val := make([]byte, buf.Len())
-			buf.Read(val)
-			kout <- &mesg{header{topic: topic}, nil, val}
+			kout <- NewWritable(topic, "", vm)
 		}
 	}()
 
 	return out, nil
 }
 
-func (g *Grid) reader(fname string, topic string) (<-chan Mesg, error) {
+func (g *Grid) reader(fname string, topic string) (<-chan Event, error) {
 
 	parts, err := g.kafka.Partitions(topic)
 	if err != nil {
@@ -203,23 +186,32 @@ func (g *Grid) reader(fname string, topic string) (<-chan Mesg, error) {
 
 	// Consumers read from the real topic and push data
 	// into the out channel.
-	out := make(chan Mesg, 0)
+	out := make(chan Event, 0)
 
 	for _, part := range parts {
-		go func(g *Grid, wg *sync.WaitGroup, part int32, out chan<- Mesg) {
+		go func(g *Grid, wg *sync.WaitGroup, part int32, out chan<- Event) {
 			defer wg.Done()
+
+			var buf bytes.Buffer
+			var err error
 
 			consumer, err := g.readfrom(fname, topic, part)
 			if err != nil {
 				return
 			}
 
-			for event := range consumer.Events() {
-				if event.Err != nil {
-					log.Printf("error: grid: %v: topic: %v: partition: %v: %v", g.name, topic, part, event.Err)
-					g.Stop()
+			dec := g.decoders[topic](&buf)
+			for e := range consumer.Events() {
+				val := dec.New()
+				buf.Write(e.Value)
+				err = dec.Decode(val)
+				if err != nil {
+					log.Printf("error: grid: decode failed: %v", err)
+					buf.Reset()
+					continue
 				}
-				out <- &mesg{header{event.Topic, event.Partition, event.Offset, event.Err}, event.Key, event.Value}
+
+				out <- NewReadable(e.Err, topic, part, e.Offset, val)
 			}
 		}(g, wg, part, out)
 	}
@@ -227,7 +219,7 @@ func (g *Grid) reader(fname string, topic string) (<-chan Mesg, error) {
 	// When the kafka consumers have exited, it means there is
 	// no goroutine which can write to the out channel, so
 	// close it.
-	go func(wg *sync.WaitGroup, out chan<- Mesg) {
+	go func(wg *sync.WaitGroup, out chan<- Event) {
 		wg.Wait()
 		close(out)
 	}(wg, out)
@@ -237,15 +229,38 @@ func (g *Grid) reader(fname string, topic string) (<-chan Mesg, error) {
 	return out, nil
 }
 
-func (g *Grid) writer(in <-chan Mesg) error {
+func (g *Grid) writer(in <-chan Event) error {
 	producer, err := sarama.NewProducer(g.kafka, g.pconfig)
 	if err != nil {
 		return err
 	}
-	go func(in <-chan Mesg, producer *sarama.Producer) {
+	go func(in <-chan Event, producer *sarama.Producer) {
 		defer producer.Close()
-		for event := range in {
-			producer.Input() <- &sarama.MessageToSend{Topic: event.Topic(), Key: encodable(event.Key()), Value: encodable(event.Value())}
+
+		var buf bytes.Buffer
+		var enc Encoder
+		var err error
+
+		// The producer is not tied to one topic like the consumers are
+		// so an encoder is needed for ever registered topic.
+		encoders := make(map[string]Encoder)
+		for topic, newEncoder := range g.encoders {
+			encoders[topic] = newEncoder(&buf)
+		}
+
+		for e := range in {
+			enc = encoders[e.Topic()]
+			err = enc.Encode(e.Message())
+			if err != nil {
+				log.Printf("error: grid: encode failed: %v", err)
+				buf.Reset()
+				continue
+			}
+			key := []byte(e.Key())
+			val := make([]byte, buf.Len())
+			buf.Read(val)
+
+			producer.Input() <- &sarama.MessageToSend{Topic: e.Topic(), Key: encodable(key), Value: encodable(val)}
 		}
 	}(in, producer)
 
@@ -271,47 +286,14 @@ func (g *Grid) readfrom(fname, topic string, part int32) (*sarama.Consumer, erro
 
 type op struct {
 	n     int
-	f     func(in <-chan Mesg) <-chan Mesg
+	f     func(in <-chan Event) <-chan Event
 	topic string
 }
 
-type header struct {
-	topic     string
-	partition int32
-	offset    int64
-	err       error
-}
-
-func (h header) Err() error {
-	return h.err
-}
-
-func (h header) Topic() string {
-	return h.topic
-}
-
-func (h header) Offset() int64 {
-	return h.offset
-}
-
-func (h header) Partition() int32 {
-	return h.partition
-}
-
-type mesg struct {
-	header
-	key   []byte
-	value []byte
-}
-
-func (m *mesg) Key() []byte {
-	return m.key
-}
-
-func (m *mesg) Value() []byte {
-	return m.value
-}
-
+// encodable is a wrapper for byte arrays to satisfy Sarama's
+// crappy encoder interface. Crappy because it does not match
+// the interface used by all the encoders in the standard
+// packege "encoding/..."
 type encodable []byte
 
 func (e encodable) Encode() ([]byte, error) {

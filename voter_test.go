@@ -19,7 +19,7 @@ func TestElectionOf1(t *testing.T) {
 	wg.Add(voters)
 
 	for i := 0; i < voters; i++ {
-		out := make(chan *VoterMesg)
+		out := make(chan *CmdMesg)
 		in := p.client(out)
 		go voter(i, quorum, maxleadertime, in, out)
 	}
@@ -74,7 +74,7 @@ func TestElectionOf3(t *testing.T) {
 	wg.Add(voters)
 
 	for i := 0; i < voters; i++ {
-		out := make(chan *VoterMesg)
+		out := make(chan *CmdMesg)
 		in := p.client(out)
 		go voter(i, quorum, maxleadertime, in, out)
 	}
@@ -126,13 +126,13 @@ func isleaderelected(quorum int, votes map[int]int) bool {
 // operates as a log readable by multiple clients.
 type partition struct {
 	head  int
-	data  []*VoterMesg
+	data  []*CmdMesg
 	mutex *sync.Mutex
 }
 
 // newPartition creates a new partition.
 func newPartition() *partition {
-	return &partition{data: make([]*VoterMesg, 1000000), mutex: new(sync.Mutex)}
+	return &partition{data: make([]*CmdMesg, 1000000), mutex: new(sync.Mutex)}
 }
 
 // client creates a "client" for the partition. A client
@@ -141,9 +141,9 @@ func newPartition() *partition {
 // the partition, and a readbale channel returned
 // to the caller of consumable messages from the
 // partition.
-func (p *partition) client(in <-chan *VoterMesg) <-chan *VoterMesg {
-	out := make(chan *VoterMesg, 100)
-	go func(out chan<- *VoterMesg) {
+func (p *partition) client(in <-chan *CmdMesg) <-chan *CmdMesg {
+	out := make(chan *CmdMesg, 100)
+	go func(out chan<- *CmdMesg) {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		offset := 0
@@ -165,7 +165,7 @@ func (p *partition) client(in <-chan *VoterMesg) <-chan *VoterMesg {
 }
 
 // read reads from the partition a particular offset.
-func (p *partition) read(offset int) *VoterMesg {
+func (p *partition) read(offset int) *CmdMesg {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
@@ -178,7 +178,7 @@ func (p *partition) read(offset int) *VoterMesg {
 
 // write writes to the end of the partition, unless it is
 // out of space.
-func (p *partition) write(m *VoterMesg) {
+func (p *partition) write(m *CmdMesg) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 

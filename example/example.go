@@ -1,31 +1,50 @@
 package main
 
 import (
+	"encoding/gob"
+	"io"
 	"log"
-	"strconv"
 
 	"github.com/mdmarek/grid"
 )
 
-type mesg struct {
-	grid.Header
-	key   string
-	value string
+type MyMesg struct {
+	Data int
 }
 
-func (m *mesg) Key() []byte {
-	return []byte(m.key)
+type coder struct {
+	*gob.Encoder
+	*gob.Decoder
 }
 
-func (m *mesg) Value() []byte {
-	return []byte(m.value)
+func (c *coder) New() interface{} {
+	return &MyMesg{}
+}
+
+func NewMyMesgDecoder(r io.Reader) grid.Decoder {
+	return &coder{nil, gob.NewDecoder(r)}
+}
+
+func NewMyMesgEncoder(w io.Writer) grid.Encoder {
+	return &coder{gob.NewEncoder(w), nil}
 }
 
 func main() {
+
+	gob.Register(MyMesg{})
+
 	g, err := grid.New("test-grid")
 	if err != nil {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
+
+	g.AddDecoder("topic1", NewMyMesgDecoder)
+	g.AddDecoder("topic2", NewMyMesgDecoder)
+	g.AddDecoder("topic3", NewMyMesgDecoder)
+
+	g.AddEncoder("topic1", NewMyMesgEncoder)
+	g.AddEncoder("topic2", NewMyMesgEncoder)
+	g.AddEncoder("topic3", NewMyMesgEncoder)
 
 	err = g.Add(1, add, "topic1")
 	if err != nil {
@@ -41,42 +60,38 @@ func main() {
 	g.Wait()
 }
 
-func add(in <-chan grid.Mesg) <-chan grid.Mesg {
-	out := make(chan grid.Mesg)
+func add(in <-chan grid.Event) <-chan grid.Event {
+	out := make(chan grid.Event)
 
-	go func(in <-chan grid.Mesg, out chan<- grid.Mesg) {
+	go func() {
 		defer close(out)
-
 		for m := range in {
-			numstr := string(m.Value())
-			if num, err := strconv.ParseInt(string(numstr), 10, 64); err != nil {
-				log.Printf("error: example: add'er: topic: %v message not a number: %v", m.Topic(), numstr)
-			} else {
-				newnumstr := strconv.FormatInt(num+1, 10)
-				out <- &mesg{grid.NewHeader("topic2"), newnumstr, newnumstr}
+			switch mesg := m.Message().(type) {
+			case MyMesg:
+				out <- grid.NewWritable("topic2", "", MyMesg{Data: 1 + mesg.Data})
+			default:
+				log.Printf("error: example: unknown message: %T :: %v", mesg, mesg)
 			}
 		}
-	}(in, out)
+	}()
 
 	return out
 }
 
-func mul(in <-chan grid.Mesg) <-chan grid.Mesg {
-	out := make(chan grid.Mesg)
+func mul(in <-chan grid.Event) <-chan grid.Event {
+	out := make(chan grid.Event)
 
-	go func(in <-chan grid.Mesg, out chan<- grid.Mesg) {
+	go func() {
 		defer close(out)
-
 		for m := range in {
-			numstr := string(m.Value())
-			if num, err := strconv.ParseInt(string(numstr), 10, 64); err != nil {
-				log.Printf("error: example: mul'er: topic: %v message not a number: %v", m.Topic(), numstr)
-			} else {
-				newnumstr := strconv.FormatInt(2*num, 10)
-				out <- &mesg{grid.NewHeader("topic3"), newnumstr, newnumstr}
+			switch mesg := m.Message().(type) {
+			case MyMesg:
+				out <- grid.NewWritable("topic3", "", MyMesg{Data: 2 * mesg.Data})
+			default:
+				log.Printf("error: example: unknown message: %T :: %v", mesg, mesg)
 			}
 		}
-	}(in, out)
+	}()
 
 	return out
 }

@@ -40,18 +40,10 @@ type Election struct {
 	Candidate int
 }
 
-// VoterMesg is an envelope for more specific voting messages.
-type VoterMesg struct {
-	From  int
-	State int
-	Data  interface{}
-}
-
 func init() {
 	gob.Register(Ping{})
 	gob.Register(Vote{})
 	gob.Register(Election{})
-	gob.Register(VoterMesg{})
 }
 
 func newPing(leader int) Ping {
@@ -82,14 +74,6 @@ func (e Election) String() string {
 	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %d}", e.Term, e.Votes, e.Candidate)
 }
 
-func newVoterMesg(name int, state int, data interface{}) *VoterMesg {
-	return &VoterMesg{From: name, State: state, Data: data}
-}
-
-func (m *VoterMesg) String() string {
-	return fmt.Sprintf("VoterMesg{From: %d, State: %d, Data: %v}", m.From, m.State, m.Data)
-}
-
 // voter implements a RAFT election voter. It requires that the messages
 // sent to the output channel have the same total-ordering for all
 // voters participating in the elections.
@@ -117,7 +101,7 @@ func (m *VoterMesg) String() string {
 //     leaders to give up leadership in very short time periods.
 //     In normal running, set it to 0 to disable.
 //
-func voter(name int, quorum uint32, maxleadertime int64, in <-chan *VoterMesg, out chan<- *VoterMesg) {
+func voter(name int, quorum uint32, maxleadertime int64, in <-chan *CmdMesg, out chan<- *CmdMesg) {
 	defer close(out)
 
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
@@ -137,42 +121,39 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *VoterMesg, o
 		select {
 		case now := <-ticker.C:
 			if now.Unix()-lasthearbeat > HeartTimeout {
+				log.Printf("voter %v: transition: %v => %v", state, Follower)
 				state = Follower
 				elect = nil
 			}
-			if state == Leader {
-				if time.Now().Unix() < termstart+maxleadertime || maxleadertime == 0 {
-					vm := &VoterMesg{From: name, State: state, Data: newPing(name)}
-					out <- vm
-				}
+			if state == Leader && (time.Now().Unix() < termstart+maxleadertime || maxleadertime == 0) {
+				out <- newCmdMesg(newPing(name))
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
+				log.Printf("voter %v: transition: %v => %v", state, Candidate)
 				state = Candidate
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
-				out <- &VoterMesg{From: name, State: state, Data: newElection(name, term)}
+				out <- newCmdMesg(newElection(name, term))
 			}
 		case m := <-in:
 			switch data := m.Data.(type) {
 			case Ping:
-				log.Printf("%v rx: %v", name, data)
+				// log.Printf("%v rx: %v", name, data)
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				if name != data.Leader {
 					state = Follower
 				}
 			case Vote:
-				log.Printf("%v rx: %v", name, data)
+				// log.Printf("%v rx: %v", name, data)
 				if elect == nil {
 					continue
 				}
 				if elect.Candidate != data.From && elect.Candidate == data.Candidate && elect.Term == data.Term {
-					// Don't vote for yourself twice, election candidate must be same
-					// as the vote candidate, and election term must be same
-					// as vote term.
 					elect.Votes = elect.Votes + 1
 				}
 				if elect.Votes >= quorum && elect.Candidate == name {
+					log.Printf("voter %v: transition: %v => %v", state, Leader)
 					state = Leader
 					termstart = time.Now().Unix()
 				}
@@ -184,7 +165,7 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *VoterMesg, o
 					nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				}
 			case Election:
-				log.Printf("%v rx: %v", name, data)
+				// log.Printf("%v rx: %v", name, data)
 				if elect != nil {
 					continue
 				}
@@ -192,8 +173,7 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *VoterMesg, o
 				term++
 				if !voted[data.Term] && state != Leader {
 					voted[data.Term] = true
-					vm := &VoterMesg{From: name, State: state, Data: newVote(data.Candidate, data.Term, name)}
-					out <- vm
+					out <- newCmdMesg(newVote(data.Candidate, data.Term, name))
 				}
 			default:
 				log.Printf("%v rx: unknonw type %T :: %v", name, data, data)
