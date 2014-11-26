@@ -60,8 +60,8 @@ func New(name string) (*Grid, error) {
 
 	g.wg.Add(1)
 
-	g.AddDecoder(fmt.Sprintf("%v-cmd", name), NewCmdMesgDecoder)
-	g.AddEncoder(fmt.Sprintf("%v-cmd", name), NewCmdMesgEncoder)
+	g.AddDecoder(NewCmdMesgDecoder, fmt.Sprintf("%v-cmd", name))
+	g.AddEncoder(NewCmdMesgEncoder, fmt.Sprintf("%v-cmd", name))
 
 	return g, nil
 }
@@ -117,15 +117,23 @@ func (g *Grid) Stop() {
 	g.wg.Done()
 }
 
-func (g *Grid) AddDecoder(topic string, makeDecoder func(io.Reader) Decoder) {
-	if _, added := g.decoders[topic]; !added {
-		g.decoders[topic] = makeDecoder
+func (g *Grid) AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string) {
+	for _, topic := range topics {
+		// Only add the decoder if it has not been added before, this is
+		// used to register certain decoders before the user can.
+		if _, added := g.decoders[topic]; !added {
+			g.decoders[topic] = makeDecoder
+		}
 	}
 }
 
-func (g *Grid) AddEncoder(topic string, makeEncoder func(io.Writer) Encoder) {
-	if _, added := g.encoders[topic]; !added {
-		g.encoders[topic] = makeEncoder
+func (g *Grid) AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string) {
+	for _, topic := range topics {
+		// Only add the encoder if it has not been added before, this is
+		// used to register certain encoders before the user can.
+		if _, added := g.encoders[topic]; !added {
+			g.encoders[topic] = makeEncoder
+		}
 	}
 }
 
@@ -206,7 +214,7 @@ func (g *Grid) reader(fname string, topic string) (<-chan Event, error) {
 				buf.Write(e.Value)
 				err = dec.Decode(val)
 				if err != nil {
-					log.Printf("error: grid: decode failed: %v", err)
+					log.Printf("error: grid: decode failed: %v: value: %v", err, buf.Bytes())
 					buf.Reset()
 					continue
 				}
@@ -252,7 +260,7 @@ func (g *Grid) writer(in <-chan Event) error {
 			enc = encoders[e.Topic()]
 			err = enc.Encode(e.Message())
 			if err != nil {
-				log.Printf("error: grid: encode failed: %v", err)
+				log.Printf("error: grid: encode failed: %v: message: %v", err, e.Message())
 				buf.Reset()
 				continue
 			}
