@@ -121,7 +121,9 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *CmdMesg, out
 		select {
 		case now := <-ticker.C:
 			if now.Unix()-lasthearbeat > HeartTimeout {
-				log.Printf("voter %v: transition: %v => %v", state, Follower)
+				if state != Follower {
+					log.Printf("voter %v: transition: %v => %v", name, state, Follower)
+				}
 				state = Follower
 				elect = nil
 			}
@@ -129,7 +131,9 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *CmdMesg, out
 				out <- newCmdMesg(newPing(name))
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
-				log.Printf("voter %v: transition: %v => %v", state, Candidate)
+				if state != Candidate {
+					log.Printf("voter %v: transition: %v => %v", name, state, Candidate)
+				}
 				state = Candidate
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
@@ -153,7 +157,9 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *CmdMesg, out
 					elect.Votes = elect.Votes + 1
 				}
 				if elect.Votes >= quorum && elect.Candidate == name {
-					log.Printf("voter %v: transition: %v => %v", state, Leader)
+					if state != Leader {
+						log.Printf("voter %v: transition: %v => %v", name, state, Leader)
+					}
 					state = Leader
 					termstart = time.Now().Unix()
 				}
