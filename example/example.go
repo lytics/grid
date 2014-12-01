@@ -5,7 +5,8 @@ import (
 	"io"
 	"log"
 
-	"github.com/mdmarek/grid"
+	"github.com/Shopify/sarama"
+	"github.com/lytics/grid"
 )
 
 const Key = ""
@@ -73,7 +74,42 @@ func main() {
 	}
 
 	g.Start()
+
+	go consoleMessageSource()
+
 	g.Wait()
+}
+
+//Read integers from the console and sends them into the grid's first topic.
+//
+//For this grid the source of the stream is a kafka topic named "topic1",
+//Defined by g.Read("add", "topic1") above.
+func consoleMessageSource() {
+	client, err := sarama.NewClient("consoleMessage-client", []string{"localhost:10092"}, sarama.NewClientConfig())
+	if err != nil {
+		t.Fatalf("failed to create kafka client: %v", err)
+	}
+	producer, err := sarama.NewSimpleProducer(client, "topic1", sarama.NewHashPartitioner)
+	if err != nil {
+		log.Fatalf("error: topic: failed to create producer: %v", err)
+	}
+	defer producer.Close()
+
+	for {
+		var i int
+		fmt.Println("Enter a number please:")
+		if _, err := fmt.Scanf("%d", &i); err != nil {
+			fmt.Println("Your input was invalid!")
+		} else {
+			fmt.Printf("Sending %d to the grid for processing.\n", i)
+
+			if bytes, err := json.Marshal(i); err != nil {
+				fmt.Println("error:", err)
+			} else {
+				producer.SendMessage(nil, sarama.StringEncoder(bytes))
+			}
+		}
+	}
 }
 
 func add(in <-chan grid.Event) <-chan grid.Event {
