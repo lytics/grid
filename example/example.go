@@ -120,7 +120,7 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
-				out <- grid.NewWritable("topic2", Key, NewNumMesg(1+mesg.Data))
+				out <- grid.NewWritable(Key, NewNumMesg(1+mesg.Data))
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
@@ -138,7 +138,7 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
-				out <- grid.NewWritable("topic3", Key, NewNumMesg(2*mesg.Data))
+				out <- grid.NewWritable(Key, NewNumMesg(2*mesg.Data))
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
