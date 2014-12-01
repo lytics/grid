@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 
@@ -87,7 +88,7 @@ func main() {
 func consoleMessageSource() {
 	client, err := sarama.NewClient("consoleMessage-client", []string{"localhost:10092"}, sarama.NewClientConfig())
 	if err != nil {
-		t.Fatalf("failed to create kafka client: %v", err)
+		log.Fatalf("failed to create kafka client: %v", err)
 	}
 	producer, err := sarama.NewSimpleProducer(client, "topic1", sarama.NewHashPartitioner)
 	if err != nil {
