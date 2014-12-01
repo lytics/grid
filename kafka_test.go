@@ -3,6 +3,7 @@ package grid
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -31,11 +32,11 @@ func TestWriter(t *testing.T) {
 		t.Fatalf("failed to create kafka client: %v", err)
 	}
 
-	in := make(chan Event2, 0)
+	in := make(chan Event, 0)
 	StartTopicWriter(TopicName, client, newTestMesgEncoder, in)
 
 	for i := 0; i < 10; i++ {
-		in <- NewEvent2("", NewTestMesg(i))
+		in <- NewWritable("", NewTestMesg(i))
 	}
 }
 
@@ -49,7 +50,7 @@ func TestReader(t *testing.T) {
 		t.Fatalf("failed to create kafka client: %v", err)
 	}
 
-	in := make(chan Event2, 0)
+	in := make(chan Event, 0)
 	StartTopicWriter(TopicName, client, newTestMesgEncoder, in)
 
 	go func() {
@@ -57,11 +58,12 @@ func TestReader(t *testing.T) {
 		for e := range StartTopicReader(TopicName, client, newTestMesgDecoder) {
 			switch msg := e.Message().(type) {
 			case *TestMesg:
+				fmt.Printf("rx: %v\n", msg)
 				if msg.Data != cnt {
 					t.Fatalf("expected message #%d to equal %d, but was: %d", cnt, cnt, msg.Data)
 				}
 			default:
-				t.Fatalf("unknown message type received on test topic: %v: %T :: %v", topic, msg, msg)
+				t.Fatalf("unknown message type received on: %v: %T :: %v", TopicName, msg, msg)
 			}
 			cnt++
 		}
@@ -70,7 +72,7 @@ func TestReader(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	for i := 0; i < 10; i++ {
-		in <- NewEvent2("", NewTestMesg(i))
+		in <- NewWritable("", NewTestMesg(i))
 	}
 
 	time.Sleep(3 * time.Second)

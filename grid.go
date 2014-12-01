@@ -1,7 +1,6 @@
 package grid
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -68,26 +67,42 @@ func (g *Grid) Start() error {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
-	// go func() {
-	// 	out := make(chan *CmdMesg)
-	// 	defer close(out)
-
-	// 	in, err := g.cmdTopicChannels(out)
-	// 	if err != nil {
-	// 		return
-	// 	}
-
-	// 	voter(0, 1, 0, in, out)
-	// }()
-
 	for fname, op := range g.ops {
 		log.Printf("grid: starting %v() <%v >%v", fname, op.inputs, op.outputs)
-		in := g.reader(fname, op.inputs...)
-		go func(fname string, g *Grid, in <-chan Event, f func(<-chan Event) <-chan Event) {
-			g.writer(fname, f(in), op.outputs...)
-		}(fname, g, in, op.f)
+
+		ins := make([]<-chan Event, 0)
+		for _, topic := range op.inputs {
+			newdec, found := g.decoders[topic]
+			if !found {
+				log.Fatalf("error: grid: %v reader of: %v, but no decoder added", fname, topic)
+			}
+			ins = append(ins, StartTopicReader(topic, g.kafka, newdec))
+		}
+
+		out := op.f(merge(ins))
+
+		for _, topic := range op.outputs {
+			newenc, found := g.encoders[topic]
+			if !found {
+				log.Fatalf("error: grid: %v writer of: %v, but no encoder added", fname, topic)
+			}
+			StartTopicWriter(topic, g.kafka, newenc, out)
+		}
 	}
+
 	return nil
+}
+
+func merge(ins []<-chan Event) <-chan Event {
+	merged := make(chan Event, 0)
+	for _, in := range ins {
+		go func(in <-chan Event) {
+			for m := range in {
+				merged <- m
+			}
+		}(in)
+	}
+	return merged
 }
 
 func (g *Grid) Wait() {
@@ -157,159 +172,6 @@ func (g *Grid) Write(fname, topic string) error {
 	}
 }
 
-func (g *Grid) cmdTopicChannels(in <-chan *CmdMesg) (<-chan *CmdMesg, error) {
-	topic := fmt.Sprintf("%v-cmd", g.name)
-
-	kout := make(chan Event)
-	kin := g.reader("voter", topic)
-	g.writer("voter", kout, topic)
-
-	out := make(chan *CmdMesg)
-	go func() {
-		defer close(out)
-		for e := range kin {
-			out <- e.Message().(*CmdMesg)
-		}
-	}()
-
-	go func() {
-		defer close(kout)
-		for vm := range in {
-			kout <- NewWritable(topic, "", vm)
-		}
-	}()
-
-	return out, nil
-}
-
-func (g *Grid) reader(fname string, topics ...string) <-chan Event {
-
-	// Consumers read from the real topic and push data
-	// into the out channel.
-	out := make(chan Event, 0)
-
-	// Setup a wait group so that the out channel
-	// can be closed when all consumers have
-	// exited.
-	wg := new(sync.WaitGroup)
-
-	for _, topic := range topics {
-		parts, err := g.kafka.Partitions(topic)
-		if err != nil {
-			log.Fatalf("error: grid: %v: topic: %v: failed getting kafka partition data: %v", topic, err)
-		}
-
-		wg.Add(len(parts))
-
-		for _, part := range parts {
-			go func(g *Grid, wg *sync.WaitGroup, part int32, topic string, out chan<- Event) {
-				defer wg.Done()
-
-				var buf bytes.Buffer
-
-				consumer, err := g.readfrom(fname, topic, part)
-				if err != nil {
-					log.Fatalf("error: grid: %v consumer: %v", fname, err)
-				}
-
-				dec := g.decoders[topic](&buf)
-				for e := range consumer.Events() {
-					val := dec.New()
-					buf.Write(e.Value)
-					err = dec.Decode(val)
-					if err != nil {
-						log.Printf("error: grid: decode failed: %v: value: %v", err, buf.Bytes())
-						buf.Reset()
-					} else {
-						out <- NewReadable(e.Offset, val)
-					}
-				}
-			}(g, wg, part, topic, out)
-		}
-	}
-
-	// When the kafka consumers have exited, it means there is
-	// no goroutine which can write to the out channel, so
-	// close it.
-	go func(wg *sync.WaitGroup, out chan<- Event) {
-		wg.Wait()
-		close(out)
-	}(wg, out)
-
-	// The out channel is returned as a read only channel
-	// so no one can close it except this code.
-	return out
-}
-
-func (g *Grid) writer(fname string, in <-chan Event, topics ...string) {
-
-	c := make([]string, len(topics))
-	copy(c, topics)
-
-	go func(in <-chan Event, topics []string) {
-		producers := make(map[string]*sarama.SimpleProducer)
-
-		for _, topic := range topics {
-			pro, err := sarama.NewSimpleProducer(g.kafka, topic, sarama.NewHashPartitioner)
-			defer pro.Close()
-			if err != nil {
-				log.Fatalf("error: grid: %v producer: %v", fname, err)
-			}
-			producers[topic] = pro
-		}
-
-		var buf bytes.Buffer
-
-		// The producer is not tied to one topic like the consumers are
-		// so an encoder is needed for ever registered topic.
-		encoders := make(map[string]Encoder)
-		for topic, newEncoder := range g.encoders {
-			encoders[topic] = newEncoder(&buf)
-		}
-
-		for e := range in {
-			enc, found := encoders[e.Topic()]
-			if !found {
-				log.Fatalf("error: grid: %v: topic not set for encoding: %v", fname, e.Topic())
-			}
-
-			pro, found := producers[e.Topic()]
-			if !found {
-				log.Fatalf("error: grid: %v: topic not set for output: %v, producers: %v", fname, e.Topic(), producers)
-			}
-
-			err := enc.Encode(e.Message())
-			if err != nil {
-				log.Printf("error: grid: %v: encode failed: %v: message: %v", fname, err, e.Message())
-				buf.Reset()
-			} else {
-				key := []byte(e.Key())
-				val := make([]byte, buf.Len())
-				buf.Read(val)
-				log.Printf("grid: %v sending: %v", fname, val)
-				pro.SendMessage(encodable(key), encodable(val))
-			}
-		}
-	}(in, c)
-}
-
-func (g *Grid) readfrom(fname, topic string, part int32) (*sarama.Consumer, error) {
-	if topic == "" {
-		return nil, fmt.Errorf("grid: topic name cannot be empty")
-	}
-	if part < 0 {
-		return nil, fmt.Errorf("grid: partition number cannnot be negative")
-	}
-
-	group := fmt.Sprintf("%v-%v-%v", g.name, fname, topic)
-	consumer, err := sarama.NewConsumer(g.kafka, topic, part, group, g.cconfig)
-	if err != nil {
-		return nil, err
-	}
-	g.consumers = append(g.consumers, consumer)
-	return consumer, nil
-}
-
 type op struct {
 	n       int
 	f       func(in <-chan Event) <-chan Event
@@ -329,4 +191,29 @@ func (e encodable) Encode() ([]byte, error) {
 
 func (e encodable) Length() int {
 	return len(e)
+}
+
+func (g *Grid) cmdTopicChannels(in <-chan *CmdMesg) (<-chan *CmdMesg, error) {
+	topic := fmt.Sprintf("%v-cmd", g.name)
+
+	kout := make(chan Event)
+	kin := StartTopicReader(topic, g.kafka, g.decoders[topic])
+	StartTopicWriter(topic, g.kafka, g.encoders[topic], kout)
+
+	out := make(chan *CmdMesg)
+	go func() {
+		defer close(out)
+		for e := range kin {
+			out <- e.Message().(*CmdMesg)
+		}
+	}()
+
+	go func() {
+		defer close(kout)
+		for vm := range in {
+			kout <- NewWritable("", vm)
+		}
+	}()
+
+	return out, nil
 }

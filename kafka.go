@@ -9,7 +9,7 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-func StartTopicWriter(topic string, client *sarama.Client, newe func(io.Writer) Encoder, in <-chan Event) {
+func StartTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer) Encoder, in <-chan Event) {
 	go func() {
 		producer, err := sarama.NewSimpleProducer(client, topic, sarama.NewHashPartitioner)
 		if err != nil {
@@ -18,7 +18,7 @@ func StartTopicWriter(topic string, client *sarama.Client, newe func(io.Writer) 
 		defer producer.Close()
 
 		var buf bytes.Buffer
-		enc := newe(&buf)
+		enc := newenc(&buf)
 
 		for event := range in {
 			err := enc.Encode(event.Message())
@@ -34,7 +34,7 @@ func StartTopicWriter(topic string, client *sarama.Client, newe func(io.Writer) 
 	}()
 }
 
-func StartTopicReader(topic string, client *sarama.Client, newd func(io.Reader) Decoder) <-chan Event {
+func StartTopicReader(topic string, client *sarama.Client, newdec func(io.Reader) Decoder) <-chan Event {
 
 	// Consumers read from the real topic and push data
 	// into the out channel.
@@ -65,7 +65,7 @@ func StartTopicReader(topic string, client *sarama.Client, newd func(io.Reader) 
 			}
 
 			var buf bytes.Buffer
-			dec := newd(&buf)
+			dec := newdec(&buf)
 
 			for e := range consumer.Events() {
 				off := e.Offset
@@ -76,7 +76,7 @@ func StartTopicReader(topic string, client *sarama.Client, newd func(io.Reader) 
 					log.Printf("error: topic: %v decode failed: %v: value: %v", topic, err, buf.Bytes())
 					buf.Reset()
 				} else {
-					out <- &NewReadable(off, msg)
+					out <- NewReadable(off, msg)
 				}
 			}
 		}(wg, part, out)
