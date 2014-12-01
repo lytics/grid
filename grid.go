@@ -179,20 +179,6 @@ type op struct {
 	outputs []string
 }
 
-// encodable is a wrapper for byte arrays to satisfy Sarama's
-// crappy encoder interface. Crappy because it does not match
-// the interface used by all the encoders in the standard
-// packege "encoding/..."
-type encodable []byte
-
-func (e encodable) Encode() ([]byte, error) {
-	return e, nil
-}
-
-func (e encodable) Length() int {
-	return len(e)
-}
-
 func (g *Grid) cmdTopicChannels(in <-chan *CmdMesg) (<-chan *CmdMesg, error) {
 	topic := fmt.Sprintf("%v-cmd", g.name)
 

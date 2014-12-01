@@ -28,7 +28,7 @@ func StartTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer
 				key := []byte(event.Key())
 				val := make([]byte, buf.Len())
 				buf.Read(val)
-				producer.SendMessage(encodable(key), encodable(val))
+				producer.SendMessage(sarama.ByteEncoder(key), sarama.ByteEncoder(val))
 			}
 		}
 	}()
