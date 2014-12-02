@@ -84,7 +84,7 @@ func (g *Grid) Start() error {
 		outs := make(map[string]chan Event)
 
 		for topic, newenc := range g.encoders {
-			outs[topic] = make(chan Event, 0)
+			outs[topic] = make(chan Event, 100)
 			StartTopicWriter(topic, g.kafka, newenc, outs[topic])
 
 			go func(fname string, out <-chan Event, outs map[string]chan Event) {
