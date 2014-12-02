@@ -47,24 +47,24 @@ func init() {
 	gob.Register(Election{})
 }
 
-func newPing(leader int) Ping {
-	return Ping{Leader: leader}
+func newPing(leader int) *CmdMesg {
+	return &CmdMesg{Data: Ping{Leader: leader}}
 }
 
 func (p Ping) String() string {
 	return fmt.Sprintf("Ping{Leader: %d}", p.Leader)
 }
 
-func newVote(candidate int, term uint32, from int) Vote {
-	return Vote{Term: term, Candidate: candidate, From: from}
+func newVote(candidate int, term uint32, from int) *CmdMesg {
+	return &CmdMesg{Data: Vote{Term: term, Candidate: candidate, From: from}}
 }
 
 func (v Vote) String() string {
 	return fmt.Sprintf("Vote{Term: %d, Candidate: %d, From: %d}", v.Term, v.Candidate, v.From)
 }
 
-func newElection(candidate int, term uint32) Election {
-	return Election{Term: term, Votes: 1, Candidate: candidate}
+func newElection(candidate int, term uint32) *CmdMesg {
+	return &CmdMesg{Data: Election{Term: term, Votes: 1, Candidate: candidate}}
 }
 
 func (e Election) Copy() *Election {
@@ -73,6 +73,15 @@ func (e Election) Copy() *Election {
 
 func (e Election) String() string {
 	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %d}", e.Term, e.Votes, e.Candidate)
+}
+
+func startVoter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event) <-chan Event {
+	out := make(chan Event, 0)
+	go func() {
+		defer close(out)
+		voter(name, topic, quorum, maxleadertime, in, out)
+	}()
+	return out
 }
 
 // voter implements a RAFT election voter. It requires that the messages
@@ -103,8 +112,6 @@ func (e Election) String() string {
 //     In normal running, set it to 0 to disable.
 //
 func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, out chan<- Event) {
-	defer close(out)
-
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
@@ -141,7 +148,16 @@ func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan
 				out <- NewWritable(topic, Key, newElection(name, term))
 			}
 		case m := <-in:
-			switch data := m.Message().(type) {
+			var cmdmsg *CmdMesg
+
+			switch msg := m.Message().(type) {
+			case *CmdMesg:
+				cmdmsg = msg
+			default:
+				continue
+			}
+
+			switch data := cmdmsg.Data.(type) {
 			case Ping:
 				// log.Printf("%v rx: %v", name, data)
 				lasthearbeat = time.Now().Unix()

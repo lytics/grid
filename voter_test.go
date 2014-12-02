@@ -43,7 +43,16 @@ func TestElectionOf1(t *testing.T) {
 	leaderelected := false
 	votes := make(map[int]int)
 	for i := 1; i < p.head; i++ {
-		switch data := p.data[i].Message().(type) {
+		var cmdmsg *CmdMesg
+
+		switch msg := p.data[i].Message().(type) {
+		case *CmdMesg:
+			cmdmsg = msg
+		default:
+			continue
+		}
+
+		switch data := cmdmsg.Data.(type) {
 		case Election:
 		case Vote:
 			votes[data.Candidate] = 1 + votes[data.Candidate]
@@ -90,7 +99,16 @@ func TestElectionOf3(t *testing.T) {
 		t.Fatalf("no messages found")
 	}
 
-	switch data := p.data[0].Message().(type) {
+	var cmdmsg *CmdMesg
+
+	switch msg := p.data[0].Message().(type) {
+	case *CmdMesg:
+		cmdmsg = msg
+	default:
+		t.Fatalf("first message should of been: CmdMesg bug was: %v", msg)
+	}
+
+	switch data := cmdmsg.Data.(type) {
 	case Election:
 	default:
 		t.Fatalf("first message should of been: Election but was: %v", data)
@@ -98,7 +116,16 @@ func TestElectionOf3(t *testing.T) {
 
 	votes := make(map[int]int)
 	for i := 1; i < p.head; i++ {
-		switch data := p.data[i].Message().(type) {
+		var cmdmsg *CmdMesg
+
+		switch msg := p.data[i].Message().(type) {
+		case *CmdMesg:
+			cmdmsg = msg
+		default:
+			continue
+		}
+
+		switch data := cmdmsg.Data.(type) {
 		case Election:
 		case Vote:
 			votes[data.Candidate] = 1 + votes[data.Candidate]

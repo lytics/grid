@@ -21,6 +21,7 @@ type Encoder interface {
 type Grid struct {
 	kafka     *sarama.Client
 	name      string
+	cmdtopic  string
 	pconfig   *sarama.ProducerConfig
 	cconfig   *sarama.ConsumerConfig
 	consumers []*sarama.Consumer
@@ -45,6 +46,7 @@ func New(name string) (*Grid, error) {
 	g := &Grid{
 		kafka:     kafka,
 		name:      name,
+		cmdtopic:  fmt.Sprintf("%v-cmd", name),
 		pconfig:   pconfig,
 		cconfig:   cconfig,
 		consumers: make([]*sarama.Consumer, 0),
@@ -57,8 +59,8 @@ func New(name string) (*Grid, error) {
 
 	g.wg.Add(1)
 
-	g.AddDecoder(NewCmdMesgDecoder, fmt.Sprintf("%v-cmd", name))
-	g.AddEncoder(NewCmdMesgEncoder, fmt.Sprintf("%v-cmd", name))
+	g.AddDecoder(NewCmdMesgDecoder, g.cmdtopic)
+	g.AddEncoder(NewCmdMesgEncoder, g.cmdtopic)
 
 	return g, nil
 }
@@ -67,6 +69,10 @@ func (g *Grid) Start() error {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
+	in := startTopicReader(g.cmdtopic, g.kafka, NewCmdMesgDecoder)
+	out := startVoter(0, g.cmdtopic, 1, 0, in)
+	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, out)
+
 	for fname, op := range g.ops {
 		log.Printf("grid: starting %v() <%v >%v", fname, op.inputs, op.outputs)
 
@@ -74,7 +80,7 @@ func (g *Grid) Start() error {
 		for _, topic := range op.inputs {
 			newdec, found := g.decoders[topic]
 			if found {
-				ins = append(ins, StartTopicReader(topic, g.kafka, newdec))
+				ins = append(ins, startTopicReader(topic, g.kafka, newdec))
 			} else {
 				log.Printf("error: grid: %v() reader of: '%v', no decoder", fname, topic)
 			}
@@ -85,7 +91,7 @@ func (g *Grid) Start() error {
 
 		for topic, newenc := range g.encoders {
 			outs[topic] = make(chan Event, 1024)
-			StartTopicWriter(topic, g.kafka, newenc, outs[topic])
+			startTopicWriter(topic, g.kafka, newenc, outs[topic])
 
 			go func(fname string, out <-chan Event, outs map[string]chan Event) {
 				for e := range out {

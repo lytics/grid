@@ -9,7 +9,7 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-func StartTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer) Encoder, in <-chan Event) {
+func startTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer) Encoder, in <-chan Event) {
 	go func() {
 		producer, err := sarama.NewSimpleProducer(client, topic, sarama.NewHashPartitioner)
 		if err != nil {
@@ -34,7 +34,7 @@ func StartTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer
 	}()
 }
 
-func StartTopicReader(topic string, client *sarama.Client, newdec func(io.Reader) Decoder) <-chan Event {
+func startTopicReader(topic string, client *sarama.Client, newdec func(io.Reader) Decoder) <-chan Event {
 
 	// Consumers read from the real topic and push data
 	// into the out channel.

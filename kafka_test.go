@@ -32,7 +32,7 @@ func TestWriter(t *testing.T) {
 	}
 
 	in := make(chan Event, 0)
-	StartTopicWriter(TopicName, client, newTestMesgEncoder, in)
+	startTopicWriter(TopicName, client, newTestMesgEncoder, in)
 
 	for i := 0; i < 10; i++ {
 		in <- NewWritable(TopicName, "", NewTestMesg(i))
@@ -50,11 +50,11 @@ func TestReader(t *testing.T) {
 	}
 
 	in := make(chan Event, 0)
-	StartTopicWriter(TopicName, client, newTestMesgEncoder, in)
+	startTopicWriter(TopicName, client, newTestMesgEncoder, in)
 
 	go func() {
 		cnt := 0
-		for e := range StartTopicReader(TopicName, client, newTestMesgDecoder) {
+		for e := range startTopicReader(TopicName, client, newTestMesgDecoder) {
 			switch msg := e.Message().(type) {
 			case *TestMesg:
 				// fmt.Printf("rx: %v\n", msg)
