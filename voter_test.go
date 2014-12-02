@@ -127,6 +127,7 @@ func isleaderelected(t *testing.T, p *partition, quorum int) {
 		case Election:
 		case Vote:
 			votes[data.Candidate] = 1 + votes[data.Candidate]
+		case Pong:
 		case Ping:
 			if !sufficientvotes(quorum, votes) {
 				t.Fatalf("found ping from leader, but no leader elected: %v: votes: %v: quorum: %v", data, votes, quorum)

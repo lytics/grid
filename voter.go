@@ -26,6 +26,13 @@ const (
 // Ping is sent only by elected leader.
 type Ping struct {
 	Leader string
+	Term   uint32
+}
+
+// Pong is send only by followers in response to a leader's Ping.
+type Pong struct {
+	Follower string
+	Term     uint32
 }
 
 // Vote is sent by any voter in response to an election.
@@ -48,12 +55,20 @@ func init() {
 	gob.Register(Election{})
 }
 
-func newPing(leader string) *CmdMesg {
-	return &CmdMesg{Data: Ping{Leader: leader}}
+func newPing(leader string, term uint32) *CmdMesg {
+	return &CmdMesg{Data: Ping{Leader: leader, Term: term}}
 }
 
 func (p Ping) String() string {
-	return fmt.Sprintf("Ping{Leader: %d}", p.Leader)
+	return fmt.Sprintf("Ping{Leader: %v, Term: %d}", p.Leader, p.Term)
+}
+
+func newPong(follower string, term uint32) *CmdMesg {
+	return &CmdMesg{Data: Pong{Follower: follower, Term: term}}
+}
+
+func (p Pong) String() string {
+	return fmt.Sprintf("Pong{Follower: %v, Term: %d}", p.Follower, p.Term)
 }
 
 func newVote(candidate string, term uint32, from string) *CmdMesg {
@@ -61,7 +76,7 @@ func newVote(candidate string, term uint32, from string) *CmdMesg {
 }
 
 func (v Vote) String() string {
-	return fmt.Sprintf("Vote{Term: %d, Candidate: %d, From: %d}", v.Term, v.Candidate, v.From)
+	return fmt.Sprintf("Vote{Term: %d, Candidate: %v, From: %v}", v.Term, v.Candidate, v.From)
 }
 
 func newElection(candidate string, term uint32) *CmdMesg {
@@ -73,7 +88,7 @@ func (e Election) Copy() *Election {
 }
 
 func (e Election) String() string {
-	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %d}", e.Term, e.Votes, e.Candidate)
+	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %v}", e.Term, e.Votes, e.Candidate)
 }
 
 func startVoter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, exit <-chan bool) <-chan Event {
@@ -149,7 +164,7 @@ func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan E
 				elect = nil
 			}
 			if state == Leader && (time.Now().Unix() < termstart+maxleadertime || maxleadertime == 0) {
-				out <- NewWritable(topic, Key, newPing(name))
+				out <- NewWritable(topic, Key, newPing(name, elect.Term))
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
 				if state != Candidate {
@@ -171,11 +186,13 @@ func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan E
 			}
 
 			switch data := cmdmsg.Data.(type) {
+			case Pong:
 			case Ping:
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				if name != data.Leader {
 					state = Follower
+					out <- NewWritable(topic, Key, newPong(name, data.Term))
 				}
 			case Vote:
 				if elect == nil {
