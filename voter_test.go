@@ -68,7 +68,7 @@ func isleaderelected(t *testing.T, p *partition, quorum int) {
 	// sufficient votes to become leader simply means that there
 	// where 'quorum' number of votes cast for a particular
 	// candidate.
-	sufficientvotes := func(quorum int, votes map[int]int) bool {
+	sufficientvotes := func(quorum int, votes map[string]int) bool {
 		for _, v := range votes {
 			if v >= quorum {
 				return true
@@ -105,7 +105,7 @@ func isleaderelected(t *testing.T, p *partition, quorum int) {
 	}
 
 	leaderelected := false
-	votes := make(map[int]int)
+	votes := make(map[string]int)
 	for i := 1; i < p.head; i++ {
 		var cmdmsg *CmdMesg
 
