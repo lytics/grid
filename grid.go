@@ -18,12 +18,19 @@ type Encoder interface {
 	Encode(e interface{}) error
 }
 
+type KafkaConfig struct {
+	Brokers        []string
+	BaseName       string
+	ClientConfig   *sarama.ClientConfig
+	ProducerConfig *sarama.ProducerConfig
+	ConsumerConfig *sarama.ConsumerConfig
+}
+
 type Grid struct {
 	kafka     *sarama.Client
 	name      string
 	cmdtopic  string
-	pconfig   *sarama.ProducerConfig
-	cconfig   *sarama.ConsumerConfig
+	kconfig   *KafkaConfig
 	consumers []*sarama.Consumer
 	producers []*sarama.Producer
 	encoders  map[string]func(io.Writer) Encoder
@@ -35,27 +42,42 @@ type Grid struct {
 }
 
 func New(name string) (*Grid, error) {
-	kafka, err := sarama.NewClient(name, []string{"localhost:10092"}, sarama.NewClientConfig())
-	if err != nil {
-		return nil, err
-	}
+
+	brokers := []string{"localhost:10092"}
 
 	pconfig := sarama.NewProducerConfig()
 	cconfig := sarama.NewConsumerConfig()
 	cconfig.OffsetMethod = sarama.OffsetMethodNewest
 
+	kafkaClientConfig := &KafkaConfig{
+		Brokers:        brokers,
+		BaseName:       name,
+		ClientConfig:   sarama.NewClientConfig(),
+		ProducerConfig: pconfig,
+		ConsumerConfig: cconfig,
+	}
+
+	return NewWithKafkaConfig(name, kafkaClientConfig)
+}
+
+func NewWithKafkaConfig(name string, kafkaClientConfig *KafkaConfig) (*Grid, error) {
+	kafka, err := sarama.NewClient(kafkaClientConfig.BaseName+"_shared_client", kafkaClientConfig.Brokers, kafkaClientConfig.ClientConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	g := &Grid{
-		kafka:    kafka,
-		name:     name,
-		cmdtopic: fmt.Sprintf("%v-cmd", name),
-		pconfig:  pconfig,
-		cconfig:  cconfig,
-		encoders: make(map[string]func(io.Writer) Encoder),
-		decoders: make(map[string]func(io.Reader) Decoder),
-		ops:      make(map[string]*op),
-		wg:       new(sync.WaitGroup),
-		mutex:    new(sync.Mutex),
-		exit:     make(chan bool),
+		kafka:     kafka,
+		kconfig:   kafkaClientConfig,
+		name:      name,
+		cmdtopic:  fmt.Sprintf("%v-cmd", name),
+		consumers: make([]*sarama.Consumer, 0),
+		encoders:  make(map[string]func(io.Writer) Encoder),
+		decoders:  make(map[string]func(io.Reader) Decoder),
+		ops:       make(map[string]*op),
+		wg:        new(sync.WaitGroup),
+		mutex:     new(sync.Mutex),
+		exit:      make(chan bool),
 	}
 
 	g.wg.Add(1)
@@ -70,7 +92,7 @@ func (g *Grid) Start() error {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
-	in := startTopicReader(g.cmdtopic, g.kafka, NewCmdMesgDecoder)
+	in := startTopicReader(g.cmdtopic, g.kafka, g.kconfig, NewCmdMesgDecoder)
 	out := startVoter(0, g.cmdtopic, 1, 0, in, g.exit)
 	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, out)
 
@@ -81,7 +103,7 @@ func (g *Grid) Start() error {
 		for _, topic := range op.inputs {
 			newdec, found := g.decoders[topic]
 			if found {
-				ins = append(ins, startTopicReader(topic, g.kafka, newdec))
+				ins = append(ins, startTopicReader(topic, g.kafka, g.kconfig, newdec))
 			} else {
 				log.Printf("error: grid: %v() reader of: '%v', no decoder", fname, topic)
 			}
