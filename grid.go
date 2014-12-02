@@ -73,20 +73,29 @@ func (g *Grid) Start() error {
 		ins := make([]<-chan Event, 0)
 		for _, topic := range op.inputs {
 			newdec, found := g.decoders[topic]
-			if !found {
-				log.Fatalf("error: grid: %v reader of: %v, but no decoder added", fname, topic)
+			if found {
+				ins = append(ins, StartTopicReader(topic, g.kafka, newdec))
+			} else {
+				log.Printf("error: grid: %v() reader of: '%v', no decoder", fname, topic)
 			}
-			ins = append(ins, StartTopicReader(topic, g.kafka, newdec))
 		}
 
 		out := op.f(merge(ins))
+		outs := make(map[string]chan Event)
 
-		for _, topic := range op.outputs {
-			newenc, found := g.encoders[topic]
-			if !found {
-				log.Fatalf("error: grid: %v writer of: %v, but no encoder added", fname, topic)
-			}
-			StartTopicWriter(topic, g.kafka, newenc, out)
+		for topic, newenc := range g.encoders {
+			outs[topic] = make(chan Event, 0)
+			StartTopicWriter(topic, g.kafka, newenc, outs[topic])
+
+			go func(fname string, out <-chan Event, outs map[string]chan Event) {
+				for e := range out {
+					if tchan, found := outs[e.Topic()]; found {
+						tchan <- e
+					} else {
+						log.Printf("error: grid: %v() writer of: '%v', no encoder", fname, e.Topic())
+					}
+				}
+			}(fname, out, outs)
 		}
 	}
 
@@ -145,31 +154,24 @@ func (g *Grid) AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
 	}
 }
 
-func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event) error {
+func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, topics ...string) error {
 	if _, exists := g.ops[fname]; exists {
 		return fmt.Errorf("gird: already added: %v", fname)
 	}
 
-	g.ops[fname] = &op{f: f, n: n, inputs: make([]string, 0), outputs: make([]string, 0)}
-	return nil
-}
+	op := &op{f: f, n: n, inputs: make([]string, 0), outputs: make([]string, 0)}
 
-func (g *Grid) Read(fname, topic string) error {
-	if op, exists := g.ops[fname]; exists {
+	for _, topic := range topics {
+		if _, found := g.decoders[topic]; !found {
+			return fmt.Errorf("grid: no decoder added for topic: %v", topic)
+		}
+
 		op.inputs = append(op.inputs, topic)
-		return nil
-	} else {
-		return fmt.Errorf("grid: no such name: %v", fname)
 	}
-}
 
-func (g *Grid) Write(fname, topic string) error {
-	if op, exists := g.ops[fname]; exists {
-		op.outputs = append(op.outputs, topic)
-		return nil
-	} else {
-		return fmt.Errorf("grid: no such name: %v", fname)
-	}
+	g.ops[fname] = op
+
+	return nil
 }
 
 type op struct {
@@ -197,7 +199,7 @@ func (g *Grid) cmdTopicChannels(in <-chan *CmdMesg) (<-chan *CmdMesg, error) {
 	go func() {
 		defer close(kout)
 		for vm := range in {
-			kout <- NewWritable("", vm)
+			kout <- NewWritable(topic, "", vm)
 		}
 	}()
 

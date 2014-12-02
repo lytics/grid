@@ -8,18 +8,24 @@ import (
 
 type Event interface {
 	Offset() int64
+	Topic() string
 	Key() string
 	Message() interface{}
 }
 
 type event struct {
 	offset  int64
+	topic   string
 	key     string
 	message interface{}
 }
 
 func (e *event) Offset() int64 {
 	return e.offset
+}
+
+func (e *event) Topic() string {
+	return e.topic
 }
 
 func (e *event) Key() string {
@@ -30,12 +36,12 @@ func (e *event) Message() interface{} {
 	return e.message
 }
 
-func NewReadable(offset int64, message interface{}) Event {
-	return &event{offset: offset, message: message}
+func NewReadable(topic string, offset int64, message interface{}) Event {
+	return &event{topic: topic, offset: offset, message: message}
 }
 
-func NewWritable(key string, message interface{}) Event {
-	return &event{key: key, message: message}
+func NewWritable(topic, key string, message interface{}) Event {
+	return &event{topic: topic, key: key, message: message}
 }
 
 // CmdMesg is an envelope for more specific messages on the command topic.

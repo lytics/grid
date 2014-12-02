@@ -36,7 +36,7 @@ func TestWriter(t *testing.T) {
 	StartTopicWriter(TopicName, client, newTestMesgEncoder, in)
 
 	for i := 0; i < 10; i++ {
-		in <- NewWritable("", NewTestMesg(i))
+		in <- NewWritable(TopicName, "", NewTestMesg(i))
 	}
 }
 
@@ -72,7 +72,7 @@ func TestReader(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	for i := 0; i < 10; i++ {
-		in <- NewWritable("", NewTestMesg(i))
+		in <- NewWritable(TopicName, "", NewTestMesg(i))
 	}
 
 	time.Sleep(3 * time.Second)

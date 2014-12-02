@@ -68,7 +68,6 @@ func StartTopicReader(topic string, client *sarama.Client, newdec func(io.Reader
 			dec := newdec(&buf)
 
 			for e := range consumer.Events() {
-				off := e.Offset
 				msg := dec.New()
 				buf.Write(e.Value)
 				err = dec.Decode(msg)
@@ -76,7 +75,7 @@ func StartTopicReader(topic string, client *sarama.Client, newdec func(io.Reader
 					log.Printf("error: topic: %v decode failed: %v: value: %v", topic, err, buf.Bytes())
 					buf.Reset()
 				} else {
-					out <- NewReadable(off, msg)
+					out <- NewReadable(e.Topic, e.Offset, msg)
 				}
 			}
 		}(wg, part, out)

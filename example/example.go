@@ -45,29 +45,12 @@ func main() {
 	g.AddDecoder(NewNumMesgDecoder, "topic1", "topic2", "topic3")
 	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
-	err = g.Add("add", 1, add)
+	err = g.Add("add", 1, add, "topic1")
 	if err != nil {
 		log.Fatalf("error: example: %v", err)
 	}
 
-	g.Read("add", "topic1")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-	g.Write("add", "topic2")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-
-	g.Add("mul", 1, mul)
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-	g.Read("mul", "topic2")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-	g.Write("mul", "topic3")
+	err = g.Add("mul", 1, mul, "topic2")
 	if err != nil {
 		log.Fatalf("error: example: %v", err)
 	}
@@ -84,7 +67,7 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
-				out <- grid.NewWritable(Key, NewNumMesg(1+mesg.Data))
+				out <- grid.NewWritable("topic2", Key, NewNumMesg(1+mesg.Data))
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
@@ -102,7 +85,7 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
-				out <- grid.NewWritable(Key, NewNumMesg(2*mesg.Data))
+				out <- grid.NewWritable("topic3", Key, NewNumMesg(2*mesg.Data))
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
