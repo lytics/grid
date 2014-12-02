@@ -44,7 +44,21 @@ func TestReader(t *testing.T) {
 		return
 	}
 
-	client, err := sarama.NewClient("test-client", []string{"localhost:10092"}, sarama.NewClientConfig())
+	brokers := []string{"localhost:10092"}
+
+	pconfig := sarama.NewProducerConfig()
+	cconfig := sarama.NewConsumerConfig()
+	cconfig.OffsetMethod = sarama.OffsetMethodNewest
+
+	kafkaClientConfig := &KafkaConfig{
+		Brokers:        brokers,
+		BaseName:       "test-client",
+		ClientConfig:   sarama.NewClientConfig(),
+		ProducerConfig: pconfig,
+		ConsumerConfig: cconfig,
+	}
+
+	client, err := sarama.NewClient(kafkaClientConfig.BaseName, kafkaClientConfig.Brokers, kafkaClientConfig.ClientConfig)
 	if err != nil {
 		t.Fatalf("failed to create kafka client: %v", err)
 	}
@@ -54,7 +68,7 @@ func TestReader(t *testing.T) {
 
 	go func() {
 		cnt := 0
-		for e := range StartTopicReader(TopicName, client, newTestMesgDecoder) {
+		for e := range StartTopicReader(TopicName, client, kafkaClientConfig, newTestMesgDecoder) {
 			switch msg := e.Message().(type) {
 			case *TestMesg:
 				// fmt.Printf("rx: %v\n", msg)

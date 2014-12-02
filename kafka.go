@@ -2,6 +2,7 @@ package grid
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"sync"
@@ -34,7 +35,7 @@ func StartTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer
 	}()
 }
 
-func StartTopicReader(topic string, client *sarama.Client, newdec func(io.Reader) Decoder) <-chan Event {
+func StartTopicReader(topic string, sharedClient *sarama.Client, clientConfig *KafkaConfig, newdec func(io.Reader) Decoder) <-chan Event {
 
 	// Consumers read from the real topic and push data
 	// into the out channel.
@@ -45,7 +46,7 @@ func StartTopicReader(topic string, client *sarama.Client, newdec func(io.Reader
 	// exited.
 	wg := new(sync.WaitGroup)
 
-	partitions, err := client.Partitions(topic)
+	partitions, err := sharedClient.Partitions(topic)
 	if err != nil {
 		log.Fatalf("error: topic: %v: failed getting kafka partition data: %v", topic, err)
 	}
@@ -56,10 +57,19 @@ func StartTopicReader(topic string, client *sarama.Client, newdec func(io.Reader
 		go func(wg *sync.WaitGroup, part int32, out chan<- Event) {
 			defer wg.Done()
 
+			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", clientConfig.BaseName, topic, part)
+
+			kclient, err := sarama.NewClient(name, clientConfig.Brokers, clientConfig.ClientConfig)
+			if err != nil {
+				return
+			}
+			defer kclient.Close()
+
+			//Not sure if its worth cloning/using clientConfig.ConsumerConfig, so just using the default...
 			config := sarama.NewConsumerConfig()
 			config.OffsetMethod = sarama.OffsetMethodNewest
 
-			consumer, err := sarama.NewConsumer(client, topic, part, "kdjfkdjfkd", config)
+			consumer, err := sarama.NewConsumer(kclient, topic, part, name, config)
 			if err != nil {
 				log.Fatalf("error: topic: %v consumer: %v", topic, err)
 			}
