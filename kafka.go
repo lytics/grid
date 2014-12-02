@@ -35,7 +35,7 @@ func startTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer
 	}()
 }
 
-func startTopicReader(topic string, client *sarama.Client, newdec func(io.Reader) Decoder) <-chan Event {
+func startTopicReader(topic string, sharedClient *sarama.Client, kconfig *KafkaConfig, newdec func(io.Reader) Decoder) <-chan Event {
 
 	// Consumers read from the real topic and push data
 	// into the out channel.
@@ -57,9 +57,9 @@ func startTopicReader(topic string, client *sarama.Client, newdec func(io.Reader
 		go func(wg *sync.WaitGroup, part int32, out chan<- Event) {
 			defer wg.Done()
 
-			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", clientConfig.BaseName, topic, part)
+			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kconfig.BaseName, topic, part)
 
-			kclient, err := sarama.NewClient(name, clientConfig.Brokers, clientConfig.ClientConfig)
+			kclient, err := sarama.NewClient(name, kconfig.Brokers, kconfig.ClientConfig)
 			if err != nil {
 				return
 			}

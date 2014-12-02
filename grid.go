@@ -29,8 +29,8 @@ type KafkaConfig struct {
 type Grid struct {
 	kafka     *sarama.Client
 	name      string
-	pconfig   *sarama.ProducerConfig
-	cconfig   *sarama.ConsumerConfig
+	cmdtopic  string
+	kconfig   *KafkaConfig
 	consumers []*sarama.Consumer
 	producers []*sarama.Producer
 	encoders  map[string]func(io.Writer) Encoder
@@ -67,19 +67,17 @@ func NewWithKafkaConfig(name string, kafkaClientConfig *KafkaConfig) (*Grid, err
 	}
 
 	g := &Grid{
-		kafka:         kafka,
-		kClientConfig: kafkaClientConfig,
-		name:          name,
-		cmdtopic: fmt.Sprintf("%v-cmd", name),
-		pconfig:       kafkaClientConfig.ProducerConfig,
-		cconfig:       kafkaClientConfig.ConsumerConfig,
-		consumers:     make([]*sarama.Consumer, 0),
-		encoders:      make(map[string]func(io.Writer) Encoder),
-		decoders:      make(map[string]func(io.Reader) Decoder),
-		ops:           make(map[string]*op),
-		wg:            new(sync.WaitGroup),
-		mutex:         new(sync.Mutex),
-		exit:     make(chan bool),
+		kafka:     kafka,
+		kconfig:   kafkaClientConfig,
+		name:      name,
+		cmdtopic:  fmt.Sprintf("%v-cmd", name),
+		consumers: make([]*sarama.Consumer, 0),
+		encoders:  make(map[string]func(io.Writer) Encoder),
+		decoders:  make(map[string]func(io.Reader) Decoder),
+		ops:       make(map[string]*op),
+		wg:        new(sync.WaitGroup),
+		mutex:     new(sync.Mutex),
+		exit:      make(chan bool),
 	}
 
 	g.wg.Add(1)
@@ -94,7 +92,7 @@ func (g *Grid) Start() error {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
-	in := startTopicReader(g.cmdtopic, g.kafka, g.kClientConfig, NewCmdMesgDecoder)
+	in := startTopicReader(g.cmdtopic, g.kafka, g.kconfig, NewCmdMesgDecoder)
 	out := startVoter(0, g.cmdtopic, 1, 0, in, g.exit)
 	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, out)
 
@@ -105,7 +103,7 @@ func (g *Grid) Start() error {
 		for _, topic := range op.inputs {
 			newdec, found := g.decoders[topic]
 			if found {
-				ins = append(ins, startTopicReader(topic, g.kafka, g.kClientConfig, newdec))
+				ins = append(ins, startTopicReader(topic, g.kafka, g.kconfig, newdec))
 			} else {
 				log.Printf("error: grid: %v() reader of: '%v', no decoder", fname, topic)
 			}
