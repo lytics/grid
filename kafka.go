@@ -73,6 +73,7 @@ func StartTopicReader(topic string, sharedClient *sarama.Client, clientConfig *K
 			if err != nil {
 				log.Fatalf("error: topic: %v consumer: %v", topic, err)
 			}
+			defer consumer.Close()
 
 			var buf bytes.Buffer
 			dec := newdec(&buf)
