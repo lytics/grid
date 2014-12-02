@@ -31,6 +31,7 @@ type Grid struct {
 	ops       map[string]*op
 	wg        *sync.WaitGroup
 	mutex     *sync.Mutex
+	exit      chan bool
 }
 
 func New(name string) (*Grid, error) {
@@ -44,17 +45,17 @@ func New(name string) (*Grid, error) {
 	cconfig.OffsetMethod = sarama.OffsetMethodNewest
 
 	g := &Grid{
-		kafka:     kafka,
-		name:      name,
-		cmdtopic:  fmt.Sprintf("%v-cmd", name),
-		pconfig:   pconfig,
-		cconfig:   cconfig,
-		consumers: make([]*sarama.Consumer, 0),
-		encoders:  make(map[string]func(io.Writer) Encoder),
-		decoders:  make(map[string]func(io.Reader) Decoder),
-		ops:       make(map[string]*op),
-		wg:        new(sync.WaitGroup),
-		mutex:     new(sync.Mutex),
+		kafka:    kafka,
+		name:     name,
+		cmdtopic: fmt.Sprintf("%v-cmd", name),
+		pconfig:  pconfig,
+		cconfig:  cconfig,
+		encoders: make(map[string]func(io.Writer) Encoder),
+		decoders: make(map[string]func(io.Reader) Decoder),
+		ops:      make(map[string]*op),
+		wg:       new(sync.WaitGroup),
+		mutex:    new(sync.Mutex),
+		exit:     make(chan bool),
 	}
 
 	g.wg.Add(1)
@@ -70,7 +71,7 @@ func (g *Grid) Start() error {
 	defer g.mutex.Unlock()
 
 	in := startTopicReader(g.cmdtopic, g.kafka, NewCmdMesgDecoder)
-	out := startVoter(0, g.cmdtopic, 1, 0, in)
+	out := startVoter(0, g.cmdtopic, 1, 0, in, g.exit)
 	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, out)
 
 	for fname, op := range g.ops {
@@ -116,15 +117,13 @@ func (g *Grid) Stop() {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
-	if g.consumers == nil {
+	if g.exit == nil {
 		return
 	}
 
-	log.Printf("grid: shutting down")
-	for _, consumer := range g.consumers {
-		consumer.Close()
-	}
-	g.consumers = nil
+	close(g.exit)
+	g.exit = nil
+
 	g.wg.Done()
 }
 

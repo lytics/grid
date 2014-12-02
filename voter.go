@@ -75,11 +75,11 @@ func (e Election) String() string {
 	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %d}", e.Term, e.Votes, e.Candidate)
 }
 
-func startVoter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event) <-chan Event {
+func startVoter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, exit <-chan bool) <-chan Event {
 	out := make(chan Event, 0)
 	go func() {
 		defer close(out)
-		voter(name, topic, quorum, maxleadertime, in, out)
+		voter(name, topic, quorum, maxleadertime, in, out, exit)
 	}()
 	return out
 }
@@ -111,7 +111,7 @@ func startVoter(name int, topic string, quorum uint32, maxleadertime int64, in <
 //     leaders to give up leadership in very short time periods.
 //     In normal running, set it to 0 to disable.
 //
-func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, out chan<- Event) {
+func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, out chan<- Event, exit <-chan bool) {
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
@@ -127,10 +127,12 @@ func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan
 	var term uint32
 	for {
 		select {
+		case <-exit:
+			return
 		case now := <-ticker.C:
 			if now.Unix()-lasthearbeat > HeartTimeout {
 				if state != Follower {
-					log.Printf("voter %v: transition: %v => %v", name, state, Follower)
+					log.Printf("grid: voter %v: transition: %v => %v", name, state, Follower)
 				}
 				state = Follower
 				elect = nil
@@ -140,7 +142,7 @@ func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
 				if state != Candidate {
-					log.Printf("voter %v: transition: %v => %v", name, state, Candidate)
+					log.Printf("grid: voter %v: transition: %v => %v", name, state, Candidate)
 				}
 				state = Candidate
 				lasthearbeat = time.Now().Unix()
@@ -159,14 +161,12 @@ func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan
 
 			switch data := cmdmsg.Data.(type) {
 			case Ping:
-				// log.Printf("%v rx: %v", name, data)
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				if name != data.Leader {
 					state = Follower
 				}
 			case Vote:
-				// log.Printf("%v rx: %v", name, data)
 				if elect == nil {
 					continue
 				}
@@ -175,7 +175,7 @@ func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan
 				}
 				if elect.Votes >= quorum && elect.Candidate == name {
 					if state != Leader {
-						log.Printf("voter %v: transition: %v => %v", name, state, Leader)
+						log.Printf("grid: voter %v: transition: %v => %v", name, state, Leader)
 					}
 					state = Leader
 					termstart = time.Now().Unix()
@@ -188,7 +188,6 @@ func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan
 					nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				}
 			case Election:
-				// log.Printf("%v rx: %v", name, data)
 				if elect != nil {
 					continue
 				}
@@ -199,7 +198,7 @@ func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan
 					out <- NewWritable(topic, Key, newVote(data.Candidate, data.Term, name))
 				}
 			default:
-				log.Printf("%v rx: unknonw type %T :: %v", name, data, data)
+				log.Printf("gird: voter: %v rx: unknonw type %T :: %v", name, data, data)
 			}
 		}
 	}
