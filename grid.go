@@ -27,18 +27,18 @@ type KafkaConfig struct {
 }
 
 type Grid struct {
-	kafka         *sarama.Client
-	kClientConfig *KafkaConfig
-	name          string
-	pconfig       *sarama.ProducerConfig
-	cconfig       *sarama.ConsumerConfig
-	consumers     []*sarama.Consumer
-	producers     []*sarama.Producer
-	encoders      map[string]func(io.Writer) Encoder
-	decoders      map[string]func(io.Reader) Decoder
-	ops           map[string]*op
-	wg            *sync.WaitGroup
-	mutex         *sync.Mutex
+	kafka     *sarama.Client
+	name      string
+	pconfig   *sarama.ProducerConfig
+	cconfig   *sarama.ConsumerConfig
+	consumers []*sarama.Consumer
+	producers []*sarama.Producer
+	encoders  map[string]func(io.Writer) Encoder
+	decoders  map[string]func(io.Reader) Decoder
+	ops       map[string]*op
+	wg        *sync.WaitGroup
+	mutex     *sync.Mutex
+	exit      chan bool
 }
 
 func New(name string) (*Grid, error) {
@@ -70,6 +70,7 @@ func NewWithKafkaConfig(name string, kafkaClientConfig *KafkaConfig) (*Grid, err
 		kafka:         kafka,
 		kClientConfig: kafkaClientConfig,
 		name:          name,
+		cmdtopic: fmt.Sprintf("%v-cmd", name),
 		pconfig:       kafkaClientConfig.ProducerConfig,
 		cconfig:       kafkaClientConfig.ConsumerConfig,
 		consumers:     make([]*sarama.Consumer, 0),
@@ -78,12 +79,13 @@ func NewWithKafkaConfig(name string, kafkaClientConfig *KafkaConfig) (*Grid, err
 		ops:           make(map[string]*op),
 		wg:            new(sync.WaitGroup),
 		mutex:         new(sync.Mutex),
+		exit:     make(chan bool),
 	}
 
 	g.wg.Add(1)
 
-	g.AddDecoder(NewCmdMesgDecoder, fmt.Sprintf("%v-cmd", name))
-	g.AddEncoder(NewCmdMesgEncoder, fmt.Sprintf("%v-cmd", name))
+	g.AddDecoder(NewCmdMesgDecoder, g.cmdtopic)
+	g.AddEncoder(NewCmdMesgEncoder, g.cmdtopic)
 
 	return g, nil
 }
@@ -92,6 +94,10 @@ func (g *Grid) Start() error {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
+	in := startTopicReader(g.cmdtopic, g.kafka, g.kClientConfig, NewCmdMesgDecoder)
+	out := startVoter(0, g.cmdtopic, 1, 0, in, g.exit)
+	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, out)
+
 	for fname, op := range g.ops {
 		log.Printf("grid: starting %v() <%v >%v", fname, op.inputs, op.outputs)
 
@@ -99,7 +105,7 @@ func (g *Grid) Start() error {
 		for _, topic := range op.inputs {
 			newdec, found := g.decoders[topic]
 			if found {
-				ins = append(ins, StartTopicReader(topic, g.kafka, g.kClientConfig, newdec))
+				ins = append(ins, startTopicReader(topic, g.kafka, g.kClientConfig, newdec))
 			} else {
 				log.Printf("error: grid: %v() reader of: '%v', no decoder", fname, topic)
 			}
@@ -109,8 +115,8 @@ func (g *Grid) Start() error {
 		outs := make(map[string]chan Event)
 
 		for topic, newenc := range g.encoders {
-			outs[topic] = make(chan Event, 100)
-			StartTopicWriter(topic, g.kafka, newenc, outs[topic])
+			outs[topic] = make(chan Event, 1024)
+			startTopicWriter(topic, g.kafka, newenc, outs[topic])
 
 			go func(fname string, out <-chan Event, outs map[string]chan Event) {
 				for e := range out {
@@ -127,18 +133,6 @@ func (g *Grid) Start() error {
 	return nil
 }
 
-func merge(ins []<-chan Event) <-chan Event {
-	merged := make(chan Event, 0)
-	for _, in := range ins {
-		go func(in <-chan Event) {
-			for m := range in {
-				merged <- m
-			}
-		}(in)
-	}
-	return merged
-}
-
 func (g *Grid) Wait() {
 	g.wg.Wait()
 }
@@ -147,15 +141,13 @@ func (g *Grid) Stop() {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
-	if g.consumers == nil {
+	if g.exit == nil {
 		return
 	}
 
-	log.Printf("grid: shutting down")
-	for _, consumer := range g.consumers {
-		consumer.Close()
-	}
-	g.consumers = nil
+	close(g.exit)
+	g.exit = nil
+
 	g.wg.Done()
 }
 
@@ -206,27 +198,14 @@ type op struct {
 	outputs []string
 }
 
-func (g *Grid) cmdTopicChannels(in <-chan *CmdMesg) (<-chan *CmdMesg, error) {
-	topic := fmt.Sprintf("%v-cmd", g.name)
-
-	kout := make(chan Event)
-	kin := StartTopicReader(topic, g.kafka, g.kClientConfig, g.decoders[topic])
-	StartTopicWriter(topic, g.kafka, g.encoders[topic], kout)
-
-	out := make(chan *CmdMesg)
-	go func() {
-		defer close(out)
-		for e := range kin {
-			out <- e.Message().(*CmdMesg)
-		}
-	}()
-
-	go func() {
-		defer close(kout)
-		for vm := range in {
-			kout <- NewWritable(topic, "", vm)
-		}
-	}()
-
-	return out, nil
+func merge(ins []<-chan Event) <-chan Event {
+	merged := make(chan Event, 1024)
+	for _, in := range ins {
+		go func(in <-chan Event) {
+			for m := range in {
+				merged <- m
+			}
+		}(in)
+	}
+	return merged
 }
