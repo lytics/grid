@@ -3,7 +3,6 @@ package grid
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -58,7 +57,7 @@ func TestReader(t *testing.T) {
 		for e := range StartTopicReader(TopicName, client, newTestMesgDecoder) {
 			switch msg := e.Message().(type) {
 			case *TestMesg:
-				fmt.Printf("rx: %v\n", msg)
+				// fmt.Printf("rx: %v\n", msg)
 				if msg.Data != cnt {
 					t.Fatalf("expected message #%d to equal %d, but was: %d", cnt, cnt, msg.Data)
 				}
