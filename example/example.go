@@ -86,7 +86,7 @@ func main() {
 //For this grid the source of the stream is a kafka topic named "topic1",
 //Defined by g.Read("add", "topic1") above.
 func consoleMessageSource() {
-	client, err := sarama.NewClient("consoleMessage-client", []string{"localhost:10092"}, sarama.NewClientConfig())
+	client, err := sarama.NewClient("console-client", []string{"localhost:10092"}, sarama.NewClientConfig())
 	if err != nil {
 		log.Fatalf("failed to create kafka client: %v", err)
 	}
@@ -98,14 +98,18 @@ func consoleMessageSource() {
 
 	for {
 		var i int
-		fmt.Println("Enter a number please:")
+		fmt.Println("Enter a number:")
 		if _, err := fmt.Scanf("%d", &i); err != nil {
-			fmt.Println("Your input was invalid!")
+			log.Printf("error: bad input")
 		} else {
-			fmt.Printf("Sending %d to the grid for processing.\n", i)
-
-			if bytes, err := json.Marshal(i); err != nil {
-				fmt.Println("error:", err)
+			log.Printf("sending %d to the grid for processing.\n", i)
+			data := struct {
+				Data int
+			}{
+				i,
+			}
+			if bytes, err := json.Marshal(data); err != nil {
+				log.Printf("error: %v", err)
 			} else {
 				producer.SendMessage(nil, sarama.StringEncoder(bytes))
 			}
@@ -121,7 +125,9 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
-				out <- grid.NewWritable(Key, NewNumMesg(1+mesg.Data))
+				outmsg := 1 + mesg.Data
+				log.Printf("add(): in-msg=%d -> out-mgs=%d\n", mesg.Data, outmsg)
+				out <- grid.NewWritable(Key, NewNumMesg(outmsg))
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
@@ -139,7 +145,9 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
-				out <- grid.NewWritable(Key, NewNumMesg(2*mesg.Data))
+				outmsg := 2 * mesg.Data
+				log.Printf("add(): in-msg=%d -> out-mgs=%d\n", mesg.Data, outmsg)
+				out <- grid.NewWritable(Key, NewNumMesg(outmsg))
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
