@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"time"
 )
 
@@ -24,21 +25,21 @@ const (
 
 // Ping is sent only by elected leader.
 type Ping struct {
-	Leader int
+	Leader string
 }
 
 // Vote is sent by any voter in response to an election.
 type Vote struct {
 	Term      uint32
-	Candidate int
-	From      int
+	Candidate string
+	From      string
 }
 
 // Election is started by any voter that has timed out the leader.
 type Election struct {
 	Term      uint32
 	Votes     uint32
-	Candidate int
+	Candidate string
 }
 
 func init() {
@@ -47,7 +48,7 @@ func init() {
 	gob.Register(Election{})
 }
 
-func newPing(leader int) *CmdMesg {
+func newPing(leader string) *CmdMesg {
 	return &CmdMesg{Data: Ping{Leader: leader}}
 }
 
@@ -55,7 +56,7 @@ func (p Ping) String() string {
 	return fmt.Sprintf("Ping{Leader: %d}", p.Leader)
 }
 
-func newVote(candidate int, term uint32, from int) *CmdMesg {
+func newVote(candidate string, term uint32, from string) *CmdMesg {
 	return &CmdMesg{Data: Vote{Term: term, Candidate: candidate, From: from}}
 }
 
@@ -63,7 +64,7 @@ func (v Vote) String() string {
 	return fmt.Sprintf("Vote{Term: %d, Candidate: %d, From: %d}", v.Term, v.Candidate, v.From)
 }
 
-func newElection(candidate int, term uint32) *CmdMesg {
+func newElection(candidate string, term uint32) *CmdMesg {
 	return &CmdMesg{Data: Election{Term: term, Votes: 1, Candidate: candidate}}
 }
 
@@ -75,11 +76,11 @@ func (e Election) String() string {
 	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %d}", e.Term, e.Votes, e.Candidate)
 }
 
-func startVoter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, exit <-chan bool) <-chan Event {
+func startVoter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, exit <-chan bool) <-chan Event {
 	out := make(chan Event, 0)
 	go func() {
 		defer close(out)
-		voter(name, topic, quorum, maxleadertime, in, out, exit)
+		voter(id, topic, quorum, maxleadertime, in, out, exit)
 	}()
 	return out
 }
@@ -111,7 +112,17 @@ func startVoter(name int, topic string, quorum uint32, maxleadertime int64, in <
 //     leaders to give up leadership in very short time periods.
 //     In normal running, set it to 0 to disable.
 //
-func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, out chan<- Event, exit <-chan bool) {
+//     The parmeter 'id' is a testing hook, to enable having
+//     multiple voters in a single process running the test.
+//
+func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, out chan<- Event, exit <-chan bool) {
+	host, err := os.Hostname()
+	if err != nil {
+		log.Printf("grid: failed to aquire voter name: %v", err)
+	}
+
+	name := fmt.Sprintf("%v-%v-%v", host, os.Getpid(), id)
+
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
