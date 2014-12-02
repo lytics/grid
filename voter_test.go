@@ -12,6 +12,7 @@ func TestElectionOf1(t *testing.T) {
 		maxleadertime = 10 // Test hook, use 0 for normal use.
 		voters        = 1
 		quorum        = 1
+		topic         = "test-election"
 	)
 
 	p := newPartition()
@@ -19,9 +20,9 @@ func TestElectionOf1(t *testing.T) {
 	wg.Add(voters)
 
 	for i := 0; i < voters; i++ {
-		out := make(chan *CmdMesg)
+		out := make(chan Event)
 		in := p.client(out)
-		go voter(i, quorum, maxleadertime, in, out)
+		go voter(i, topic, quorum, maxleadertime, in, out)
 	}
 	time.Sleep(45 * time.Second)
 
@@ -33,7 +34,7 @@ func TestElectionOf1(t *testing.T) {
 		t.Fatalf("no messages found")
 	}
 
-	switch data := p.data[0].Data.(type) {
+	switch data := p.data[0].Message().(type) {
 	case Election:
 	default:
 		t.Fatalf("first message should of been: Election but was: %v", data)
@@ -42,7 +43,7 @@ func TestElectionOf1(t *testing.T) {
 	leaderelected := false
 	votes := make(map[int]int)
 	for i := 1; i < p.head; i++ {
-		switch data := p.data[i].Data.(type) {
+		switch data := p.data[i].Message().(type) {
 		case Election:
 		case Vote:
 			votes[data.Candidate] = 1 + votes[data.Candidate]
@@ -67,6 +68,7 @@ func TestElectionOf3(t *testing.T) {
 		maxleadertime = 10 // Test hook, use 0 for normal use.
 		voters        = 3
 		quorum        = 2
+		topic         = "test-election"
 	)
 
 	p := newPartition()
@@ -74,9 +76,9 @@ func TestElectionOf3(t *testing.T) {
 	wg.Add(voters)
 
 	for i := 0; i < voters; i++ {
-		out := make(chan *CmdMesg)
+		out := make(chan Event)
 		in := p.client(out)
-		go voter(i, quorum, maxleadertime, in, out)
+		go voter(i, topic, quorum, maxleadertime, in, out)
 	}
 	time.Sleep(45 * time.Second)
 
@@ -88,7 +90,7 @@ func TestElectionOf3(t *testing.T) {
 		t.Fatalf("no messages found")
 	}
 
-	switch data := p.data[0].Data.(type) {
+	switch data := p.data[0].Message().(type) {
 	case Election:
 	default:
 		t.Fatalf("first message should of been: Election but was: %v", data)
@@ -96,7 +98,7 @@ func TestElectionOf3(t *testing.T) {
 
 	votes := make(map[int]int)
 	for i := 1; i < p.head; i++ {
-		switch data := p.data[i].Data.(type) {
+		switch data := p.data[i].Message().(type) {
 		case Election:
 		case Vote:
 			votes[data.Candidate] = 1 + votes[data.Candidate]
@@ -126,13 +128,13 @@ func isleaderelected(quorum int, votes map[int]int) bool {
 // operates as a log readable by multiple clients.
 type partition struct {
 	head  int
-	data  []*CmdMesg
+	data  []Event
 	mutex *sync.Mutex
 }
 
 // newPartition creates a new partition.
 func newPartition() *partition {
-	return &partition{data: make([]*CmdMesg, 1000000), mutex: new(sync.Mutex)}
+	return &partition{data: make([]Event, 1000000), mutex: new(sync.Mutex)}
 }
 
 // client creates a "client" for the partition. A client
@@ -141,9 +143,9 @@ func newPartition() *partition {
 // the partition, and a readbale channel returned
 // to the caller of consumable messages from the
 // partition.
-func (p *partition) client(in <-chan *CmdMesg) <-chan *CmdMesg {
-	out := make(chan *CmdMesg, 100)
-	go func(out chan<- *CmdMesg) {
+func (p *partition) client(in <-chan Event) <-chan Event {
+	out := make(chan Event, 100)
+	go func(out chan<- Event) {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		offset := 0
@@ -165,7 +167,7 @@ func (p *partition) client(in <-chan *CmdMesg) <-chan *CmdMesg {
 }
 
 // read reads from the partition a particular offset.
-func (p *partition) read(offset int) *CmdMesg {
+func (p *partition) read(offset int) Event {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
@@ -178,7 +180,7 @@ func (p *partition) read(offset int) *CmdMesg {
 
 // write writes to the end of the partition, unless it is
 // out of space.
-func (p *partition) write(m *CmdMesg) {
+func (p *partition) write(m Event) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 

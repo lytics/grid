@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	Key          = "0"
 	Skew         = 20
 	TickMillis   = 500
 	HeartTimeout = 6
@@ -101,7 +102,7 @@ func (e Election) String() string {
 //     leaders to give up leadership in very short time periods.
 //     In normal running, set it to 0 to disable.
 //
-func voter(name int, quorum uint32, maxleadertime int64, in <-chan *CmdMesg, out chan<- *CmdMesg) {
+func voter(name int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, out chan<- Event) {
 	defer close(out)
 
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
@@ -128,7 +129,7 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *CmdMesg, out
 				elect = nil
 			}
 			if state == Leader && (time.Now().Unix() < termstart+maxleadertime || maxleadertime == 0) {
-				out <- newCmdMesg(newPing(name))
+				out <- NewWritable(topic, Key, newPing(name))
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
 				if state != Candidate {
@@ -137,10 +138,10 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *CmdMesg, out
 				state = Candidate
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
-				out <- newCmdMesg(newElection(name, term))
+				out <- NewWritable(topic, Key, newElection(name, term))
 			}
 		case m := <-in:
-			switch data := m.Data.(type) {
+			switch data := m.Message().(type) {
 			case Ping:
 				// log.Printf("%v rx: %v", name, data)
 				lasthearbeat = time.Now().Unix()
@@ -179,7 +180,7 @@ func voter(name int, quorum uint32, maxleadertime int64, in <-chan *CmdMesg, out
 				term++
 				if !voted[data.Term] && state != Leader {
 					voted[data.Term] = true
-					out <- newCmdMesg(newVote(data.Candidate, data.Term, name))
+					out <- NewWritable(topic, Key, newVote(data.Candidate, data.Term, name))
 				}
 			default:
 				log.Printf("%v rx: unknonw type %T :: %v", name, data, data)

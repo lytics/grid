@@ -84,7 +84,7 @@ func (g *Grid) Start() error {
 		outs := make(map[string]chan Event)
 
 		for topic, newenc := range g.encoders {
-			outs[topic] = make(chan Event, 100)
+			outs[topic] = make(chan Event, 1024)
 			StartTopicWriter(topic, g.kafka, newenc, outs[topic])
 
 			go func(fname string, out <-chan Event, outs map[string]chan Event) {
@@ -100,18 +100,6 @@ func (g *Grid) Start() error {
 	}
 
 	return nil
-}
-
-func merge(ins []<-chan Event) <-chan Event {
-	merged := make(chan Event, 0)
-	for _, in := range ins {
-		go func(in <-chan Event) {
-			for m := range in {
-				merged <- m
-			}
-		}(in)
-	}
-	return merged
 }
 
 func (g *Grid) Wait() {
@@ -181,27 +169,14 @@ type op struct {
 	outputs []string
 }
 
-func (g *Grid) cmdTopicChannels(in <-chan *CmdMesg) (<-chan *CmdMesg, error) {
-	topic := fmt.Sprintf("%v-cmd", g.name)
-
-	kout := make(chan Event)
-	kin := StartTopicReader(topic, g.kafka, g.decoders[topic])
-	StartTopicWriter(topic, g.kafka, g.encoders[topic], kout)
-
-	out := make(chan *CmdMesg)
-	go func() {
-		defer close(out)
-		for e := range kin {
-			out <- e.Message().(*CmdMesg)
-		}
-	}()
-
-	go func() {
-		defer close(kout)
-		for vm := range in {
-			kout <- NewWritable(topic, "", vm)
-		}
-	}()
-
-	return out, nil
+func merge(ins []<-chan Event) <-chan Event {
+	merged := make(chan Event, 1024)
+	for _, in := range ins {
+		go func(in <-chan Event) {
+			for m := range in {
+				merged <- m
+			}
+		}(in)
+	}
+	return merged
 }
