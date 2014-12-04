@@ -63,29 +63,29 @@ func TestPeerSched(t *testing.T) {
 	// Now elements are deleted from the expected parts, if each expected
 	// part was indeed assigned to some instance of a function it is
 	// used as an index into the expected_parts mapping for deletion.
-	for host, _ := range peers {
-		finsts, found := sched.FunctionInstances(host)
+	for name, _ := range peers {
+		finsts, found := sched.Instances(name)
 		if !found {
-			t.Fatalf("failed to find function instances for host: %v", host)
+			t.Fatalf("failed to find function instances for peer: %v", name)
 		}
 		for _, fi := range finsts {
 			for topic, _ := range topics {
-				for _, part := range fi.topicslices[topic].parts {
+				for _, part := range fi.topicslices[topic] {
 					delete(expected_parts[fi.fname][topic], part)
 				}
 			}
 		}
 	}
 
-	for host, _ := range peers {
-		finsts, found := sched.FunctionInstances(host)
+	for name, _ := range peers {
+		finsts, found := sched.Instances(name)
 		if !found {
-			t.Fatalf("failed to find function instances for host: %v", host)
+			t.Fatalf("failed to find function instances for peer: %v", name)
 		}
 		for _, fi := range finsts {
 			for topic, _ := range topics {
 				if 0 != len(expected_parts[fi.fname][topic]) {
-					t.Fatalf("some partitions were not scheduled for reading: %v %v %v: %v", host, fi.fname, topic, partsstr(expected_parts[fi.fname][topic]))
+					t.Fatalf("some partitions were not scheduled for reading: %v %v %v: %v", name, fi.fname, topic, partsstr(expected_parts[fi.fname][topic]))
 				}
 			}
 		}
