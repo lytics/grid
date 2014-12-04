@@ -188,7 +188,6 @@ func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan E
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				if name != data.Leader {
 					state = Follower
-					out <- NewWritable(topic, Key, newPong(name, data.Term))
 				}
 			case Vote:
 				if elect == nil {
