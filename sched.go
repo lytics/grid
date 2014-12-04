@@ -43,6 +43,14 @@ func (hs HostSched) FunctionInstances(host string) ([]*FuncInst, bool) {
 	return fi, found
 }
 
+func (hs HostSched) FunctionInstancesNames(host string) map[string]bool {
+	fnames := make(map[string]bool)
+	for _, fi := range hs[host] {
+		fnames[fi.fname] = true
+	}
+	return fnames
+}
+
 // hostsched creates the schedule of which function instance should run on which host.
 func hostsched(hosts map[string]bool, ops map[string]*op, partitions map[string][]uint32) HostSched {
 
