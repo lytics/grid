@@ -1,7 +1,6 @@
 package grid
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -53,22 +52,9 @@ func TestManager(t *testing.T) {
 		t.Fatalf("unknown type %T", data)
 	}
 
-	gL, _ := json.Marshal(leader.gstate)
-	gLs := string(gL)
 	for _, mgr := range managers {
-		g1, _ := json.Marshal(mgr.gstate)
-		g1s := string(g1)
 		if !reflect.DeepEqual(mgr.gstate, leader.gstate) {
-			t.Fatalf("peers have missmatch states.  \n%v \nNot Equal \n%v", g1s, gLs)
+			t.Fatalf("peers have missmatch states.  \n%v \nNot Equal \n%v", mgr.gstate.String(), leader.gstate.String())
 		}
 	}
-
-	/*
-		switch data := d.Message().(type) {
-		case GridState:
-			t.Log(data.String())
-		default:
-			t.Fatalf("The head of the partition should be a cmdMsg with a gridstate message.  But we got: %T", data)
-		}
-	*/
 }
