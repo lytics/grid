@@ -42,8 +42,9 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 }
 
 func main() {
+	const estPeerCnt = 1
 
-	g, err := grid.New(GridName)
+	g, err := grid.New(GridName, estPeerCnt)
 	if err != nil {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
