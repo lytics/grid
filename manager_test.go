@@ -52,6 +52,7 @@ func TestManager(t *testing.T) {
 		t.Fatalf("unknown type %T", data)
 	}
 
+	//Ensure all the managers have the same grid state.
 	for _, mgr := range managers {
 		if !reflect.DeepEqual(mgr.gstate, leader.gstate) {
 			t.Fatalf("peers have missmatch states.  \n%v \nNot Equal \n%v", mgr.gstate.String(), leader.gstate.String())
