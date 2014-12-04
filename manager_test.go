@@ -17,18 +17,17 @@ func TestManager(t *testing.T) {
 	exit := make(chan bool)
 
 	managers := make([]*Manager, 0)
-	out := make(chan Event, 100)
 
 	for i := 0; i < mgrsCnt; i++ {
-		in := p.client(out)
-		mgr := NewManager(i, topic, mgrsCnt, in, out, exit)
+		mgr := NewManager(i, topic, mgrsCnt)
+		in := p.client(mgr.Events())
+		mgr.startStateMachine(in, exit)
 		managers = append(managers, mgr)
-		go mgr.stateMachine()
 	}
 
 	leader := managers[0]
-	evt := NewWritable(topic, Key, newPing(leader.name, 1))
-	p.write(evt)
+	evt := NewWritable(topic, Key, newPing(leader.Name, 1))
+	leader.out <- evt //Have the leader send out its first leader ping.
 
 	time.Sleep(1 * time.Second)
 
@@ -41,7 +40,7 @@ func TestManager(t *testing.T) {
 	case *CmdMesg:
 		cmdmsg = msg
 	default:
-		t.Logf("unknown type %T", msg)
+		t.Logf("unknown type :%T, psize:%v", msg, p.head)
 	}
 
 	// Check for type of message.
@@ -49,12 +48,13 @@ func TestManager(t *testing.T) {
 	case GridState:
 		t.Logf("The head of the partition is a gridstate message as expected. %v", data)
 	default:
-		t.Fatalf("unknown type %T", data)
+		t.Fatalf("unknown type:%T, psize:%v", data, p.head)
 	}
 
+	//Ensure all the managers have the same grid state.
 	for _, mgr := range managers {
 		if !reflect.DeepEqual(mgr.gstate, leader.gstate) {
-			t.Fatalf("peers have missmatch states.  \n%v \nNot Equal \n%v", mgr.gstate.String(), leader.gstate.String())
+			t.Fatalf("peers have mismatch states.  \n%v \nNot Equal \n%v", mgr.gstate.String(), leader.gstate.String())
 		}
 	}
 }

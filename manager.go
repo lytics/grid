@@ -1,6 +1,7 @@
 package grid
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -51,22 +52,20 @@ func (g *GridState) DeepCopy() *GridState {
 }
 
 func (g *GridState) String() string {
-	str := fmt.Sprintf("[term:%v, ver:%v, ", g.Term, g.Version)
-	str = str + "peers:[ \n"
-	for _, peer := range g.Peers {
-		str = str + fmt.Sprintf("   peer:[peerid:%s health:%d pongts:%d peerrank:%d] \n", peer.PeerId, peer.Health, peer.LastPongTs, peer.Rank)
+	b, err := json.Marshal(g)
+	if err != nil {
+		return ""
 	}
-	str = str + "]] "
-	return str
+	return string(b)
 }
 
 type Manager struct {
 	term               uint32
-	name               string
+	Name               string
 	rank               Rank
 	gstate             *GridState
 	in                 <-chan Event
-	out                chan<- Event
+	out                chan Event
 	exit               <-chan bool
 	id                 int
 	topic              string
@@ -75,18 +74,19 @@ type Manager struct {
 	expectedPeerCnt    int
 }
 
-func NewManager(id int, topic string, expectedPeerCnt int, in <-chan Event, out chan<- Event, exit <-chan bool) *Manager {
+func NewManager(id int, topic string, expectedPeerCnt int) *Manager {
 	name := buildPeerId(id)
+	out := make(chan Event, 2)
 	gridState := &GridState{Term: 0, Peers: make(map[string]*Peer)}
 	gridState.Peers[name] = &Peer{Rank: Follower, PeerId: name, Health: Active, LastPongTs: time.Now().Unix()}
 	return &Manager{
 		term:               0,
-		name:               name,
+		Name:               name,
 		rank:               Follower,
 		gstate:             gridState,
-		in:                 in,
+		in:                 nil,
 		out:                out,
-		exit:               exit,
+		exit:               nil,
 		id:                 id,
 		topic:              topic,
 		HeartTimeout:       HeartTimeout,
@@ -95,7 +95,13 @@ func NewManager(id int, topic string, expectedPeerCnt int, in <-chan Event, out 
 	}
 }
 
-func (m *Manager) startStateMachine() {
+func (m *Manager) Events() <-chan Event {
+	return m.out
+}
+
+func (m *Manager) startStateMachine(in <-chan Event, exit <-chan bool) {
+	m.in = in
+	m.exit = exit
 	go func() {
 		//TODO maybe add logic to prevent starting this go routine twice???
 		m.stateMachine()
@@ -129,6 +135,7 @@ func (m *Manager) stateMachine() {
 
 			gstateChanged := false
 			activePeerCnt := 0
+			timedOuthosts := 0
 
 			for _, peer := range m.gstate.Peers { // Update health states
 				if now.Unix()-peer.LastPongTs > m.HeartTimeout && peer.Health != Timeout {
@@ -136,6 +143,7 @@ func (m *Manager) stateMachine() {
 					oldHealth := peer.Health
 					peer.Health = Timeout
 					gstateChanged = true
+					timedOuthosts++
 					log.Printf("statemachine:peer[%v] transitioned from Health[%v -> %v]", peer.PeerId, oldHealth, peer.Health)
 					//TODO Take any actions we need to when a hosts first goes into Timeout state
 				} else if now.Unix()-peer.LastPongTs > m.HeartTimeout {
@@ -152,20 +160,30 @@ func (m *Manager) stateMachine() {
 					activePeerCnt++
 				}
 
-				//Demote any who isn't me
-				if peer.Rank == Leader && peer.PeerId != m.name {
+				//Demote any one who isn't me
+				if peer.Rank == Leader && peer.PeerId != m.Name {
 					peer.Rank = Follower
 					gstateChanged = true
-				} else if peer.Rank != Leader && peer.PeerId == m.name {
-					m.gstate.Peers[m.name].Rank = Leader
+				} else if peer.Rank != Leader && peer.PeerId == m.Name {
+					m.gstate.Peers[m.Name].Rank = Leader
 					gstateChanged = true
 				}
 			}
 
 			if gstateChanged && activePeerCnt == m.expectedPeerCnt {
 				m.gstate.Version++
-				log.Printf("statemachine: emitting new state. leader-name:%s \ngstate:%s ", m.name, m.gstate.String())
+				//log.Printf("statemachine: emitting new state. leader-name:%s \ngstate:%s ", m.Name, m.gstate.String())
+
 				//TODO generate the func schedule.
+
+				m.out <- NewWritable(m.topic, Key, &CmdMesg{Data: *m.gstate})
+				m.lastEmittedVersion = m.gstate.Version
+			} else if timedOuthosts > 0 && activePeerCnt+timedOuthosts == m.expectedPeerCnt {
+				m.gstate.Version++
+				//log.Printf("statemachine: We have lost hosts in the grid, emitting new state. leader-name:%s \ngstate:%s ", m.Name, m.gstate.String())
+
+				//TODO generate the func schedule.  //For now do we just shut down all work???
+
 				m.out <- NewWritable(m.topic, Key, &CmdMesg{Data: *m.gstate})
 				m.lastEmittedVersion = m.gstate.Version
 			}
@@ -185,26 +203,25 @@ func (m *Manager) stateMachine() {
 			switch data := cmdmsg.Data.(type) {
 			case Ping:
 				lasthearbeat = time.Now().Unix()
-				log.Printf("ping:[%v] rank:%v cterm:%v myname:%v ", data, m.rank, m.term, m.name)
+				//log.Printf("ping:[%v] rank:%v cterm:%v myname:%v ", data, m.rank, m.term, m.Name)
 				if data.Term < m.term {
-					log.Printf("ping: term mismatch")
+					log.Printf("ping[%v]: term mismatch. rank:%v cterm:%v myname:%v ", data, m.rank, m.term, m.Name)
 					continue
 				}
 				m.term = data.Term
 
-				if data.Leader == m.name {
-					log.Printf("ping: Im a leader. term=%d", m.term)
+				if data.Leader == m.Name {
+					//log.Printf("ping: Im a leader. term=%d", m.term)
 					m.rank = Leader
 				} else {
-					log.Printf("ping: Im a follower. term=%d", m.term)
-					m.gstate.Peers[m.name].Rank = Follower
+					//log.Printf("ping: Im a follower. term=%d", m.term)
+					m.gstate.Peers[m.Name].Rank = Follower
 					m.rank = Follower
-					m.out <- NewWritable(m.topic, Key, newPong(m.name, data.Term))
+					m.out <- NewWritable(m.topic, Key, newPong(m.Name, data.Term))
 				}
 
 			case Pong:
-
-				log.Printf("pong:[%v] rank:%v cterm:%v", data, m.rank, m.term)
+				//log.Printf("pong:[%v] rank:%v cterm:%v", data, m.rank, m.term)
 				if data.Term != m.term { // not sure if the should be < instead of !=
 					continue
 				}
@@ -216,27 +233,27 @@ func (m *Manager) stateMachine() {
 				}
 			case GridState:
 				oldGstate := m.gstate
-				log.Printf("gridstate: name:%v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, m.rank, m.term, data.String(), oldGstate.String())
-				//TODO For now I'm going to allow duplicate versions to be re-processed,
-				// otherwise the leader would reject the new state.  I think I need to rework the code so that the code above works on a copy until its received
+				//log.Printf("gridstate: name:%v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.Name, m.rank, m.term, data.String(), oldGstate.String())
 				if data.Version < m.gstate.Version {
-					log.Printf("Warning: gstate: Got a new gstate with an old or matching version. name:%v oldgs:%v \nnewgs:%v ", m.name, oldGstate.String(), data.String())
+					//TODO For now I'm going to allow duplicate versions to be re-processed,
+					// otherwise the leader would reject the new state.  I think I need to rework the code so that the code above works on a copy until its received
+
+					log.Printf("Warning: gstate: Got a new gstate with an old or matching version. name:%v oldgs:%v \nnewgs:%v ", m.Name, oldGstate.String(), data.String())
 					continue
 				}
 
 				if data.Term < m.term {
-					log.Printf("Warning: gstate: Got a new gstate from an old election term. name:%v oldgs:%v \nnewgs:%v ", m.name, oldGstate.String(), data.String())
+					log.Printf("Warning: gstate: Got a new gstate from an old election term. name:%v oldgs:%v \nnewgs:%v ", m.Name, oldGstate.String(), data.String())
 					continue
 				}
 
 				m.gstate = &data
 
 				//act on my part of the state
-				// Do Func schedule for m.gstate.Peers[m.name]
+				// Do Func schedule for m.gstate.Peers[m.Name]
 
-				log.Println("done processing GridState.")
 			default:
-				log.Printf("Unknown message: %v", cmdmsg)
+				log.Printf("Unknown message: msg:%v term:%v rank:%v name:%v", cmdmsg, m.term, m.rank, m.Name)
 			}
 		}
 	}

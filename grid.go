@@ -27,21 +27,22 @@ type KafkaConfig struct {
 }
 
 type Grid struct {
-	kafka     *sarama.Client
-	name      string
-	cmdtopic  string
-	kconfig   *KafkaConfig
-	consumers []*sarama.Consumer
-	producers []*sarama.Producer
-	encoders  map[string]func(io.Writer) Encoder
-	decoders  map[string]func(io.Reader) Decoder
-	ops       map[string]*op
-	wg        *sync.WaitGroup
-	mutex     *sync.Mutex
-	exit      chan bool
+	kafka      *sarama.Client
+	name       string
+	estPeerCnt int
+	cmdtopic   string
+	kconfig    *KafkaConfig
+	consumers  []*sarama.Consumer
+	producers  []*sarama.Producer
+	encoders   map[string]func(io.Writer) Encoder
+	decoders   map[string]func(io.Reader) Decoder
+	ops        map[string]*op
+	wg         *sync.WaitGroup
+	mutex      *sync.Mutex
+	exit       chan bool
 }
 
-func New(name string) (*Grid, error) {
+func New(name string, estimatedPeerCount int) (*Grid, error) {
 
 	brokers := []string{"localhost:10092"}
 
@@ -57,27 +58,28 @@ func New(name string) (*Grid, error) {
 		ConsumerConfig: cconfig,
 	}
 
-	return NewWithKafkaConfig(name, kafkaClientConfig)
+	return NewWithKafkaConfig(name, estimatedPeerCount, kafkaClientConfig)
 }
 
-func NewWithKafkaConfig(name string, kafkaClientConfig *KafkaConfig) (*Grid, error) {
+func NewWithKafkaConfig(name string, estimatedPeerCount int, kafkaClientConfig *KafkaConfig) (*Grid, error) {
 	kafka, err := sarama.NewClient(kafkaClientConfig.BaseName+"_shared_client", kafkaClientConfig.Brokers, kafkaClientConfig.ClientConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	g := &Grid{
-		kafka:     kafka,
-		kconfig:   kafkaClientConfig,
-		name:      name,
-		cmdtopic:  fmt.Sprintf("%v-cmd", name),
-		consumers: make([]*sarama.Consumer, 0),
-		encoders:  make(map[string]func(io.Writer) Encoder),
-		decoders:  make(map[string]func(io.Reader) Decoder),
-		ops:       make(map[string]*op),
-		wg:        new(sync.WaitGroup),
-		mutex:     new(sync.Mutex),
-		exit:      make(chan bool),
+		kafka:      kafka,
+		kconfig:    kafkaClientConfig,
+		name:       name,
+		estPeerCnt: estimatedPeerCount,
+		cmdtopic:   fmt.Sprintf("%v-cmd", name),
+		consumers:  make([]*sarama.Consumer, 0),
+		encoders:   make(map[string]func(io.Writer) Encoder),
+		decoders:   make(map[string]func(io.Reader) Decoder),
+		ops:        make(map[string]*op),
+		wg:         new(sync.WaitGroup),
+		mutex:      new(sync.Mutex),
+		exit:       make(chan bool),
 	}
 
 	g.wg.Add(1)
@@ -92,9 +94,15 @@ func (g *Grid) Start() error {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 
+	quorum := uint32((g.estPeerCnt / 2) + 1)
+	leaderin := startTopicReader(g.cmdtopic, g.kafka, g.kconfig, NewCmdMesgDecoder)
+	leaderout := startVoter(0, g.cmdtopic, quorum, 0, leaderin, g.exit)
+	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, leaderout)
+
 	in := startTopicReader(g.cmdtopic, g.kafka, g.kconfig, NewCmdMesgDecoder)
-	out := startVoter(0, g.cmdtopic, 1, 0, in, g.exit)
-	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, out)
+	mgr := NewManager(0, g.cmdtopic, g.estPeerCnt)
+	mgr.startStateMachine(in, g.exit)
+	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, mgr.Events())
 
 	for fname, op := range g.ops {
 		log.Printf("grid: starting %v() <%v >%v", fname, op.inputs, op.outputs)
