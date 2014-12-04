@@ -66,9 +66,14 @@ func TestReader(t *testing.T) {
 	in := make(chan Event, 0)
 	startTopicWriter(TopicName, client, newTestMesgEncoder, in)
 
+	parts, err := client.Partitions(TopicName)
+	if err != nil {
+		t.Fatalf("error: topic: %v: failed getting kafka partition data: %v", TopicName, err)
+	}
+
 	go func() {
 		cnt := 0
-		for e := range startTopicReader(TopicName, client, kafkaClientConfig, newTestMesgDecoder) {
+		for e := range startTopicReader(TopicName, kafkaClientConfig, newTestMesgDecoder, parts) {
 			switch msg := e.Message().(type) {
 			case *TestMesg:
 				// fmt.Printf("rx: %v\n", msg)

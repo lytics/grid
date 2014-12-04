@@ -21,7 +21,9 @@ func TestElectionOf1(t *testing.T) {
 	for i := 0; i < voters; i++ {
 		out := make(chan Event)
 		in := p.client(out)
-		go voter(i, topic, quorum, maxleadertime, in, out, exit)
+
+		v := NewVoter(i, topic, quorum, maxleadertime)
+		go v.stateMachine(in, out, exit)
 	}
 	time.Sleep(45 * time.Second)
 
@@ -48,7 +50,9 @@ func TestElectionOf3(t *testing.T) {
 	for i := 0; i < voters; i++ {
 		out := make(chan Event)
 		in := p.client(out)
-		go voter(i, topic, quorum, maxleadertime, in, out, exit)
+
+		v := NewVoter(i, topic, quorum, maxleadertime)
+		go v.stateMachine(in, out, exit)
 	}
 
 	time.Sleep(45 * time.Second)

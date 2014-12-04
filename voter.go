@@ -92,18 +92,34 @@ func (e Election) String() string {
 	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %v}", e.Term, e.Votes, e.Candidate)
 }
 
-func startVoter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, exit <-chan bool) <-chan Event {
+type Voter struct {
+	name          string
+	topic         string
+	quorum        uint32
+	maxleadertime int64
+}
+
+func NewVoter(id int, topic string, quorum uint32, maxleadertime int64) *Voter {
+	return &Voter{
+		name:          buildPeerName(id),
+		topic:         topic,
+		quorum:        quorum,
+		maxleadertime: maxleadertime,
+	}
+}
+
+func (v *Voter) startStateMachine(in <-chan Event, exit <-chan bool) <-chan Event {
 	out := make(chan Event, 0)
 	go func() {
 		defer close(out)
-		voter(id, topic, quorum, maxleadertime, in, out, exit)
+		v.stateMachine(in, out, exit)
 	}()
 	return out
 }
 
-// voter implements a RAFT election voter. It requires that the messages
-// sent to the output channel have the same total-ordering for all
-// voters participating in the elections.
+// stateMachine implements a RAFT election voter. It requires that the
+// messages sent to the output channel have the same total-ordering
+// for all voters participating in the elections.
 //
 // The basic sketch of an election:
 //
@@ -131,9 +147,7 @@ func startVoter(id int, topic string, quorum uint32, maxleadertime int64, in <-c
 //     The parmeter 'id' is a testing hook, to enable having
 //     multiple voters in a single process running the test.
 //
-func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, out chan<- Event, exit <-chan bool) {
-	name := buildPeerId(id)
-
+func (v *Voter) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bool) {
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
@@ -154,27 +168,27 @@ func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan E
 		case now := <-ticker.C:
 			if now.Unix()-lasthearbeat > HeartTimeout {
 				if state != Follower {
-					log.Printf("grid: voter %v: transition: %v => %v", name, state, Follower)
+					log.Printf("grid: voter %v: transition: %v => %v", v.name, state, Follower)
 				}
 				state = Follower
 				elect = nil
 			}
-			if state == Leader && (time.Now().Unix() < termstart+maxleadertime || maxleadertime == 0) {
-				out <- NewWritable(topic, Key, newPing(name, elect.Term))
+			if state == Leader && (time.Now().Unix() < termstart+v.maxleadertime || v.maxleadertime == 0) {
+				out <- NewWritable(v.topic, Key, newPing(v.name, elect.Term))
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
 				if state != Candidate {
-					log.Printf("grid: voter %v: transition: %v => %v", name, state, Candidate)
+					log.Printf("grid: voter %v: transition: %v => %v", v.name, state, Candidate)
 				}
 				state = Candidate
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
-				out <- NewWritable(topic, Key, newElection(name, term))
+				out <- NewWritable(v.topic, Key, newElection(v.name, term))
 			}
-		case m := <-in:
+		case event := <-in:
 			var cmdmsg *CmdMesg
 
-			switch msg := m.Message().(type) {
+			switch msg := event.Message().(type) {
 			case *CmdMesg:
 				cmdmsg = msg
 			default:
@@ -186,7 +200,7 @@ func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan E
 			case Ping:
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
-				if name != data.Leader {
+				if v.name != data.Leader {
 					state = Follower
 				}
 			case Vote:
@@ -196,17 +210,17 @@ func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan E
 				if elect.Candidate != data.From && elect.Candidate == data.Candidate && elect.Term == data.Term {
 					elect.Votes = elect.Votes + 1
 				}
-				if elect.Votes >= quorum && elect.Candidate == name {
+				if elect.Votes >= v.quorum && elect.Candidate == v.name {
 					if state != Leader {
-						log.Printf("grid: voter %v: transition: %v => %v", name, state, Leader)
+						log.Printf("grid: voter %v: transition: %v => %v", v.name, state, Leader)
 					}
 					state = Leader
 					termstart = time.Now().Unix()
 				}
-				if elect.Votes >= quorum && elect.Candidate != name {
+				if elect.Votes >= v.quorum && elect.Candidate != v.name {
 					state = Follower
 				}
-				if elect.Votes >= quorum {
+				if elect.Votes >= v.quorum {
 					lasthearbeat = time.Now().Unix()
 					nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				}
@@ -218,10 +232,10 @@ func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan E
 				term++
 				if !voted[data.Term] && state != Leader {
 					voted[data.Term] = true
-					out <- NewWritable(topic, Key, newVote(data.Candidate, data.Term, name))
+					out <- NewWritable(v.topic, Key, newVote(data.Candidate, data.Term, v.name))
 				}
 			default:
-				log.Printf("gird: voter: %v rx: unknonw type %T :: %v", name, data, data)
+				// Ignore other command messages.
 			}
 		}
 	}

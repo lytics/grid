@@ -35,7 +35,7 @@ func startTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer
 	}()
 }
 
-func startTopicReader(topic string, sharedClient *sarama.Client, kconfig *KafkaConfig, newdec func(io.Reader) Decoder) <-chan Event {
+func startTopicReader(topic string, kconfig *KafkaConfig, newdec func(io.Reader) Decoder, parts []int32) <-chan Event {
 
 	// Consumers read from the real topic and push data
 	// into the out channel.
@@ -46,12 +46,7 @@ func startTopicReader(topic string, sharedClient *sarama.Client, kconfig *KafkaC
 	// exited.
 	wg := new(sync.WaitGroup)
 
-	partitions, err := sharedClient.Partitions(topic)
-	if err != nil {
-		log.Fatalf("error: topic: %v: failed getting kafka partition data: %v", topic, err)
-	}
-
-	for _, part := range partitions {
+	for _, part := range parts {
 		wg.Add(1)
 
 		go func(wg *sync.WaitGroup, part int32, out chan<- Event) {
