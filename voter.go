@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
 	"time"
 )
 
@@ -17,8 +16,10 @@ const (
 	ElectTimeout = 20
 )
 
+type Rank int
+
 const (
-	Follower = iota
+	Follower Rank = iota
 	Candidate
 	Leader
 )
@@ -131,12 +132,7 @@ func startVoter(id int, topic string, quorum uint32, maxleadertime int64, in <-c
 //     multiple voters in a single process running the test.
 //
 func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan Event, out chan<- Event, exit <-chan bool) {
-	host, err := os.Hostname()
-	if err != nil {
-		log.Printf("grid: failed to aquire voter name: %v", err)
-	}
-
-	name := fmt.Sprintf("%v-%v-%v", host, os.Getpid(), id)
+	name := buildPeerId(id)
 
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
@@ -192,7 +188,6 @@ func voter(id int, topic string, quorum uint32, maxleadertime int64, in <-chan E
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				if name != data.Leader {
 					state = Follower
-					out <- NewWritable(topic, Key, newPong(name, data.Term))
 				}
 			case Vote:
 				if elect == nil {

@@ -50,6 +50,7 @@ func TestElectionOf3(t *testing.T) {
 		in := p.client(out)
 		go voter(i, topic, quorum, maxleadertime, in, out, exit)
 	}
+
 	time.Sleep(45 * time.Second)
 
 	// Election is finished, now check the partition data
