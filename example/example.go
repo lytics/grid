@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -41,10 +42,13 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 	return &numcoder{json.NewEncoder(w), nil}
 }
 
-func main() {
-	const estPeerCnt = 1
+var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will take part in the grid.")
+var peerid = flag.Int("peerid", 1, "the expected number of peers that will take part in the grid.")
 
-	g, err := grid.New(GridName, estPeerCnt)
+func main() {
+	flag.Parse()
+
+	g, err := grid.New(GridName, *peerid, *peercnt)
 	if err != nil {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
@@ -52,12 +56,12 @@ func main() {
 	g.AddDecoder(NewNumMesgDecoder, "topic1", "topic2", "topic3")
 	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
-	err = g.Add("add", 1, add, "topic1")
+	err = g.Add("add", 3, add, "topic1")
 	if err != nil {
 		log.Fatalf("error: example: %v", err)
 	}
 
-	err = g.Add("mul", 1, mul, "topic2")
+	err = g.Add("mul", 3, mul, "topic2")
 	if err != nil {
 		log.Fatalf("error: example: %v", err)
 	}

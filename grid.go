@@ -41,7 +41,7 @@ type Grid struct {
 	manager  *Manager
 }
 
-func New(name string, peercnt int) (*Grid, error) {
+func New(name string, peerid int, peercnt int) (*Grid, error) {
 
 	brokers := []string{"localhost:10092"}
 
@@ -57,10 +57,10 @@ func New(name string, peercnt int) (*Grid, error) {
 		ConsumerConfig: cconfig,
 	}
 
-	return NewWithKafkaConfig(name, peercnt, kafkaClientConfig)
+	return NewWithKafkaConfig(name, peerid, peercnt, kafkaClientConfig)
 }
 
-func NewWithKafkaConfig(name string, peercnt int, kconfig *KafkaConfig) (*Grid, error) {
+func NewWithKafkaConfig(name string, peerid int, peercnt int, kconfig *KafkaConfig) (*Grid, error) {
 	kafka, err := sarama.NewClient(kconfig.BaseName+"_shared_client", kconfig.Brokers, kconfig.ClientConfig)
 	if err != nil {
 		return nil, err
