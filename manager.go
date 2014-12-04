@@ -22,14 +22,15 @@ type Peer struct {
 	LastPongTs int64
 }
 
-func newPeer(id string, r Rank, h Health, lastpong int64) *Peer {
-	return &Peer{Name: id, Rank: r, Health: h, LastPongTs: lastpong}
+func newPeer(name string, r Rank, h Health, lastpong int64) *Peer {
+	return &Peer{Name: name, Rank: r, Health: h, LastPongTs: lastpong}
 }
 
 type GridState struct {
 	Term    uint32
 	Version uint32
 	Peers   map[string]*Peer
+	Sched   PeerSched
 }
 
 func (g *GridState) String() string {
@@ -47,6 +48,7 @@ type Manager struct {
 	gstate  *GridState
 	topic   string
 	peercnt int
+	parts   map[string][]int32
 	ops     map[string]*op
 }
 
@@ -135,7 +137,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bo
 			if gstateChanged && activePeerCnt == m.peercnt {
 				m.gstate.Version++
 				log.Printf("grid: manager %v: emitting new state; \ngstate:%s ", m.name, m.gstate)
-				// Everyone should be told to start, emit state as such.
+				m.gstate.Sched = peersched(m.gstate.Peers, m.ops, m.parts)
 				out <- NewWritable(m.topic, Key, &CmdMesg{Data: *m.gstate})
 			} else if timedOuthosts > 0 && activePeerCnt+timedOuthosts == m.peercnt {
 				m.gstate.Version++
@@ -185,7 +187,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bo
 					m.gstate.Peers[data.Follower] = newPeer(data.Follower, Follower, Active, time.Now().Unix())
 				}
 			case GridState:
-				// log.Printf("gridstate: name:%v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, m.rank, m.term, data.String(), oldGstate.String())
+				log.Printf("gridstate: name:%v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, m.rank, m.term, data, m.gstate)
 				//TODO For now I'm going to allow duplicate versions to be re-processed,
 				// otherwise the leader would reject the new state.  I think I need to rework the code so that the code above works on a copy until its received
 				if data.Version < m.gstate.Version {

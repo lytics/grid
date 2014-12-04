@@ -6,7 +6,7 @@ import "fmt"
 // running instance of 'f' will read from.
 type TopicSlice struct {
 	topic string
-	parts []uint32
+	parts []int32
 }
 
 func (ts *TopicSlice) String() string {
@@ -14,7 +14,7 @@ func (ts *TopicSlice) String() string {
 }
 
 func NewTopicSlice(topic string) *TopicSlice {
-	return &TopicSlice{topic: topic, parts: make([]uint32, 0)}
+	return &TopicSlice{topic: topic, parts: make([]int32, 0)}
 }
 
 // FuncInst is the full mapping of topic slices that a particular
@@ -34,33 +34,33 @@ func NewFuncInst(i int, fname string) *FuncInst {
 	return &FuncInst{i: i, fname: fname, topicslices: make(map[string]*TopicSlice)}
 }
 
-// HostSched is a mapping from hostnames to a slice of function instance
-// definitions that should run on that host.
-type HostSched map[string][]*FuncInst
+// PeerSched is a mapping from peernames to a slice of function instance
+// definitions that should run on that peer.
+type PeerSched map[string][]*FuncInst
 
-func (hs HostSched) FunctionInstances(host string) ([]*FuncInst, bool) {
-	fi, found := hs[host]
+func (hs PeerSched) FunctionInstances(name string) ([]*FuncInst, bool) {
+	fi, found := hs[name]
 	return fi, found
 }
 
-func (hs HostSched) FunctionInstancesNames(host string) map[string]bool {
+func (hs PeerSched) FunctionInstancesNames(name string) map[string]bool {
 	fnames := make(map[string]bool)
-	for _, fi := range hs[host] {
+	for _, fi := range hs[name] {
 		fnames[fi.fname] = true
 	}
 	return fnames
 }
 
-// hostsched creates the schedule of which function instance should run on which host.
-func hostsched(hosts map[string]bool, ops map[string]*op, partitions map[string][]uint32) HostSched {
+// peersched creates the schedule of which function instance should run on which peer.
+func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]int32) PeerSched {
 
-	sched := HostSched{}
+	sched := PeerSched{}
 
-	// Every host shold get some function instances, so just
-	// initialize the map of hosts and their slice of
+	// Every peer shold get some function instances, so just
+	// initialize the map of peers and their slice of
 	// function instances upfront.
-	for host, _ := range hosts {
-		sched[host] = make([]*FuncInst, 0)
+	for peer, _ := range peers {
+		sched[peer] = make([]*FuncInst, 0)
 	}
 
 	for fname, op := range ops {
@@ -86,23 +86,23 @@ func hostsched(hosts map[string]bool, ops map[string]*op, partitions map[string]
 		// robins the partitions of a topic to the instance of
 		// functions.
 		for topic, _ := range op.inputs {
-			parts := make([]uint32, len(partitions[topic]))
-			copy(parts, partitions[topic])
+			ps := make([]int32, len(parts[topic]))
+			copy(ps, parts[topic])
 
-			for i := 0; i < len(parts); i++ {
-				finsts[i%op.n].topicslices[topic].parts = append(finsts[i%op.n].topicslices[topic].parts, parts[i])
+			for i := 0; i < len(ps); i++ {
+				finsts[i%op.n].topicslices[topic].parts = append(finsts[i%op.n].topicslices[topic].parts, ps[i])
 			}
 		}
 
-		// Round-robin each function instance to the hosts. Basially
-		// each host steals one function instance until none remain.
+		// Round-robin each function instance to the peers. Basially
+		// each peer steals one function instance until none remain.
 		i := len(finsts) - 1
 		for i >= 0 {
-			for host, _ := range hosts {
+			for peer, _ := range peers {
 				if i < 0 {
 					continue
 				}
-				sched[host] = append(sched[host], finsts[i])
+				sched[peer] = append(sched[peer], finsts[i])
 				i--
 			}
 		}

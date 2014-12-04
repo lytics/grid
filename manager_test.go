@@ -13,10 +13,21 @@ func TestManager(t *testing.T) {
 		mgrsCnt = 3
 	)
 
+	f := func(in <-chan Event) <-chan Event { return nil }
 	p := newPartition()
 	exit := make(chan bool)
-
 	managers := make([]*Manager, 0)
+
+	topics := make(map[string]bool)
+	topics["topic1"] = true
+	topics["topic2"] = true
+
+	parts := make(map[string][]int32)
+	parts["topic1"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
+	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
+
+	ops := make(map[string]*op)
+	ops["f1"] = &op{f: f, n: 2, inputs: topics}
 
 	for i := 0; i < mgrsCnt; i++ {
 		out := make(chan Event)
@@ -24,6 +35,9 @@ func TestManager(t *testing.T) {
 
 		mgr := NewManager(i, topic, mgrsCnt)
 		go mgr.stateMachine(in, out, exit)
+
+		mgr.ops = ops
+		mgr.parts = parts
 
 		managers = append(managers, mgr)
 	}

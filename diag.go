@@ -26,18 +26,19 @@ func (fi *FuncInst) PrettyPrint() string {
 	return buf.String()
 }
 
-func (hs HostSched) PrettyPrint() string {
-	hosts := make([]string, len(hs))
-	for host, _ := range hs {
-		hosts = append(hosts, host)
+func (ps PeerSched) PrettyPrint() string {
+	names := make([]string, len(ps))
+	for name, _ := range ps {
+		names = append(names, name)
 	}
 
-	sort.Strings(hosts)
+	sort.Strings(names)
 
 	var buf bytes.Buffer
-	for host, finsts := range hs {
+	for _, name := range names {
+		finsts := ps[name]
 		for _, finst := range finsts {
-			buf.WriteString(fmt.Sprintf("%v: %v\n", host, finst.PrettyPrint()))
+			buf.WriteString(fmt.Sprintf("%v: %v\n", name, finst.PrettyPrint()))
 		}
 	}
 

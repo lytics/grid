@@ -155,12 +155,18 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 		return fmt.Errorf("gird: already added: %v", fname)
 	}
 
-	op := &op{f: f, n: n, inputs: make(map[string]bool), outputs: make(map[string]bool)}
+	op := &op{f: f, n: n, inputs: make(map[string]bool)}
 
 	for _, topic := range topics {
 		if _, found := g.decoders[topic]; !found {
 			return fmt.Errorf("grid: no decoder added for topic: %v", topic)
 		}
+
+		parts, err := g.kafka.Partitions(topic)
+		if err != nil {
+			log.Fatalf("error: topic: %v: failed getting kafka partition data: %v", g.cmdtopic, err)
+		}
+		g.manager.parts[topic] = parts
 
 		op.inputs[topic] = true
 	}
@@ -170,25 +176,10 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 	return nil
 }
 
-func (g *Grid) Restrict(fname, topic string, parts ...int32) error {
-	if _, exists := g.manager.ops[fname]; !exists {
-		return fmt.Errorf("gird: does not exist: %v: reader of: %v", fname, topic)
-	}
-
-	if !g.manager.ops[fname].inputs[topic] {
-		return fmt.Errorf("gird: %v: not set as reader of: %v", fname, topic)
-	}
-
-	g.manager.ops[fname].parts[topic] = parts
-	return nil
-}
-
 type op struct {
-	n       int
-	f       func(in <-chan Event) <-chan Event
-	inputs  map[string]bool
-	outputs map[string]bool
-	parts   map[string][]int32
+	n      int
+	f      func(in <-chan Event) <-chan Event
+	inputs map[string]bool
 }
 
 func merge(ins []<-chan Event) <-chan Event {
