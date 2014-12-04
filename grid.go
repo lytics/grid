@@ -28,9 +28,10 @@ type KafkaConfig struct {
 
 type Grid struct {
 	kafka    *sarama.Client
+	kconfig  *KafkaConfig
 	name     string
 	cmdtopic string
-	kconfig  *KafkaConfig
+	peercnt  int
 	encoders map[string]func(io.Writer) Encoder
 	decoders map[string]func(io.Reader) Decoder
 	wg       *sync.WaitGroup
@@ -40,7 +41,7 @@ type Grid struct {
 	manager  *Manager
 }
 
-func New(name string) (*Grid, error) {
+func New(name string, peercnt int) (*Grid, error) {
 
 	brokers := []string{"localhost:10092"}
 
@@ -56,29 +57,31 @@ func New(name string) (*Grid, error) {
 		ConsumerConfig: cconfig,
 	}
 
-	return NewWithKafkaConfig(name, kafkaClientConfig)
+	return NewWithKafkaConfig(name, peercnt, kafkaClientConfig)
 }
 
-func NewWithKafkaConfig(name string, kconfig *KafkaConfig) (*Grid, error) {
+func NewWithKafkaConfig(name string, peercnt int, kconfig *KafkaConfig) (*Grid, error) {
 	kafka, err := sarama.NewClient(kconfig.BaseName+"_shared_client", kconfig.Brokers, kconfig.ClientConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	cmdtopic := name + "-cmd"
+	quorum := uint32((peercnt / 2) + 1)
 
 	g := &Grid{
 		kafka:    kafka,
 		kconfig:  kconfig,
 		name:     name,
 		cmdtopic: cmdtopic,
+		peercnt:  peercnt,
 		encoders: make(map[string]func(io.Writer) Encoder),
 		decoders: make(map[string]func(io.Reader) Decoder),
 		wg:       new(sync.WaitGroup),
 		mutex:    new(sync.Mutex),
 		exit:     make(chan bool),
-		voter:    NewVoter(0, cmdtopic, 2, 0),
-		manager:  NewManager(0, cmdtopic, 3),
+		voter:    NewVoter(0, cmdtopic, quorum, 0),
+		manager:  NewManager(0, cmdtopic, peercnt),
 	}
 
 	g.wg.Add(1)

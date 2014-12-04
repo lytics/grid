@@ -101,7 +101,7 @@ type Voter struct {
 
 func NewVoter(id int, topic string, quorum uint32, maxleadertime int64) *Voter {
 	return &Voter{
-		name:          buildName(id),
+		name:          buildPeerName(id),
 		topic:         topic,
 		quorum:        quorum,
 		maxleadertime: maxleadertime,
