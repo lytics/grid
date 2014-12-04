@@ -63,6 +63,8 @@ func NewManager(id int, topic string, peercnt int) *Manager {
 		gstate:  gridState,
 		topic:   topic,
 		peercnt: peercnt,
+		parts:   make(map[string][]int32),
+		ops:     make(map[string]*op),
 	}
 }
 
