@@ -2,53 +2,30 @@ package grid
 
 import "fmt"
 
-// TopicSlice is the partitions from a topic that a particular
-// running instance of 'f' will read from.
-type TopicSlice struct {
-	topic string
-	parts []int32
-}
-
-func (ts *TopicSlice) String() string {
-	return fmt.Sprintf("TopicSlice{topic: %v, parts: %v}", ts.topic, ts.parts)
-}
-
-func NewTopicSlice(topic string) *TopicSlice {
-	return &TopicSlice{topic: topic, parts: make([]int32, 0)}
-}
-
-// FuncInst is the full mapping of topic slices that a particular
+// Instance is the full mapping of topic slices that a particular
 // running instance of 'f' will read from, since a 'f' could read
 // from multiple topics.
-type FuncInst struct {
+type Instance struct {
 	i           int
 	fname       string
-	topicslices map[string]*TopicSlice
+	topicslices map[string][]int32
 }
 
-func (fi *FuncInst) String() string {
-	return fmt.Sprintf("FuncInst{i: %v, fname: %v, topic slices: %v}", fi.i, fi.fname, fi.topicslices)
+func (fi *Instance) String() string {
+	return fmt.Sprintf("Instance{i: %v, fname: %v, topic slices: %v}", fi.i, fi.fname, fi.topicslices)
 }
 
-func NewFuncInst(i int, fname string) *FuncInst {
-	return &FuncInst{i: i, fname: fname, topicslices: make(map[string]*TopicSlice)}
+func NewInstance(i int, fname string) *Instance {
+	return &Instance{i: i, fname: fname, topicslices: make(map[string][]int32)}
 }
 
 // PeerSched is a mapping from peernames to a slice of function instance
 // definitions that should run on that peer.
-type PeerSched map[string][]*FuncInst
+type PeerSched map[string][]*Instance
 
-func (hs PeerSched) FunctionInstances(name string) ([]*FuncInst, bool) {
-	fi, found := hs[name]
+func (ps PeerSched) Instances(name string) ([]*Instance, bool) {
+	fi, found := ps[name]
 	return fi, found
-}
-
-func (hs PeerSched) FunctionInstancesNames(name string) map[string]bool {
-	fnames := make(map[string]bool)
-	for _, fi := range hs[name] {
-		fnames[fi.fname] = true
-	}
-	return fnames
 }
 
 // peersched creates the schedule of which function instance should run on which peer.
@@ -60,7 +37,7 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 	// initialize the map of peers and their slice of
 	// function instances upfront.
 	for peer, _ := range peers {
-		sched[peer] = make([]*FuncInst, 0)
+		sched[peer] = make([]*Instance, 0)
 	}
 
 	for fname, op := range ops {
@@ -70,14 +47,14 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 		// read from multiple topics, but only from a sub
 		// set of the partitions.
 
-		finsts := make([]*FuncInst, op.n)
+		finsts := make([]*Instance, op.n)
 		for i := 0; i < op.n; i++ {
-			finsts[i] = NewFuncInst(i, fname)
+			finsts[i] = NewInstance(i, fname)
 			for topic, _ := range op.inputs {
 				// For every instance create its "topic slice" for
 				// each topic it reads from. A "topic slice" is
 				// just a topic name and a slice partition numbers.
-				finsts[i].topicslices[topic] = NewTopicSlice(topic)
+				finsts[i].topicslices[topic] = make([]int32, 0)
 			}
 		}
 
@@ -86,11 +63,11 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 		// robins the partitions of a topic to the instance of
 		// functions.
 		for topic, _ := range op.inputs {
-			ps := make([]int32, len(parts[topic]))
-			copy(ps, parts[topic])
+			tparts := make([]int32, len(parts[topic]))
+			copy(tparts, parts[topic])
 
-			for i := 0; i < len(ps); i++ {
-				finsts[i%op.n].topicslices[topic].parts = append(finsts[i%op.n].topicslices[topic].parts, ps[i])
+			for i := 0; i < len(tparts); i++ {
+				finsts[i%op.n].topicslices[topic] = append(finsts[i%op.n].topicslices[topic], tparts[i])
 			}
 		}
 

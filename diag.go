@@ -6,18 +6,18 @@ import (
 	"sort"
 )
 
-func (fi *FuncInst) PrettyPrint() string {
+func (ist *Instance) PrettyPrint() string {
 	topics := make([]string, 0)
-	for topic, _ := range fi.topicslices {
+	for topic, _ := range ist.topicslices {
 		topics = append(topics, topic)
 	}
 
 	sort.Strings(topics)
 
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("%v #%v: ", fi.fname, fi.i))
+	buf.WriteString(fmt.Sprintf("%v #%v: ", ist.fname, ist.i))
 	for i, topic := range topics {
-		buf.WriteString(fmt.Sprintf("%v", fi.topicslices[topic]))
+		buf.WriteString(fmt.Sprintf("%v", ist.topicslices[topic]))
 		if i < len(topics)-1 {
 			buf.WriteString(", ")
 		}
