@@ -73,7 +73,7 @@ func hostsched(hosts map[string]bool, ops map[string]*op, partitions map[string]
 		finsts := make([]*FuncInst, op.n)
 		for i := 0; i < op.n; i++ {
 			finsts[i] = NewFuncInst(i, fname)
-			for _, topic := range op.inputs {
+			for topic, _ := range op.inputs {
 				// For every instance create its "topic slice" for
 				// each topic it reads from. A "topic slice" is
 				// just a topic name and a slice partition numbers.
@@ -85,7 +85,7 @@ func hostsched(hosts map[string]bool, ops map[string]*op, partitions map[string]
 		// ramaining partitions of that topic. This basically round-
 		// robins the partitions of a topic to the instance of
 		// functions.
-		for _, topic := range op.inputs {
+		for topic, _ := range op.inputs {
 			parts := make([]uint32, len(partitions[topic]))
 			copy(parts, partitions[topic])
 
@@ -95,7 +95,7 @@ func hostsched(hosts map[string]bool, ops map[string]*op, partitions map[string]
 		}
 
 		// Round-robin each function instance to the hosts. Basially
-		// each host steals one function instance until non-remain.
+		// each host steals one function instance until none remain.
 		i := len(finsts) - 1
 		for i >= 0 {
 			for host, _ := range hosts {

@@ -15,11 +15,11 @@ func (fi *FuncInst) PrettyPrint() string {
 	sort.Strings(topics)
 
 	var buf bytes.Buffer
-	buf.Write([]byte(fmt.Sprintf("%v #%v: ", fi.fname, fi.i)))
+	buf.WriteString(fmt.Sprintf("%v #%v: ", fi.fname, fi.i))
 	for i, topic := range topics {
-		buf.Write([]byte(fmt.Sprintf("%v", fi.topicslices[topic])))
+		buf.WriteString(fmt.Sprintf("%v", fi.topicslices[topic]))
 		if i < len(topics)-1 {
-			buf.Write([]byte(", "))
+			buf.WriteString(", ")
 		}
 	}
 
@@ -37,7 +37,7 @@ func (hs HostSched) PrettyPrint() string {
 	var buf bytes.Buffer
 	for host, finsts := range hs {
 		for _, finst := range finsts {
-			buf.Write([]byte(fmt.Sprintf("%v: %v\n", host, finst.PrettyPrint())))
+			buf.WriteString(fmt.Sprintf("%v: %v\n", host, finst.PrettyPrint()))
 		}
 	}
 

@@ -21,7 +21,10 @@ func TestManager(t *testing.T) {
 
 	for i := 0; i < mgrsCnt; i++ {
 		in := p.client(out)
-		mgr := NewManager(i, topic, mgrsCnt, in, out, exit)
+		mgr := NewManager(i, topic, mgrsCnt)
+		mgr.in = in
+		mgr.out = out
+		mgr.exit = exit
 		managers = append(managers, mgr)
 		go mgr.stateMachine()
 	}

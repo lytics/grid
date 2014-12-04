@@ -12,7 +12,9 @@ func TestHostSched(t *testing.T) {
 	kafkaparts["topic1"] = []uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
 	kafkaparts["topic2"] = []uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 
-	topics := []string{"topic1", "topic2"}
+	topics := make(map[string]bool)
+	topics["topic1"] = true
+	topics["topic2"] = true
 
 	ops := make(map[string]*op)
 	op1 := &op{n: 11, inputs: topics}
@@ -66,7 +68,7 @@ func TestHostSched(t *testing.T) {
 			t.Fatalf("failed to find function instances for host: %v", host)
 		}
 		for _, fi := range finsts {
-			for _, topic := range topics {
+			for topic, _ := range topics {
 				for _, part := range fi.topicslices[topic].parts {
 					delete(expected_parts[fi.fname][topic], part)
 				}
@@ -80,7 +82,7 @@ func TestHostSched(t *testing.T) {
 			t.Fatalf("failed to find function instances for host: %v", host)
 		}
 		for _, fi := range finsts {
-			for _, topic := range topics {
+			for topic, _ := range topics {
 				if 0 != len(expected_parts[fi.fname][topic]) {
 					t.Fatalf("some partitions were not scheduled for reading: %v %v %v: %v", host, fi.fname, topic, partsstr(expected_parts[fi.fname][topic]))
 				}
