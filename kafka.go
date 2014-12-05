@@ -3,8 +3,11 @@ package grid
 import (
 	"bytes"
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"io"
 	"log"
+	"reflect"
 	"sync"
 
 	"github.com/Shopify/sarama"
@@ -96,21 +99,19 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 		}
 		defer client.Close()
 
-		producer, err := sarama.NewSimpleProducer(client, topic, sarama.NewHashPartitioner)
+		producer, err := sarama.NewSimpleProducer(client, topic, newPartitioner)
 		if err != nil {
 			log.Fatalf("error: topic: failed to create producer: %v", err)
 		}
 		defer producer.Close()
 
 		var buf bytes.Buffer
-
 		for event := range in {
 			buf.Reset()
 			enc := kl.encoders[topic](&buf)
-			//fmt.Println(reflect.TypeOf(event.Message()), ", data: ", reflect.TypeOf(event.Message().))
 			err := enc.Encode(event.Message())
 			if err != nil {
-				buf.Reset()
+				log.Printf("error: topic %v: encode failed: %v", topic, err)
 			} else {
 				key := []byte(event.Key())
 				val := make([]byte, buf.Len())
@@ -145,7 +146,6 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 			}
 			defer client.Close()
 
-			//Not sure if its worth cloning/using clientConfig.ConsumerConfig, so just using the default...
 			config := sarama.NewConsumerConfig()
 			config.OffsetMethod = sarama.OffsetMethodNewest
 
@@ -156,17 +156,15 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 			defer consumer.Close()
 
 			var buf bytes.Buffer
-
 			for e := range consumer.Events() {
 				buf.Reset()
 				dec := kl.decoders[topic](&buf)
-				msg := dec.New()
 				buf.Write(e.Value)
+				msg := dec.New()
 				err = dec.Decode(msg)
-				//fmt.Println(reflect.TypeOf(msg))
+				fmt.Println(reflect.TypeOf(msg))
 				if err != nil {
 					log.Printf("error: topic: %v decode failed: %v: msg: %v value: %v", topic, err, msg, string(buf.Bytes()))
-					buf.Reset()
 				} else {
 					out <- NewReadable(e.Topic, e.Offset, msg)
 				}
@@ -185,4 +183,32 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 	// The out channel is returned as a read only channel
 	// so no one can close it except this code.
 	return out
+}
+
+type partitioner struct {
+	hasher hash.Hash32
+}
+
+func newPartitioner() sarama.Partitioner {
+	return &partitioner{hasher: fnv.New32a()}
+}
+
+func (p *partitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
+	bytes, err := key.Encode()
+	if err != nil {
+		return 0
+	}
+	if len(bytes) == 0 {
+		return 0
+	}
+	p.hasher.Reset()
+	_, err = p.hasher.Write(bytes)
+	if err != nil {
+		return 0
+	}
+	hash := int32(p.hasher.Sum32())
+	if hash < 0 {
+		hash = -hash
+	}
+	return hash % numPartitions
 }
