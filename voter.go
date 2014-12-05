@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	Key          = "0"
+	Key          = ""
 	Skew         = 20
 	TickMillis   = 500
 	HeartTimeout = 6
