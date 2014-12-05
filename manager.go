@@ -1,49 +1,11 @@
 package grid
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"time"
 )
-
-type Health int
-
-const (
-	Active Health = iota
-	Timeout
-)
-
-type Peer struct {
-	Rank       Rank
-	Name       string
-	Health     Health
-	LastPongTs int64
-}
-
-func newPeer(name string, r Rank, h Health, lastpong int64) *Peer {
-	return &Peer{Name: name, Rank: r, Health: h, LastPongTs: lastpong}
-}
-
-type PeerState struct {
-	Term    uint32
-	Version uint32
-	Sched   PeerSched
-	Peers   map[string]*Peer
-}
-
-func (ps *PeerState) String() string {
-	b, err := json.Marshal(ps)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-func newPeerState() *PeerState {
-	return &PeerState{Term: 0, Peers: make(map[string]*Peer)}
-}
 
 type Manager struct {
 	name  string
@@ -146,6 +108,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 			case *CmdMesg:
 				cmdmsg = msg
 			default:
+				log.Printf("The message type %T didn't match the expected type of *CmdMesg", msg)
 				continue
 			}
 

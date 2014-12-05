@@ -43,12 +43,11 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 }
 
 var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will take part in the grid.")
-var peerid = flag.Int("peerid", 1, "the expected number of peers that will take part in the grid.")
 
 func main() {
 	flag.Parse()
 
-	g, err := grid.New(GridName, *peerid, *peercnt)
+	g, err := grid.New(GridName, *peercnt)
 	if err != nil {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}

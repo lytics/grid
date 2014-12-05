@@ -1,33 +1,5 @@
 package grid
 
-import "fmt"
-
-// Instance is the full mapping of topic slices that a particular
-// running instance of 'f' will read from, since a 'f' could read
-// from multiple topics.
-type Instance struct {
-	i           int
-	fname       string
-	topicslices map[string][]int32
-}
-
-func (fi *Instance) String() string {
-	return fmt.Sprintf("Instance{i: %v, fname: %v, topic slices: %v}", fi.i, fi.fname, fi.topicslices)
-}
-
-func NewInstance(i int, fname string) *Instance {
-	return &Instance{i: i, fname: fname, topicslices: make(map[string][]int32)}
-}
-
-// PeerSched is a mapping from peernames to a slice of function instance
-// definitions that should run on that peer.
-type PeerSched map[string][]*Instance
-
-func (ps PeerSched) Instances(name string) ([]*Instance, bool) {
-	fi, found := ps[name]
-	return fi, found
-}
-
 // peersched creates the schedule of which function instance should run on which peer.
 func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]int32) PeerSched {
 

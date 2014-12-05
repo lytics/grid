@@ -78,6 +78,8 @@ func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Gri
 		quorum:   uint32((npeers / 2) + 1),
 		encoders: make(map[string]func(io.Writer) Encoder),
 		decoders: make(map[string]func(io.Reader) Decoder),
+		parts:    make(map[string][]int32),
+		ops:      make(map[string]*op),
 		wg:       new(sync.WaitGroup),
 		exit:     make(chan bool),
 	}

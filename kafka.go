@@ -19,9 +19,11 @@ func startTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer
 		defer producer.Close()
 
 		var buf bytes.Buffer
-		enc := newenc(&buf)
 
 		for event := range in {
+			buf.Reset()
+			enc := newenc(&buf)
+			//fmt.Println(reflect.TypeOf(event.Message()), ", data: ", reflect.TypeOf(event.Message().))
 			err := enc.Encode(event.Message())
 			if err != nil {
 				buf.Reset()
@@ -71,14 +73,19 @@ func startTopicReader(topic string, kconfig *KafkaConfig, newdec func(io.Reader)
 			defer consumer.Close()
 
 			var buf bytes.Buffer
-			dec := newdec(&buf)
 
 			for e := range consumer.Events() {
-				msg := dec.New()
+				buf.Reset()
+				dec := newdec(&buf)
+
+				var msg interface{}
+
+				msg = dec.New()
 				buf.Write(e.Value)
 				err = dec.Decode(msg)
+				//fmt.Println(reflect.TypeOf(msg))
 				if err != nil {
-					log.Printf("error: topic: %v decode failed: %v: value: %v", topic, err, string(buf.Bytes()))
+					log.Printf("error: topic: %v decode failed: %v: msg: %v value: %v", topic, err, msg, string(buf.Bytes()))
 					buf.Reset()
 				} else {
 					out <- NewReadable(e.Topic, e.Offset, msg)
