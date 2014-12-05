@@ -10,8 +10,92 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-func startTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer) Encoder, in <-chan Event) {
+type ReadWriteLog interface {
+	Write(topic string, in <-chan Event)
+	Read(topic string, parts []int32) <-chan Event
+	AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
+	AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string)
+	EncodedTopics() map[string]bool
+	DecodedTopics() map[string]bool
+	Partitions(topic string) ([]int32, error)
+}
+
+type KafkaConfig struct {
+	Brokers        []string
+	BaseName       string
+	ClientConfig   *sarama.ClientConfig
+	ProducerConfig *sarama.ProducerConfig
+	ConsumerConfig *sarama.ConsumerConfig
+}
+
+type kafkalog struct {
+	conf     *KafkaConfig
+	client   *sarama.Client
+	encoders map[string]func(io.Writer) Encoder
+	decoders map[string]func(io.Reader) Decoder
+}
+
+func NewKafkaReadWriteLog(id string, conf *KafkaConfig) (ReadWriteLog, error) {
+	client, err := sarama.NewClient(id, conf.Brokers, conf.ClientConfig)
+	if err != nil {
+		return nil, err
+	}
+	return &kafkalog{conf: conf, client: client, encoders: make(map[string]func(io.Writer) Encoder), decoders: make(map[string]func(io.Reader) Decoder)}, nil
+}
+
+func (kl *kafkalog) AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string) {
+	for _, topic := range topics {
+		// Only add the decoder if it has not been added before, this is
+		// used to register certain decoders before the user can.
+		if _, added := kl.decoders[topic]; !added {
+			kl.decoders[topic] = makeDecoder
+		}
+	}
+}
+
+func (kl *kafkalog) AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string) {
+	for _, topic := range topics {
+		// Only add the encoder if it has not been added before, this is
+		// used to register certain encoders before the user can.
+		if _, added := kl.encoders[topic]; !added {
+			kl.encoders[topic] = makeEncoder
+		}
+	}
+}
+
+func (kl *kafkalog) EncodedTopics() map[string]bool {
+	encoded := make(map[string]bool)
+	for topic, _ := range kl.encoders {
+		encoded[topic] = true
+	}
+	return encoded
+}
+
+func (kl *kafkalog) DecodedTopics() map[string]bool {
+	decoded := make(map[string]bool)
+	for topic, _ := range kl.decoders {
+		decoded[topic] = true
+	}
+	return decoded
+}
+
+func (kl *kafkalog) Partitions(topic string) ([]int32, error) {
+	parts, err := kl.client.Partitions(topic)
+	if err != nil {
+		return nil, err
+	}
+	return parts, err
+}
+
+func (kl *kafkalog) Write(topic string, in <-chan Event) {
 	go func() {
+		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.BaseName, topic)
+		client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
+		if err != nil {
+			return
+		}
+		defer client.Close()
+
 		producer, err := sarama.NewSimpleProducer(client, topic, sarama.NewHashPartitioner)
 		if err != nil {
 			log.Fatalf("error: topic: failed to create producer: %v", err)
@@ -22,7 +106,7 @@ func startTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer
 
 		for event := range in {
 			buf.Reset()
-			enc := newenc(&buf)
+			enc := kl.encoders[topic](&buf)
 			//fmt.Println(reflect.TypeOf(event.Message()), ", data: ", reflect.TypeOf(event.Message().))
 			err := enc.Encode(event.Message())
 			if err != nil {
@@ -37,7 +121,7 @@ func startTopicWriter(topic string, client *sarama.Client, newenc func(io.Writer
 	}()
 }
 
-func startTopicReader(topic string, kconfig *KafkaConfig, newdec func(io.Reader) Decoder, parts []int32) <-chan Event {
+func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 
 	// Consumers read from the real topic and push data
 	// into the out channel.
@@ -54,19 +138,18 @@ func startTopicReader(topic string, kconfig *KafkaConfig, newdec func(io.Reader)
 		go func(wg *sync.WaitGroup, part int32, out chan<- Event) {
 			defer wg.Done()
 
-			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kconfig.BaseName, topic, part)
-
-			kclient, err := sarama.NewClient(name, kconfig.Brokers, kconfig.ClientConfig)
+			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kl.conf.BaseName, topic, part)
+			client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
 			if err != nil {
 				return
 			}
-			defer kclient.Close()
+			defer client.Close()
 
 			//Not sure if its worth cloning/using clientConfig.ConsumerConfig, so just using the default...
 			config := sarama.NewConsumerConfig()
 			config.OffsetMethod = sarama.OffsetMethodNewest
 
-			consumer, err := sarama.NewConsumer(kclient, topic, part, name, config)
+			consumer, err := sarama.NewConsumer(client, topic, part, name, config)
 			if err != nil {
 				log.Fatalf("error: topic: %v consumer: %v", topic, err)
 			}
@@ -76,11 +159,8 @@ func startTopicReader(topic string, kconfig *KafkaConfig, newdec func(io.Reader)
 
 			for e := range consumer.Events() {
 				buf.Reset()
-				dec := newdec(&buf)
-
-				var msg interface{}
-
-				msg = dec.New()
+				dec := kl.decoders[topic](&buf)
+				msg := dec.New()
 				buf.Write(e.Value)
 				err = dec.Decode(msg)
 				//fmt.Println(reflect.TypeOf(msg))
