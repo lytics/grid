@@ -26,126 +26,116 @@ func newPeer(name string, r Rank, h Health, lastpong int64) *Peer {
 	return &Peer{Name: name, Rank: r, Health: h, LastPongTs: lastpong}
 }
 
-type GridState struct {
+type PeerState struct {
 	Term    uint32
 	Version uint32
-	Peers   map[string]*Peer
 	Sched   PeerSched
+	Peers   map[string]*Peer
 }
 
-func (g *GridState) String() string {
-	b, err := json.Marshal(g)
+func (ps *PeerState) String() string {
+	b, err := json.Marshal(ps)
 	if err != nil {
 		return ""
 	}
 	return string(b)
 }
 
+func newPeerState() *PeerState {
+	return &PeerState{Term: 0, Peers: make(map[string]*Peer)}
+}
+
 type Manager struct {
-	term    uint32
-	name    string
-	rank    Rank
-	gstate  *GridState
-	topic   string
-	peercnt int
-	parts   map[string][]int32
-	ops     map[string]*op
+	name  string
+	state *PeerState
+	*Grid
 }
 
-func NewManager(id int, topic string, peercnt int) *Manager {
-	name := buildPeerName(id)
-	gridState := &GridState{Term: 0, Peers: make(map[string]*Peer)}
-	gridState.Peers[name] = newPeer(name, Follower, Active, time.Now().Unix())
-
-	return &Manager{
-		term:    0,
-		name:    name,
-		gstate:  gridState,
-		topic:   topic,
-		peercnt: peercnt,
-		parts:   make(map[string][]int32),
-		ops:     make(map[string]*op),
-	}
+func NewManager(id int, g *Grid) *Manager {
+	return &Manager{buildPeerName(id), newPeerState(), g}
 }
 
-func (m *Manager) startStateMachine(in <-chan Event, exit <-chan bool) <-chan Event {
+func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
 	out := make(chan Event)
 	go func() {
 		defer close(out)
-		m.stateMachine(in, out, exit)
+		m.stateMachine(in, out)
 	}()
 	return out
 }
 
-func (m *Manager) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bool) {
+func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
 	lasthearbeat := time.Now().Unix()
+	m.state.Peers[m.name] = newPeer(m.name, Follower, Active, time.Now().Unix())
 
+	var rank Rank
+	var term uint32
 	for {
 		select {
-		case <-exit:
+		case <-m.exit:
 			return
 		case now := <-ticker.C:
 
 			if now.Unix()-lasthearbeat > HeartTimeout {
-				m.rank = Follower
+				rank = Follower
 			}
 
-			if m.rank != Leader {
+			if rank != Leader {
 				continue
 			}
 
 			//We never mutate our state directly, it needs to be written into the append log, and read back
 			//  just like everyone else.   Just in case we try to emit the log after we've lost an election
 
-			m.gstate.Term = m.term
+			m.state.Term = term
 
-			gstateChanged := false
-			activePeerCnt := 0
-			timedOuthosts := 0
+			changed := false
+			activepeers := 0
+			inactivepeers := 0
 
-			for _, peer := range m.gstate.Peers { // Update health states
+			for _, peer := range m.state.Peers { // Update health states
 				if now.Unix()-peer.LastPongTs > HeartTimeout && peer.Health != Timeout {
 					// Update peers that have timed out.
 					log.Printf("grid: manager %v: peer[%v] transitioned from Health[%v -> %v]", m.name, peer.Name, peer.Health, Timeout)
 					peer.Health = Timeout
-					gstateChanged = true
-					timedOuthosts++
+					changed = true
+					inactivepeers++
 				} else if now.Unix()-peer.LastPongTs > HeartTimeout {
 					// Don't log over and over that a peer is timed out.
 				} else if now.Unix()-peer.LastPongTs <= HeartTimeout && peer.Health == Timeout {
 					// Update peer that are now active.
 					log.Printf("grid: manager %v: peer[%v] transitioned from Health[%v -> %v]", m.name, peer.Name, peer.Health, Active)
 					peer.Health = Active
-					gstateChanged = true
-					activePeerCnt++
+					changed = true
+					activepeers++
 				} else if peer.Health == Active {
 					// Look for active peers.
-					activePeerCnt++
+					activepeers++
 				}
 
 				//Demote any one who isn't me
 				if peer.Rank == Leader && peer.Name != m.name {
 					peer.Rank = Follower
-					gstateChanged = true
+					changed = true
 				} else if peer.Rank != Leader && peer.Name == m.name {
-					m.gstate.Peers[m.name].Rank = Leader
-					gstateChanged = true
+					m.state.Peers[m.name].Rank = Leader
+					changed = true
 				}
 			}
 
-			if gstateChanged && activePeerCnt == m.peercnt {
-				m.gstate.Version++
-				log.Printf("grid: manager %v: emitting new state; \ngstate:%s ", m.name, m.gstate)
-				m.gstate.Sched = peersched(m.gstate.Peers, m.ops, m.parts)
-				out <- NewWritable(m.topic, Key, &CmdMesg{Data: *m.gstate})
-			} else if timedOuthosts > 0 && activePeerCnt+timedOuthosts == m.peercnt {
-				m.gstate.Version++
-				log.Printf("grid: manager %v: emitting new state; \ngstate:%s ", m.name, m.gstate)
+			if changed && activepeers == m.npeers {
+				m.state.Version++
+				log.Printf("grid: manager %v: emitting new state; \ngstate:%s ", m.name, m.state)
+				m.state.Sched = peersched(m.state.Peers, m.ops, m.parts)
+				out <- NewWritable(m.cmdtopic, Key, &CmdMesg{Data: *m.state})
+			} else if inactivepeers > 0 && activepeers+inactivepeers == m.npeers {
+				m.state.Version++
+				log.Printf("grid: manager %v: emitting new state; \ngstate:%s ", m.name, m.state)
 				// Everyone should be told to stop, emit state as such.
-				out <- NewWritable(m.topic, Key, &CmdMesg{Data: *m.gstate})
+				out <- NewWritable(m.cmdtopic, Key, &CmdMesg{Data: *m.state})
 			}
 
 		case event := <-in:
@@ -164,43 +154,42 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bo
 			case Ping:
 				lasthearbeat = time.Now().Unix()
 				// log.Printf("ping:[%v] rank:%v cterm:%v myname:%v ", data, m.rank, m.term, m.name)
-				if data.Term < m.term {
-					log.Printf("gird: manager %v: ping: term mismatch: rank: %v cterm: %v", m.name, m.rank, m.term)
+				if data.Term < term {
+					log.Printf("gird: manager %v: ping: term mismatch: rank: %v cterm: %v", m.name, rank, term)
 					continue
 				}
-				m.term = data.Term
-
+				term = data.Term
 				if data.Leader == m.name {
-					log.Printf("grid: manager %v: ping: I'm a leader; term=%d", m.name, m.term)
-					m.rank = Leader
+					log.Printf("grid: manager %v: ping: I'm a leader; term=%d", m.name, term)
+					rank = Leader
 				} else {
-					log.Printf("grid: manager %v: ping: I'm a follower; term=%d", m.name, m.term)
-					m.gstate.Peers[m.name].Rank = Follower
-					m.rank = Follower
-					out <- NewWritable(m.topic, Key, newPong(m.name, data.Term))
+					log.Printf("grid: manager %v: ping: I'm a follower; term=%d", m.name, term)
+					m.state.Peers[m.name].Rank = Follower
+					rank = Follower
+					out <- NewWritable(m.cmdtopic, Key, newPong(m.name, data.Term))
 				}
 			case Pong:
 				// log.Printf("pong:[%v] rank:%v cterm:%v", data, m.rank, m.term)
-				if data.Term < m.term {
+				if data.Term < term {
 					continue
 				}
-				if _, ok := m.gstate.Peers[data.Follower]; !ok && m.rank == Leader {
+				if _, ok := m.state.Peers[data.Follower]; !ok && rank == Leader {
 					// Only the leader can add new peers.
-					m.gstate.Peers[data.Follower] = newPeer(data.Follower, Follower, Active, time.Now().Unix())
+					m.state.Peers[data.Follower] = newPeer(data.Follower, Follower, Active, time.Now().Unix())
 				}
-			case GridState:
-				log.Printf("gridstate: name:%v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, m.rank, m.term, data, m.gstate)
+			case PeerState:
+				log.Printf("gridstate: name:%v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, rank, term, data, m.state)
 				//TODO For now I'm going to allow duplicate versions to be re-processed,
 				// otherwise the leader would reject the new state.  I think I need to rework the code so that the code above works on a copy until its received
-				if data.Version < m.gstate.Version {
-					log.Printf("warning: grid: manager %v: gstate: got a new gstate with an old version; oldgs:%v \nnewgs:%v ", m.name, m.gstate, data)
+				if data.Version < m.state.Version {
+					log.Printf("warning: grid: manager %v: gstate: got a new gstate with an old version; oldgs:%v \nnewgs:%v ", m.name, m.state, data)
 					continue
 				}
-				if data.Term < m.term {
-					log.Printf("warning: grid: manager %v: gstate: got a new gstate with an old term; oldgs:%v \nnewgs:%v ", m.name, m.gstate, data)
+				if data.Term < term {
+					log.Printf("warning: grid: manager %v: gstate: got a new gstate with an old term; oldgs:%v \nnewgs:%v ", m.name, m.state, data)
 					continue
 				}
-				m.gstate = &data
+				m.state = &data
 				// Act on my part of the state, do Func schedule for m.gstate.Peers[m.name].
 			default:
 				// Ignore other command messages.

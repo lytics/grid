@@ -9,13 +9,17 @@ import (
 func TestManager(t *testing.T) {
 
 	const (
-		topic   = "test-election"
-		mgrsCnt = 3
+		topic      = "test-election"
+		managercnt = 3
 	)
+
+	g, err := New("test-grid", managercnt)
+	if err != nil {
+		t.Fatalf("failed to create grid: %v", err)
+	}
 
 	f := func(in <-chan Event) <-chan Event { return nil }
 	p := newPartition()
-	exit := make(chan bool)
 	managers := make([]*Manager, 0)
 
 	topics := make(map[string]bool)
@@ -29,12 +33,12 @@ func TestManager(t *testing.T) {
 	ops := make(map[string]*op)
 	ops["f1"] = &op{f: f, n: 2, inputs: topics}
 
-	for i := 0; i < mgrsCnt; i++ {
+	for i := 0; i < managercnt; i++ {
 		out := make(chan Event)
 		in := p.client(out)
 
-		mgr := NewManager(i, topic, mgrsCnt)
-		go mgr.stateMachine(in, out, exit)
+		mgr := NewManager(i, g)
+		go mgr.stateMachine(in, out)
 
 		mgr.ops = ops
 		mgr.parts = parts
@@ -47,7 +51,7 @@ func TestManager(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	//The head of the partition should be a GridState Message
+	// The head of the partition should be a PeerState message.
 	inmsg := p.data[p.head-1].(Event)
 	var cmdmsg *CmdMesg
 
@@ -61,16 +65,16 @@ func TestManager(t *testing.T) {
 
 	// Check for type of message.
 	switch data := cmdmsg.Data.(type) {
-	case GridState:
+	case PeerState:
 		t.Logf("The head of the partition is a gridstate message as expected. %v", data)
 	default:
 		t.Fatalf("unknown type:%T, psize:%v", data, p.head)
 	}
 
-	//Ensure all the managers have the same grid state.
+	// Ensure all the managers have the same grid state.
 	for _, mgr := range managers {
-		if !reflect.DeepEqual(mgr.gstate, leader.gstate) {
-			t.Fatalf("peers have mismatch states.  \n%v \nNot Equal \n%v", mgr.gstate.String(), leader.gstate.String())
+		if !reflect.DeepEqual(mgr.state, leader.state) {
+			t.Fatalf("peers have mismatch states.  \n%v \nNot Equal \n%v", mgr.state, leader.state)
 		}
 	}
 }
