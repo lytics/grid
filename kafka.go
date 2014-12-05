@@ -94,13 +94,13 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.BaseName, topic)
 		client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
 		if err != nil {
-			return
+			log.Fatalf("fatal: topic: %v: client: %v", topic, err)
 		}
 		defer client.Close()
 
 		producer, err := sarama.NewSimpleProducer(client, topic, newPartitioner)
 		if err != nil {
-			log.Fatalf("error: topic: failed to create producer: %v", err)
+			log.Fatalf("fatal: topic: %v: producer: %v", err)
 		}
 		defer producer.Close()
 
@@ -110,7 +110,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 			enc := kl.encoders[topic](&buf)
 			err := enc.Encode(event.Message())
 			if err != nil {
-				log.Printf("error: topic %v: encode failed: %v", topic, err)
+				log.Printf("error: topic: %v: encode failed: %v", topic, err)
 			} else {
 				key := []byte(event.Key())
 				val := make([]byte, buf.Len())
@@ -141,7 +141,7 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kl.conf.BaseName, topic, part)
 			client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
 			if err != nil {
-				return
+				log.Fatalf("fatal: topic: %v: client: %v", topic, err)
 			}
 			defer client.Close()
 
@@ -150,22 +150,22 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 
 			consumer, err := sarama.NewConsumer(client, topic, part, name, config)
 			if err != nil {
-				log.Fatalf("error: topic: %v consumer: %v", topic, err)
+				log.Fatalf("fatal: topic: %v: consumer: %v", topic, err)
 			}
 			defer consumer.Close()
 
 			var buf bytes.Buffer
-			for e := range consumer.Events() {
+			for event := range consumer.Events() {
 				buf.Reset()
 				dec := kl.decoders[topic](&buf)
-				buf.Write(e.Value)
+				buf.Write(event.Value)
 				msg := dec.New()
 				err = dec.Decode(msg)
 
 				if err != nil {
 					log.Printf("error: topic: %v decode failed: %v: msg: %v value: %v", topic, err, msg, string(buf.Bytes()))
 				} else {
-					out <- NewReadable(e.Topic, e.Offset, msg)
+					out <- NewReadable(event.Topic, event.Offset, msg)
 				}
 			}
 		}(wg, part, out)
