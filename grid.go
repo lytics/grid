@@ -53,13 +53,13 @@ func New(gridname string, npeers int) (*Grid, error) {
 func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Grid, error) {
 	cmdtopic := gridname + "-cmd"
 
-	kafkalog, err := NewKafkaReadWriteLog(buildPeerName(0), kconfig)
+	rwlog, err := NewKafkaReadWriteLog(buildPeerName(0), kconfig)
 	if err != nil {
 		return nil, err
 	}
 
 	g := &Grid{
-		log:      kafkalog,
+		log:      rwlog,
 		gridname: gridname,
 		cmdtopic: cmdtopic,
 		npeers:   npeers,
