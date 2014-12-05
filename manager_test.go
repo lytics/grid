@@ -18,8 +18,7 @@ func TestManager(t *testing.T) {
 		t.Fatalf("failed to create grid: %v", err)
 	}
 
-	g.AddDecoder(NewCmdMesgDecoder, "topic1", "topic2")
-	g.AddEncoder(NewCmdMesgEncoder, "topic1", "topic2")
+	g.log = newNoOpReadWriteLog()
 
 	f := func(in <-chan Event) <-chan Event { return nil }
 	p := newPartition()

@@ -3,6 +3,7 @@ package grid
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -133,4 +134,57 @@ func newTestMesgDecoder(r io.Reader) Decoder {
 
 func newTestMesgEncoder(w io.Writer) Encoder {
 	return &testcoder{json.NewEncoder(w), nil}
+}
+
+type nooprwlog struct {
+	encoded map[string]bool
+	decoded map[string]bool
+}
+
+func newNoOpReadWriteLog() ReadWriteLog {
+	return &nooprwlog{encoded: make(map[string]bool), decoded: make(map[string]bool)}
+}
+
+func (n *nooprwlog) Write(topic string, in <-chan Event) {
+	// Do nothing.
+}
+
+func (n *nooprwlog) Read(topic string, parts []int32) <-chan Event {
+	out := make(chan Event)
+	go func() {
+		for _ = range out {
+			// Discard.
+		}
+	}()
+	return out
+}
+
+func (n *nooprwlog) AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string) {
+	for _, topic := range topics {
+		n.encoded[topic] = true
+	}
+}
+
+func (n *nooprwlog) AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string) {
+	for _, topic := range topics {
+		n.decoded[topic] = true
+	}
+}
+
+func (n *nooprwlog) EncodedTopics() map[string]bool {
+	return n.encoded
+}
+
+func (n *nooprwlog) DecodedTopics() map[string]bool {
+	return n.decoded
+}
+
+func (n *nooprwlog) Partitions(topic string) ([]int32, error) {
+	if n.encoded[topic] {
+		return []int32{0}, nil
+	}
+	if n.decoded[topic] {
+		return []int32{0}, nil
+	}
+	return nil, fmt.Errorf("no such topic: %v", topic)
 }
