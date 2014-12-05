@@ -7,7 +7,6 @@ import (
 	"hash/fnv"
 	"io"
 	"log"
-	"reflect"
 	"sync"
 
 	"github.com/Shopify/sarama"
@@ -162,7 +161,7 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 				buf.Write(e.Value)
 				msg := dec.New()
 				err = dec.Decode(msg)
-				fmt.Println(reflect.TypeOf(msg))
+
 				if err != nil {
 					log.Printf("error: topic: %v decode failed: %v: msg: %v value: %v", topic, err, msg, string(buf.Bytes()))
 				} else {
