@@ -26,16 +26,18 @@ func TestWriter(t *testing.T) {
 		return
 	}
 
-	client, err := sarama.NewClient(ClientName, []string{"localhost:10092"}, sarama.NewClientConfig())
+	config := &KafkaConfig{BaseName: ClientName, Brokers: []string{"localhost:10092"}, ClientConfig: sarama.NewClientConfig()}
+	rwlog, err := NewKafkaReadWriteLog(ClientName, config)
 	if err != nil {
-		t.Fatalf("failed to create kafka client: %v", err)
+		t.Fatalf("Failed to create kafka log readwriter: %v", err)
 	}
+	rwlog.AddEncoder(newTestMesgEncoder, TopicName)
 
 	in := make(chan Event, 0)
-	startTopicWriter(TopicName, client, newTestMesgEncoder, in)
+	rwlog.Write(TopicName, in)
 
 	for i := 0; i < 10; i++ {
-		in <- NewWritable(TopicName, "", NewTestMesg(i))
+		in <- NewWritable(TopicName, "", newTestMesg(i))
 	}
 }
 
@@ -44,63 +46,75 @@ func TestReader(t *testing.T) {
 		return
 	}
 
-	brokers := []string{"localhost:10092"}
-
 	pconfig := sarama.NewProducerConfig()
 	cconfig := sarama.NewConsumerConfig()
 	cconfig.OffsetMethod = sarama.OffsetMethodNewest
 
-	kafkaClientConfig := &KafkaConfig{
-		Brokers:        brokers,
-		BaseName:       "test-client",
+	config := &KafkaConfig{
+		Brokers:        []string{"localhost:10092"},
+		BaseName:       ClientName,
 		ClientConfig:   sarama.NewClientConfig(),
 		ProducerConfig: pconfig,
 		ConsumerConfig: cconfig,
 	}
 
-	client, err := sarama.NewClient(kafkaClientConfig.BaseName, kafkaClientConfig.Brokers, kafkaClientConfig.ClientConfig)
+	rwlog, err := NewKafkaReadWriteLog(ClientName, config)
 	if err != nil {
-		t.Fatalf("failed to create kafka client: %v", err)
+		t.Fatalf("Failed to create kafka log readwriter: %v", err)
 	}
+	rwlog.AddEncoder(newTestMesgEncoder, TopicName)
+	rwlog.AddDecoder(newTestMesgDecoder, TopicName)
 
 	in := make(chan Event, 0)
-	startTopicWriter(TopicName, client, newTestMesgEncoder, in)
+	rwlog.Write(TopicName, in)
 
-	parts, err := client.Partitions(TopicName)
+	parts, err := rwlog.Partitions(TopicName)
 	if err != nil {
 		t.Fatalf("error: topic: %v: failed getting kafka partition data: %v", TopicName, err)
 	}
 
-	go func() {
-		cnt := 0
-		for e := range startTopicReader(TopicName, kafkaClientConfig, newTestMesgDecoder, parts) {
+	cnt := 0
+	expcnt := 10
+	go func(cnt *int) {
+		for e := range rwlog.Read(TopicName, parts) {
 			switch msg := e.Message().(type) {
 			case *TestMesg:
 				// fmt.Printf("rx: %v\n", msg)
-				if msg.Data != cnt {
-					t.Fatalf("expected message #%d to equal %d, but was: %d", cnt, cnt, msg.Data)
+				if msg.Data != *cnt {
+					t.Fatalf("expected message #%d to equal %d, but was: %d", *cnt, *cnt, msg.Data)
 				}
 			default:
 				t.Fatalf("unknown message type received on: %v: %T :: %v", TopicName, msg, msg)
 			}
-			cnt++
+			*cnt++
 		}
-	}()
+	}(&cnt)
 
+	// Removing this time-sleep will cause the writer to start
+	// writing before the reader can start reading, which will
+	// cause the reader to miss messages and the test will
+	// fail.
 	time.Sleep(2 * time.Second)
 
-	for i := 0; i < 10; i++ {
-		in <- NewWritable(TopicName, "", NewTestMesg(i))
+	for i := 0; i < expcnt; i++ {
+		in <- NewWritable(TopicName, "", newTestMesg(i))
 	}
 
+	// Removing this time-sleep will cause the reader to not
+	// have enough time to read all messages from the topic
+	// and the test will fail.
 	time.Sleep(3 * time.Second)
+
+	if cnt != 10 {
+		t.Fatalf("reader did not receive expected count: %v actual count: %d", expcnt, cnt)
+	}
 }
 
 type TestMesg struct {
 	Data int
 }
 
-func NewTestMesg(i int) *TestMesg {
+func newTestMesg(i int) *TestMesg {
 	return &TestMesg{i}
 }
 
