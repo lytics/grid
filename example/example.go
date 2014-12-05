@@ -55,12 +55,12 @@ func main() {
 	g.AddDecoder(NewNumMesgDecoder, "topic1", "topic2", "topic3")
 	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
-	err = g.Add("add", 3, add, "topic1")
+	err = g.Add("add", 2, add, "topic1")
 	if err != nil {
 		log.Fatalf("error: example: %v", err)
 	}
 
-	err = g.Add("mul", 3, mul, "topic2")
+	err = g.Add("mul", 2, mul, "topic2")
 	if err != nil {
 		log.Fatalf("error: example: %v", err)
 	}

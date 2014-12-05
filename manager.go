@@ -87,13 +87,13 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 
 			if changed && activepeers == m.npeers {
 				m.state.Version++
-				log.Printf("grid: manager %v: emitting new state; \ngstate:%s ", m.name, m.state)
 				m.state.Sched = peersched(m.state.Peers, m.ops, m.parts)
+				log.Printf("grid: manager %v: emitting new start state; \ngstate:%s ", m.name, m.state)
 				out <- NewWritable(m.cmdtopic, Key, &CmdMesg{Data: *m.state})
 			} else if inactivepeers > 0 && activepeers+inactivepeers == m.npeers {
 				m.state.Version++
-				log.Printf("grid: manager %v: emitting new state; \ngstate:%s ", m.name, m.state)
 				// Everyone should be told to stop, emit state as such.
+				log.Printf("grid: manager %v: emitting new stop state; \ngstate:%s ", m.name, m.state)
 				out <- NewWritable(m.cmdtopic, Key, &CmdMesg{Data: *m.state})
 			}
 
@@ -105,7 +105,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 			case *CmdMesg:
 				cmdmsg = msg
 			default:
-				log.Printf("The message type %T didn't match the expected type of *CmdMesg", msg)
+				log.Printf("The message type %T didn't match the expected type of %T", msg, &CmdMesg{})
 				continue
 			}
 
@@ -120,10 +120,9 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				}
 				term = data.Term
 				if data.Leader == m.name {
-					log.Printf("grid: manager %v: ping: I'm a leader; term=%d", m.name, term)
 					rank = Leader
+					m.state.Peers[m.name].LastPongTs = time.Now().Unix()
 				} else {
-					log.Printf("grid: manager %v: ping: I'm a follower; term=%d", m.name, term)
 					m.state.Peers[m.name].Rank = Follower
 					rank = Follower
 					out <- NewWritable(m.cmdtopic, Key, newPong(m.name, data.Term))
@@ -133,10 +132,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				if data.Term < term {
 					continue
 				}
-				if _, ok := m.state.Peers[data.Follower]; !ok && rank == Leader {
-					// Only the leader can add new peers.
-					m.state.Peers[data.Follower] = newPeer(data.Follower, Follower, Active, time.Now().Unix())
-				}
+				m.state.Peers[data.Follower] = newPeer(data.Follower, Follower, Active, time.Now().Unix())
 			case PeerState:
 				log.Printf("grid: manager %v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, rank, term, data, m.state)
 				if data.Version < m.state.Version {
