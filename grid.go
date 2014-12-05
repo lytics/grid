@@ -128,14 +128,14 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 
 	for _, topic := range topics {
 		if _, found := g.log.DecodedTopics()[topic]; !found {
-			return fmt.Errorf("grid: no decoder found for topic: %v", topic)
+			return fmt.Errorf("grid: topic: %v: no decoder found for topic", topic)
 		}
 		op.inputs[topic] = true
 
 		// Discover the available partitions for the topic.
 		parts, err := g.log.Partitions(topic)
 		if err != nil {
-			log.Fatalf("error: grid: topic: %v: failed getting partition data: %v", topic, err)
+			return fmt.Errorf("grid: topic: %v: failed getting partition data: %v", topic, err)
 		}
 		g.parts[topic] = parts
 	}
@@ -150,14 +150,14 @@ func (g *Grid) starti(inst *Instance) {
 
 	// Check that this instance was added by the lib user.
 	if _, exists := g.ops[fname]; !exists {
-		log.Fatalf("error: grid: does not exist: %v()", fname)
+		log.Fatalf("fatal: grid: does not exist: %v()", fname)
 	}
 
 	// Setup all the topic readers for this instance of the function.
 	ins := make([]<-chan Event, 0)
 	for topic, parts := range inst.TopicSlices {
 		if !g.ops[fname].inputs[topic] {
-			log.Fatalf("error: grid: %v(): not set as reader of: %v", fname, topic)
+			log.Fatalf("fatal: grid: %v(): not set as reader of: %v", fname, topic)
 		}
 
 		ins = append(ins, g.log.Read(topic, parts))
@@ -179,7 +179,7 @@ func (g *Grid) starti(inst *Instance) {
 				if topicout, found := outs[event.Topic()]; found {
 					topicout <- event
 				} else {
-					log.Fatalf("error: grid: %v(): not set as writer of: %v", fname, event.Topic())
+					log.Fatalf("fatal: grid: %v(): not set as writer of: %v", fname, event.Topic())
 				}
 			}
 		}(fname, out, outs)
