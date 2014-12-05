@@ -19,16 +19,17 @@ type Encoder interface {
 }
 
 type Grid struct {
-	log           ReadWriteLog
-	gridname      string
-	cmdtopic      string
-	npeers        int
-	quorum        uint32
+	log      ReadWriteLog
+	gridname string
+	cmdtopic string
+	npeers   int
+	quorum   uint32
+	parts    map[string][]int32
+	ops      map[string]*op
+	wg       *sync.WaitGroup
+	exit     chan bool
+	// Test hook, normaly should be 0.
 	maxleadertime int64
-	parts         map[string][]int32
-	ops           map[string]*op
-	wg            *sync.WaitGroup
-	exit          chan bool
 }
 
 func New(gridname string, npeers int) (*Grid, error) {
