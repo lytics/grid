@@ -98,26 +98,19 @@ func (e Election) String() string {
 }
 
 type Voter struct {
-	name          string
-	topic         string
-	quorum        uint32
-	maxleadertime int64
+	name string
+	*Grid
 }
 
-func NewVoter(id int, topic string, quorum uint32, maxleadertime int64) *Voter {
-	return &Voter{
-		name:          buildPeerName(id),
-		topic:         topic,
-		quorum:        quorum,
-		maxleadertime: maxleadertime,
-	}
+func NewVoter(id int, g *Grid) *Voter {
+	return &Voter{buildPeerName(id), g}
 }
 
-func (v *Voter) startStateMachine(in <-chan Event, exit <-chan bool) <-chan Event {
+func (v *Voter) startStateMachine(in <-chan Event) <-chan Event {
 	out := make(chan Event, 0)
 	go func() {
 		defer close(out)
-		v.stateMachine(in, out, exit)
+		v.stateMachine(in, out)
 	}()
 	return out
 }
@@ -152,7 +145,7 @@ func (v *Voter) startStateMachine(in <-chan Event, exit <-chan bool) <-chan Even
 //     The parmeter 'id' is a testing hook, to enable having
 //     multiple voters in a single process running the test.
 //
-func (v *Voter) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bool) {
+func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
@@ -168,7 +161,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bool
 	var term uint32
 	for {
 		select {
-		case <-exit:
+		case <-v.exit:
 			return
 		case now := <-ticker.C:
 			if now.Unix()-lasthearbeat > HeartTimeout {
@@ -179,7 +172,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bool
 				elect = nil
 			}
 			if state == Leader && (time.Now().Unix() < termstart+v.maxleadertime || v.maxleadertime == 0) {
-				out <- NewWritable(v.topic, Key, newPing(v.name, elect.Term))
+				out <- NewWritable(v.cmdtopic, Key, newPing(v.name, elect.Term))
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
 				if state != Candidate {
@@ -188,7 +181,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bool
 				state = Candidate
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
-				out <- NewWritable(v.topic, Key, newElection(v.name, term))
+				out <- NewWritable(v.cmdtopic, Key, newElection(v.name, term))
 			}
 		case event := <-in:
 			var cmdmsg *CmdMesg
@@ -237,7 +230,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event, exit <-chan bool
 				term++
 				if !voted[data.Term] && state != Leader {
 					voted[data.Term] = true
-					out <- NewWritable(v.topic, Key, newVote(data.Candidate, data.Term, v.name))
+					out <- NewWritable(v.cmdtopic, Key, newVote(data.Candidate, data.Term, v.name))
 				}
 			default:
 				// Ignore other command messages.

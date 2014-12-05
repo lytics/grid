@@ -8,22 +8,25 @@ import (
 
 func TestElectionOf1(t *testing.T) {
 
-	const (
-		maxleadertime = 10 // Test hook, use 0 for normal use.
-		topic         = "test-election"
-		voters        = 1
-		quorum        = 1
-	)
+	const votercnt = 1
+
+	g, err := New("test-grid", votercnt)
+	if err != nil {
+		t.Fatalf("failed to create grid: %v", err)
+	}
+	g.maxleadertime = 10
+
+	if g.quorum != 1 {
+		t.Fatalf("with %d voters, quorum should be: %d, but is: %v", votercnt, 1, g.quorum)
+	}
 
 	p := newPartition()
-	exit := make(chan bool)
-
-	for i := 0; i < voters; i++ {
+	for i := 0; i < votercnt; i++ {
 		out := make(chan Event)
 		in := p.client(out)
 
-		v := NewVoter(i, topic, quorum, maxleadertime)
-		go v.stateMachine(in, out, exit)
+		v := NewVoter(i, g)
+		go v.stateMachine(in, out)
 	}
 	time.Sleep(45 * time.Second)
 
@@ -31,28 +34,31 @@ func TestElectionOf1(t *testing.T) {
 	// to see what sequence of messages were sent between
 	// voters.
 
-	isleaderelected(t, p, quorum)
-	close(exit)
+	isleaderelected(t, p, g.quorum)
+	close(g.exit)
 }
 
 func TestElectionOf3(t *testing.T) {
 
-	const (
-		maxleadertime = 10 // Test hook, use 0 for normal use.
-		topic         = "test-election"
-		voters        = 3
-		quorum        = 2
-	)
+	const votercnt = 3
+
+	g, err := New("test-grid", votercnt)
+	if err != nil {
+		t.Fatalf("failed to create grid: %v", err)
+	}
+	g.maxleadertime = 10
+
+	if g.quorum != 2 {
+		t.Fatalf("with %d voters, quorum should be: %d, but is: %v", votercnt, 2, g.quorum)
+	}
 
 	p := newPartition()
-	exit := make(chan bool)
-
-	for i := 0; i < voters; i++ {
+	for i := 0; i < votercnt; i++ {
 		out := make(chan Event)
 		in := p.client(out)
 
-		v := NewVoter(i, topic, quorum, maxleadertime)
-		go v.stateMachine(in, out, exit)
+		v := NewVoter(i, g)
+		go v.stateMachine(in, out)
 	}
 
 	time.Sleep(45 * time.Second)
@@ -61,19 +67,19 @@ func TestElectionOf3(t *testing.T) {
 	// to see what sequence of messages were sent between
 	// voters.
 
-	isleaderelected(t, p, quorum)
-	close(exit)
+	isleaderelected(t, p, g.quorum)
+	close(g.exit)
 }
 
 // validateElection checks the partition log for all messages passed
 // and asserts that they happend in the expected order with the
 // expected result of a leader being elected.
-func isleaderelected(t *testing.T, p *partition, quorum int) {
+func isleaderelected(t *testing.T, p *partition, quorum uint32) {
 
 	// sufficient votes to become leader simply means that there
 	// where 'quorum' number of votes cast for a particular
 	// candidate.
-	sufficientvotes := func(quorum int, votes map[string]int) bool {
+	sufficientvotes := func(quorum uint32, votes map[string]uint32) bool {
 		for _, v := range votes {
 			if v >= quorum {
 				return true
@@ -110,7 +116,7 @@ func isleaderelected(t *testing.T, p *partition, quorum int) {
 	}
 
 	leaderelected := false
-	votes := make(map[string]int)
+	votes := make(map[string]uint32)
 	for i := 1; i < p.head; i++ {
 		var cmdmsg *CmdMesg
 
