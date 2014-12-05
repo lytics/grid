@@ -41,7 +41,7 @@ func TestWriter(t *testing.T) {
 	}
 }
 
-func TestReader(t *testing.T) {
+func TestReadWriter(t *testing.T) {
 	if !integrationEnabled() {
 		return
 	}

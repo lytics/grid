@@ -10,6 +10,16 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+type ReadWriteLog interface {
+	Write(topic string, in <-chan Event)
+	Read(topic string, parts []int32) <-chan Event
+	AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
+	AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string)
+	EncodedTopics() map[string]bool
+	DecodedTopics() map[string]bool
+	Partitions(topic string) ([]int32, error)
+}
+
 type KafkaConfig struct {
 	Brokers        []string
 	BaseName       string
