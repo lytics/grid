@@ -26,7 +26,7 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 				// For every instance create its "topic slice" for
 				// each topic it reads from. A "topic slice" is
 				// just a topic name and a slice partition numbers.
-				finsts[i].topicslices[topic] = make([]int32, 0)
+				finsts[i].TopicSlices[topic] = make([]int32, 0)
 			}
 		}
 
@@ -39,7 +39,7 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 			copy(tparts, parts[topic])
 
 			for i := 0; i < len(tparts); i++ {
-				finsts[i%op.n].topicslices[topic] = append(finsts[i%op.n].topicslices[topic], tparts[i])
+				finsts[i%op.n].TopicSlices[topic] = append(finsts[i%op.n].TopicSlices[topic], tparts[i])
 			}
 		}
 

@@ -146,7 +146,7 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 }
 
 func (g *Grid) starti(inst *Instance) {
-	fname := inst.fname
+	fname := inst.Fname
 
 	// Check that this instance was added by the lib user.
 	if _, exists := g.ops[fname]; !exists {
@@ -155,7 +155,7 @@ func (g *Grid) starti(inst *Instance) {
 
 	// Setup all the topic readers for this instance of the function.
 	ins := make([]<-chan Event, 0)
-	for topic, parts := range inst.topicslices {
+	for topic, parts := range inst.TopicSlices {
 		if !g.ops[fname].inputs[topic] {
 			log.Fatalf("error: grid: %v(): not set as reader of: %v", fname, topic)
 		}

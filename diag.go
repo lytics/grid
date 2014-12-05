@@ -8,16 +8,16 @@ import (
 
 func (ist *Instance) PrettyPrint() string {
 	topics := make([]string, 0)
-	for topic, _ := range ist.topicslices {
+	for topic, _ := range ist.TopicSlices {
 		topics = append(topics, topic)
 	}
 
 	sort.Strings(topics)
 
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("%v #%v: ", ist.fname, ist.i))
+	buf.WriteString(fmt.Sprintf("%v #%v: ", ist.Fname, ist.Id))
 	for i, topic := range topics {
-		buf.WriteString(fmt.Sprintf("%v", ist.topicslices[topic]))
+		buf.WriteString(fmt.Sprintf("%v", ist.TopicSlices[topic]))
 		if i < len(topics)-1 {
 			buf.WriteString(", ")
 		}

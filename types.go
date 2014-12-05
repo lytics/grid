@@ -148,17 +148,17 @@ func newPeerState() *PeerState {
 // running instance of 'f' will read from, since a 'f' could read
 // from multiple topics.
 type Instance struct {
-	i           int
-	fname       string
-	topicslices map[string][]int32
+	Id          int
+	Fname       string
+	TopicSlices map[string][]int32
 }
 
 func (fi *Instance) String() string {
-	return fmt.Sprintf("Instance{i: %v, fname: %v, topic slices: %v}", fi.i, fi.fname, fi.topicslices)
+	return fmt.Sprintf("Instance{i: %v, fname: %v, topic slices: %v}", fi.Id, fi.Fname, fi.TopicSlices)
 }
 
 func NewInstance(i int, fname string) *Instance {
-	return &Instance{i: i, fname: fname, topicslices: make(map[string][]int32)}
+	return &Instance{Id: i, Fname: fname, TopicSlices: make(map[string][]int32)}
 }
 
 // PeerSched is a mapping from peernames to a slice of function instance
