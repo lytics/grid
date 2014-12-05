@@ -86,8 +86,8 @@ func (g *Grid) Start() error {
 
 	// Why are these both read-only channels?
 	// Because:
-	//  * The readers output is our input.
-	//  * Our output is the writers input.
+	//  * The reader's output is our input.
+	//  * Our output is the writer's input.
 	var in <-chan Event
 	var out <-chan Event
 
