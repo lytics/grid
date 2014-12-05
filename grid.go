@@ -27,21 +27,22 @@ type KafkaConfig struct {
 }
 
 type Grid struct {
-	kafka    *sarama.Client
-	kconfig  *KafkaConfig
-	name     string
-	cmdtopic string
-	peercnt  int
-	encoders map[string]func(io.Writer) Encoder
-	decoders map[string]func(io.Reader) Decoder
-	wg       *sync.WaitGroup
-	mutex    *sync.Mutex
-	exit     chan bool
-	voter    *Voter
-	manager  *Manager
+	kafka         *sarama.Client
+	kconfig       *KafkaConfig
+	gridname      string
+	cmdtopic      string
+	npeers        int
+	quorum        uint32
+	maxleadertime int64
+	encoders      map[string]func(io.Writer) Encoder
+	decoders      map[string]func(io.Reader) Decoder
+	parts         map[string][]int32
+	ops           map[string]*op
+	wg            *sync.WaitGroup
+	exit          chan bool
 }
 
-func New(name string, peerid int, peercnt int) (*Grid, error) {
+func New(gridname string, npeers int) (*Grid, error) {
 
 	brokers := []string{"localhost:10092"}
 
@@ -51,37 +52,34 @@ func New(name string, peerid int, peercnt int) (*Grid, error) {
 
 	kafkaClientConfig := &KafkaConfig{
 		Brokers:        brokers,
-		BaseName:       name,
+		BaseName:       gridname,
 		ClientConfig:   sarama.NewClientConfig(),
 		ProducerConfig: pconfig,
 		ConsumerConfig: cconfig,
 	}
 
-	return NewWithKafkaConfig(name, peerid, peercnt, kafkaClientConfig)
+	return NewWithKafkaConfig(gridname, npeers, kafkaClientConfig)
 }
 
-func NewWithKafkaConfig(name string, peerid int, peercnt int, kconfig *KafkaConfig) (*Grid, error) {
+func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Grid, error) {
 	kafka, err := sarama.NewClient(kconfig.BaseName+"_shared_client", kconfig.Brokers, kconfig.ClientConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	cmdtopic := name + "-cmd"
-	quorum := uint32((peercnt / 2) + 1)
+	cmdtopic := gridname + "-cmd"
 
 	g := &Grid{
 		kafka:    kafka,
 		kconfig:  kconfig,
-		name:     name,
+		gridname: gridname,
 		cmdtopic: cmdtopic,
-		peercnt:  peercnt,
+		npeers:   npeers,
+		quorum:   uint32((npeers / 2) + 1),
 		encoders: make(map[string]func(io.Writer) Encoder),
 		decoders: make(map[string]func(io.Reader) Decoder),
 		wg:       new(sync.WaitGroup),
-		mutex:    new(sync.Mutex),
 		exit:     make(chan bool),
-		voter:    NewVoter(0, cmdtopic, quorum, 0),
-		manager:  NewManager(0, cmdtopic, peercnt),
 	}
 
 	g.wg.Add(1)
@@ -93,21 +91,25 @@ func NewWithKafkaConfig(name string, peerid int, peercnt int, kconfig *KafkaConf
 }
 
 func (g *Grid) Start() error {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 
 	parts, err := g.kafka.Partitions(g.cmdtopic)
 	if err != nil {
 		log.Fatalf("error: topic: %v: failed getting kafka partition data: %v", g.cmdtopic, err)
 	}
 
-	vin := startTopicReader(g.cmdtopic, g.kconfig, NewCmdMesgDecoder, parts)
-	vout := g.voter.startStateMachine(vin, g.exit)
-	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, vout)
+	voter := NewVoter(0, g)
+	manager := NewManager(0, g)
 
-	min := startTopicReader(g.cmdtopic, g.kconfig, NewCmdMesgDecoder, parts)
-	mout := g.manager.startStateMachine(min, g.exit)
-	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, mout)
+	var in <-chan Event
+	var out <-chan Event
+
+	in = startTopicReader(g.cmdtopic, g.kconfig, NewCmdMesgDecoder, parts)
+	out = voter.startStateMachine(in)
+	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, out)
+
+	in = startTopicReader(g.cmdtopic, g.kconfig, NewCmdMesgDecoder, parts)
+	out = manager.startStateMachine(in)
+	startTopicWriter(g.cmdtopic, g.kafka, NewCmdMesgEncoder, out)
 
 	return nil
 }
@@ -117,16 +119,7 @@ func (g *Grid) Wait() {
 }
 
 func (g *Grid) Stop() {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
-
-	if g.exit == nil {
-		return
-	}
-
 	close(g.exit)
-	g.exit = nil
-
 	g.wg.Done()
 }
 
@@ -150,9 +143,9 @@ func (g *Grid) AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
 	}
 }
 
-func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, topics ...string) error {
-	if _, exists := g.manager.ops[fname]; exists {
-		return fmt.Errorf("gird: already added: %v", fname)
+func (g *Grid) Add(fgridname string, n int, f func(in <-chan Event) <-chan Event, topics ...string) error {
+	if _, exists := g.ops[fgridname]; exists {
+		return fmt.Errorf("gird: already added: %v", fgridname)
 	}
 
 	op := &op{f: f, n: n, inputs: make(map[string]bool)}
@@ -166,12 +159,12 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 		if err != nil {
 			log.Fatalf("error: topic: %v: failed getting kafka partition data: %v", g.cmdtopic, err)
 		}
-		g.manager.parts[topic] = parts
+		g.parts[topic] = parts
 
 		op.inputs[topic] = true
 	}
 
-	g.manager.ops[fname] = op
+	g.ops[fgridname] = op
 
 	return nil
 }
@@ -194,40 +187,40 @@ func merge(ins []<-chan Event) <-chan Event {
 	return merged
 }
 
-// func (g *Grid) startup(fname string, tslices []*topicslice) {
-// 	if _, exists := g.ops[fname]; !exists {
-// 		log.Fatalf("error: grid: does not exist: %v(): reader of: %v", fname, topic)
+// func (g *Grid) startup(fgridname string, tslices []*topicslice) {
+// 	if _, exists := g.ops[fgridname]; !exists {
+// 		log.Fatalf("error: grid: does not exist: %v(): reader of: %v", fgridname, topic)
 // 	}
 
 // 	ins := make([]<-chan Event, 0)
 // 	for _, tslice := range tslices {
 // 		newdec, found := g.decoders[tslice.topic]
 // 		if !found {
-// 			log.Fatalf("error: grid: %v(): has no decoder as reader of: %v", fname, topic)
+// 			log.Fatalf("error: grid: %v(): has no decoder as reader of: %v", fgridname, topic)
 // 		}
 
-// 		if !g.ops[fname].inputs[topic] {
-// 			log.Fatalf("error: grid: %v(): not set as reader of: %v", fname, topic)
+// 		if !g.ops[fgridname].inputs[topic] {
+// 			log.Fatalf("error: grid: %v(): not set as reader of: %v", fgridname, topic)
 // 		}
 
 // 		ins = append(ins, startTopicReader(topic, g.kafka, g.kconfig, newdec, tslice.parts...))
 // 	}
 
-// 	out := g.ops[fname].f(merge(ins))
+// 	out := g.ops[fgridname].f(merge(ins))
 
 // 	outs := make(map[string]chan Event)
 // 	for topic, newenc := range g.encoders {
 // 		outs[topic] = make(chan Event, 1024)
 // 		startTopicWriter(topic, g.kafka, newenc, outs[topic])
 
-// 		go func(fname string, out <-chan Event, outs map[string]chan Event) {
+// 		go func(fgridname string, out <-chan Event, outs map[string]chan Event) {
 // 			for e := range out {
 // 				if tchan, found := outs[e.Topic()]; found {
 // 					tchan <- e
 // 				} else {
-// 					log.Printf("error: grid: %v(): has no encoder as writer of: %v", fname, e.Topic())
+// 					log.Printf("error: grid: %v(): has no encoder as writer of: %v", fgridname, e.Topic())
 // 				}
 // 			}
-// 		}(fname, out, outs)
+// 		}(fgridname, out, outs)
 // 	}
 // }
