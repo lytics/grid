@@ -111,7 +111,7 @@ type Health int
 
 const (
 	Active Health = iota
-	Timeout
+	Inactive
 )
 
 type Peer struct {
@@ -182,5 +182,5 @@ func init() {
 	gob.Register(CmdMesg{})
 
 	gob.Register(Follower) // register the Rank type def
-	gob.Register(Timeout)  //register the Health type def
+	gob.Register(Inactive) // register the Health type def
 }

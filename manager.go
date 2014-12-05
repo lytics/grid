@@ -56,15 +56,15 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 			inactivepeers := 0
 
 			for _, peer := range m.state.Peers { // Update health states
-				if now.Unix()-peer.LastPongTs > HeartTimeout && peer.Health != Timeout {
+				if now.Unix()-peer.LastPongTs > HeartTimeout && peer.Health != Inactive {
 					// Update peers that have timed out.
-					log.Printf("grid: manager %v: peer[%v] transitioned from Health[%v -> %v]", m.name, peer.Name, peer.Health, Timeout)
-					peer.Health = Timeout
+					log.Printf("grid: manager %v: peer[%v] transitioned from Health[%v -> %v]", m.name, peer.Name, peer.Health, Inactive)
+					peer.Health = Inactive
 					changed = true
 					inactivepeers++
 				} else if now.Unix()-peer.LastPongTs > HeartTimeout {
 					// Don't log over and over that a peer is timed out.
-				} else if now.Unix()-peer.LastPongTs <= HeartTimeout && peer.Health == Timeout {
+				} else if now.Unix()-peer.LastPongTs <= HeartTimeout && peer.Health == Inactive {
 					// Update peer that are now active.
 					log.Printf("grid: manager %v: peer[%v] transitioned from Health[%v -> %v]", m.name, peer.Name, peer.Health, Active)
 					peer.Health = Active
