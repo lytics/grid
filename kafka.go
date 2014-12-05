@@ -103,9 +103,11 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 		defer producer.Close()
 
 		var buf bytes.Buffer
-		enc := kl.encoders[topic](&buf)
 
 		for event := range in {
+			buf.Reset()
+			enc := kl.encoders[topic](&buf)
+			//fmt.Println(reflect.TypeOf(event.Message()), ", data: ", reflect.TypeOf(event.Message().))
 			err := enc.Encode(event.Message())
 			if err != nil {
 				buf.Reset()
@@ -154,14 +156,16 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 			defer consumer.Close()
 
 			var buf bytes.Buffer
-			dec := kl.decoders[topic](&buf)
 
 			for e := range consumer.Events() {
+				buf.Reset()
+				dec := kl.decoders[topic](&buf)
 				msg := dec.New()
 				buf.Write(e.Value)
 				err = dec.Decode(msg)
+				//fmt.Println(reflect.TypeOf(msg))
 				if err != nil {
-					log.Printf("error: topic: %v decode failed: %v: value: %v", topic, err, buf.Bytes())
+					log.Printf("error: topic: %v decode failed: %v: msg: %v value: %v", topic, err, msg, string(buf.Bytes()))
 					buf.Reset()
 				} else {
 					out <- NewReadable(e.Topic, e.Offset, msg)

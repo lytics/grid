@@ -1,8 +1,6 @@
 package grid
 
 import (
-	"encoding/gob"
-	"fmt"
 	"log"
 	"math/rand"
 	"time"
@@ -15,82 +13,6 @@ const (
 	HeartTimeout = 6
 	ElectTimeout = 20
 )
-
-type Rank int
-
-const (
-	Follower Rank = iota
-	Candidate
-	Leader
-)
-
-// Ping is sent only by elected leader.
-type Ping struct {
-	Leader string
-	Term   uint32
-}
-
-// Pong is send only by followers in response to a leader's Ping.
-type Pong struct {
-	Follower string
-	Term     uint32
-}
-
-// Vote is sent by any voter in response to an election.
-type Vote struct {
-	Term      uint32
-	Candidate string
-	From      string
-}
-
-// Election is started by any voter that has timed out the leader.
-type Election struct {
-	Term      uint32
-	Votes     uint32
-	Candidate string
-}
-
-func init() {
-	gob.Register(Ping{})
-	gob.Register(Vote{})
-	gob.Register(Election{})
-}
-
-func newPing(leader string, term uint32) *CmdMesg {
-	return &CmdMesg{Data: Ping{Leader: leader, Term: term}}
-}
-
-func (p Ping) String() string {
-	return fmt.Sprintf("Ping{Leader: %v, Term: %d}", p.Leader, p.Term)
-}
-
-func newPong(follower string, term uint32) *CmdMesg {
-	return &CmdMesg{Data: Pong{Follower: follower, Term: term}}
-}
-
-func (p Pong) String() string {
-	return fmt.Sprintf("Pong{Follower: %v, Term: %d}", p.Follower, p.Term)
-}
-
-func newVote(candidate string, term uint32, from string) *CmdMesg {
-	return &CmdMesg{Data: Vote{Term: term, Candidate: candidate, From: from}}
-}
-
-func (v Vote) String() string {
-	return fmt.Sprintf("Vote{Term: %d, Candidate: %v, From: %v}", v.Term, v.Candidate, v.From)
-}
-
-func newElection(candidate string, term uint32) *CmdMesg {
-	return &CmdMesg{Data: Election{Term: term, Votes: 1, Candidate: candidate}}
-}
-
-func (e Election) Copy() *Election {
-	return &Election{Term: e.Term, Votes: e.Votes, Candidate: e.Candidate}
-}
-
-func (e Election) String() string {
-	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %v}", e.Term, e.Votes, e.Candidate)
-}
 
 type Voter struct {
 	name string
