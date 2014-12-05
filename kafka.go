@@ -78,7 +78,7 @@ func startTopicReader(topic string, kconfig *KafkaConfig, newdec func(io.Reader)
 				buf.Write(e.Value)
 				err = dec.Decode(msg)
 				if err != nil {
-					log.Printf("error: topic: %v decode failed: %v: value: %v", topic, err, buf.Bytes())
+					log.Printf("error: topic: %v decode failed: %v: value: %v", topic, err, string(buf.Bytes()))
 					buf.Reset()
 				} else {
 					out <- NewReadable(e.Topic, e.Offset, msg)

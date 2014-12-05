@@ -52,8 +52,13 @@ type Election struct {
 
 func init() {
 	gob.Register(Ping{})
+	gob.Register(Pong{})
 	gob.Register(Vote{})
 	gob.Register(Election{})
+	gob.Register(GridState{})
+	gob.Register(Peer{})
+	gob.Register(PeerSched{})
+	gob.Register(Instance{})
 }
 
 func newPing(leader string, term uint32) *CmdMesg {
