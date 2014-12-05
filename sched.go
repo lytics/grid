@@ -19,7 +19,7 @@ func NewInstance(i int, fname string) *Instance {
 	return &Instance{i: i, fname: fname, topicslices: make(map[string][]int32)}
 }
 
-// PeerSched is a mapping from peernames to a slice of function instance
+// PeerSched is a mapping from names to a slice of function instance
 // definitions that should run on that peer.
 type PeerSched map[string][]*Instance
 

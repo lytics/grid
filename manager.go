@@ -87,9 +87,6 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				continue
 			}
 
-			//We never mutate our state directly, it needs to be written into the append log, and read back
-			//  just like everyone else.   Just in case we try to emit the log after we've lost an election
-
 			m.state.Term = term
 
 			changed := false
@@ -116,7 +113,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					activepeers++
 				}
 
-				//Demote any one who isn't me
+				// Demote any one who isn't me
 				if peer.Rank == Leader && peer.Name != m.name {
 					peer.Rank = Follower
 					changed = true
@@ -178,9 +175,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					m.state.Peers[data.Follower] = newPeer(data.Follower, Follower, Active, time.Now().Unix())
 				}
 			case PeerState:
-				log.Printf("gridstate: name:%v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, rank, term, data, m.state)
-				//TODO For now I'm going to allow duplicate versions to be re-processed,
-				// otherwise the leader would reject the new state.  I think I need to rework the code so that the code above works on a copy until its received
+				log.Printf("grid: manager %v rank:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, rank, term, data, m.state)
 				if data.Version < m.state.Version {
 					log.Printf("warning: grid: manager %v: gstate: got a new gstate with an old version; oldgs:%v \nnewgs:%v ", m.name, m.state, data)
 					continue
@@ -190,7 +185,9 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					continue
 				}
 				m.state = &data
-				// Act on my part of the state, do Func schedule for m.gstate.Peers[m.name].
+				for _, instance := range m.state.Sched[m.name] {
+					m.starti(instance)
+				}
 			default:
 				// Ignore other command messages.
 			}
