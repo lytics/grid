@@ -18,6 +18,10 @@ func TestManager(t *testing.T) {
 		t.Fatalf("failed to create grid: %v", err)
 	}
 
+	// Set the read-write log to no-op log, otherwise
+	// the test will fail with errors related to
+	// kafka message encoding/decodeing, which are
+	// unrelated for the purposes of this test.
 	g.log = newNoOpReadWriteLog()
 
 	f := func(in <-chan Event) <-chan Event { return nil }

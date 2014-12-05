@@ -128,16 +128,16 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 
 	for _, topic := range topics {
 		if _, found := g.log.DecodedTopics()[topic]; !found {
-			return fmt.Errorf("grid: no decoder added for topic: %v", topic)
+			return fmt.Errorf("grid: no decoder found for topic: %v", topic)
 		}
+		op.inputs[topic] = true
 
+		// Discover the available partitions for the topic.
 		parts, err := g.log.Partitions(topic)
 		if err != nil {
-			log.Fatalf("error: topic: %v: failed getting kafka partition data: %v", g.cmdtopic, err)
+			log.Fatalf("error: grid: topic: %v: failed getting partition data: %v", topic, err)
 		}
 		g.parts[topic] = parts
-
-		op.inputs[topic] = true
 	}
 
 	g.ops[fname] = op
@@ -148,10 +148,12 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 func (g *Grid) starti(inst *Instance) {
 	fname := inst.fname
 
+	// Check that this instance was added by the lib user.
 	if _, exists := g.ops[fname]; !exists {
-		log.Fatalf("error: grid: does not exist: %v(): reader of: %v", fname)
+		log.Fatalf("error: grid: does not exist: %v()", fname)
 	}
 
+	// Setup all the topic readers for this instance of the function.
 	ins := make([]<-chan Event, 0)
 	for topic, parts := range inst.topicslices {
 		if !g.ops[fname].inputs[topic] {
@@ -161,8 +163,12 @@ func (g *Grid) starti(inst *Instance) {
 		ins = append(ins, g.log.Read(topic, parts))
 	}
 
+	// The out channel will be used by this instance so send data to
+	// the read-write log.
 	out := g.ops[fname].f(merge(ins))
 
+	// The messages on the out channel are de-mux'ed and put on
+	// topic specific out channels.
 	outs := make(map[string]chan Event)
 	for topic, _ := range g.log.EncodedTopics() {
 		outs[topic] = make(chan Event, 1024)
@@ -173,7 +179,7 @@ func (g *Grid) starti(inst *Instance) {
 				if topicout, found := outs[event.Topic()]; found {
 					topicout <- event
 				} else {
-					log.Printf("error: grid: %v(): has no encoder as writer of: %v", fname, event.Topic())
+					log.Fatalf("error: grid: %v(): not set as writer of: %v", fname, event.Topic())
 				}
 			}
 		}(fname, out, outs)
