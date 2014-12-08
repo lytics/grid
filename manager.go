@@ -10,12 +10,17 @@ import (
 type Manager struct {
 	name        string
 	peertimeout int64
+	tkohander   func()
 	state       *PeerState
 	*Grid
 }
 
 func NewManager(id int, g *Grid) *Manager {
-	return &Manager{buildPeerName(id), PeerTimeout, newPeerState(), g}
+	name := buildPeerName(id)
+	defualttkohandler := func() {
+		log.Fatalf("grid: manager %v: Exiting due to one or more peers going unhealthy, the grid needs to be restarted.", name)
+	}
+	return &Manager{name, PeerTimeout, defualttkohandler, newPeerState(), g}
 }
 
 func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
@@ -28,7 +33,7 @@ func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
 }
 
 func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
-	log.Printf("grid: manager %v: starting state machine loop. npeers:%v", m.name, m.npeers)
+	log.Printf("grid: manager %v: starting: npeers:%v", m.name, m.npeers, m)
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
@@ -57,17 +62,15 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				if now.Unix()-peer.LastPongTs > m.peertimeout && len(m.state.Peers) >= m.npeers {
 					// Update peers that have timed out.  This should only happen if the peer was happen and then became unhealthy.
 					log.Printf("grid: manager %v: peer[%v] transitioned from Health[Active -> Inactive]", m.name, peer.Name)
-					log.Fatalf("grid: manager %v: Exiting due to one or more peers going unhealthy, the grid needs to be restarted.", m.name)
+					m.tkohander()
+					return
 				} else if len(m.state.Peers) >= m.npeers && !ready {
-					//We've reached the required number of peers for the first time, set state as ready and emit the first state.
-					log.Printf("grid: manager %v: peercnt:%v", m.name, len(m.state.Peers))
+					//We've reached the required number of peers for the first time
 					ready = true
 					emit = true
 				}
 			}
 
-			//NOTE to marek: moving this below the peer check loop above, so that followers can
-			//  exit in an unhealthy cluster state.
 			if rank != Leader {
 				continue
 			}
