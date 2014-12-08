@@ -33,7 +33,7 @@ func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
 }
 
 func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
-	log.Printf("grid: manager %v: starting: npeers:%v", m.name, m.npeers, m)
+	log.Printf("grid: manager %v: starting: npeers:%v", m.name, m.npeers)
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
