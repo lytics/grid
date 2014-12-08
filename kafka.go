@@ -17,6 +17,7 @@ type ReadWriteLog interface {
 	Read(topic string, parts []int32) <-chan Event
 	AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
 	AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string)
+	AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string)
 	EncodedTopics() map[string]bool
 	DecodedTopics() map[string]bool
 	Partitions(topic string) ([]int32, error)
@@ -31,10 +32,11 @@ type KafkaConfig struct {
 }
 
 type kafkalog struct {
-	conf     *KafkaConfig
-	client   *sarama.Client
-	encoders map[string]func(io.Writer) Encoder
-	decoders map[string]func(io.Reader) Decoder
+	conf         *KafkaConfig
+	client       *sarama.Client
+	encoders     map[string]func(io.Writer) Encoder
+	decoders     map[string]func(io.Reader) Decoder
+	partitioners map[string]func(io.Reader, int32) int32
 }
 
 func NewKafkaReadWriteLog(id string, conf *KafkaConfig) (ReadWriteLog, error) {
@@ -89,6 +91,14 @@ func (kl *kafkalog) Partitions(topic string) ([]int32, error) {
 	return parts, err
 }
 
+func (kl *kafkalog) AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string) {
+	for _, topic := range topics {
+		if _, added := kl.partitioners[topic]; !added {
+			kl.partitioners[topic] = p
+		}
+	}
+}
+
 func (kl *kafkalog) Write(topic string, in <-chan Event) {
 	go func() {
 		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.BaseName, topic)
@@ -98,7 +108,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 		}
 		defer client.Close()
 
-		producer, err := sarama.NewSimpleProducer(client, topic, newPartitioner)
+		producer, err := sarama.NewSimpleProducer(client, topic, kl.newPartitioner(topic))
 		if err != nil {
 			log.Fatalf("fatal: topic: %v: producer: %v", err)
 		}
@@ -184,12 +194,30 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 	return out
 }
 
-type partitioner struct {
-	hasher hash.Hash32
+func (kl *kafkalog) newPartitioner(topic string) func() sarama.Partitioner {
+	if p, found := kl.partitioners[topic]; found {
+		return func() sarama.Partitioner { return &wrappartitioner{p: p, buf: new(bytes.Buffer)} }
+	} else {
+		return func() sarama.Partitioner { return &partitioner{hasher: fnv.New32a()} }
+	}
 }
 
-func newPartitioner() sarama.Partitioner {
-	return &partitioner{hasher: fnv.New32a()}
+type wrappartitioner struct {
+	buf *bytes.Buffer
+	p   func(key io.Reader, parts int32) int32
+}
+
+func (w *wrappartitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
+	bytes, err := key.Encode()
+	if err != nil {
+		return 0
+	}
+	w.buf.Write(bytes)
+	return w.p(w.buf, numPartitions)
+}
+
+type partitioner struct {
+	hasher hash.Hash32
 }
 
 func (p *partitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {

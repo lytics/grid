@@ -136,7 +136,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				}
 				m.state = &data
 				for _, instance := range m.state.Sched[m.name] {
-					m.starti(instance)
+					m.startinst(instance)
 				}
 			default:
 				// Ignore other command messages.

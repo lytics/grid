@@ -55,11 +55,15 @@ func main() {
 	g.AddDecoder(NewNumMesgDecoder, "topic1", "topic2", "topic3")
 	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
+	// Add layer "add", with two instances of add's function running
+	// in the grid. The layer reads from "topic1".
 	err = g.Add("add", 2, add, "topic1")
 	if err != nil {
 		log.Fatalf("error: example: %v", err)
 	}
 
+	// Add layer "mul", with two instances of mul's function running
+	// in the grid. The layer reads from "topic2".
 	err = g.Add("mul", 2, mul, "topic2")
 	if err != nil {
 		log.Fatalf("error: example: %v", err)
@@ -117,8 +121,9 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
-				log.Printf("add(): in-msg=%d -> out-mgs=%d\n", mesg.Data, outmsg)
+				// Output to "topic2" which is read by "mul" for further processing.
 				out <- grid.NewWritable("topic2", Key, NewNumMesg(outmsg))
+				log.Printf("add(): in-msg=%d -> out-msg=%d\n", mesg.Data, outmsg)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
@@ -137,8 +142,9 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := 2 * mesg.Data
-				log.Printf("mul(): in-msg=%d -> out-mgs=%d\n", mesg.Data, outmsg)
+				// Output to "topic3" which is the final resting place of the processing.
 				out <- grid.NewWritable("topic3", Key, NewNumMesg(outmsg))
+				log.Printf("mul(): in-msg=%d -> out-msg=%d\n", mesg.Data, outmsg)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
