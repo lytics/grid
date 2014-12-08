@@ -12,6 +12,7 @@ const (
 	TickMillis   = 500
 	HeartTimeout = 6
 	ElectTimeout = 20
+	PeerTimeout  = 30
 )
 
 type Voter struct {
