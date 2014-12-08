@@ -107,22 +107,13 @@ func (e Election) String() string {
 	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %v}", e.Term, e.Votes, e.Candidate)
 }
 
-type Health int
-
-const (
-	Active Health = iota
-	Inactive
-)
-
 type Peer struct {
-	Rank       Rank
 	Name       string
-	Health     Health
 	LastPongTs int64
 }
 
-func newPeer(name string, r Rank, h Health, lastpong int64) *Peer {
-	return &Peer{Name: name, Rank: r, Health: h, LastPongTs: lastpong}
+func newPeer(name string, lastpong int64) *Peer {
+	return &Peer{Name: name, LastPongTs: lastpong}
 }
 
 type PeerState struct {
@@ -182,5 +173,4 @@ func init() {
 	gob.Register(CmdMesg{})
 
 	gob.Register(Follower) // register the Rank type def
-	gob.Register(Inactive) // register the Health type def
 }
