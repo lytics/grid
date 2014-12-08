@@ -5,7 +5,7 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 
 	sched := PeerSched{}
 
-	// Every peer shold get some function instances, so just
+	// Every peer should get some function instances, so just
 	// initialize the map of peers and their slice of
 	// function instances upfront.
 	for peer, _ := range peers {
@@ -31,7 +31,7 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 		}
 
 		// For each topic or each instance, steal one partition from the
-		// ramaining partitions of that topic. This basically round-
+		// remaining partitions of that topic. This basically round-
 		// robins the partitions of a topic to the instance of
 		// functions.
 		for topic, _ := range op.inputs {
@@ -43,7 +43,7 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 			}
 		}
 
-		// Round-robin each function instance to the peers. Basially
+		// Round-robin each function instance to the peers. Basically
 		// each peer steals one function instance until none remain.
 		i := len(finsts) - 1
 		for i >= 0 {

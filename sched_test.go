@@ -24,9 +24,9 @@ func TestPeerSched(t *testing.T) {
 	ops["f2"] = op2
 
 	peers := make(map[string]*Peer)
-	peers["host1-123-0"] = newPeer("host1-123-0", Follower, Active, time.Now().Unix())
-	peers["host1-345-0"] = newPeer("host1-345-0", Follower, Active, time.Now().Unix())
-	peers["host1-678-0"] = newPeer("host1-678-0", Follower, Active, time.Now().Unix())
+	peers["host1-123-0"] = newPeer("host1-123-0", time.Now().Unix())
+	peers["host1-345-0"] = newPeer("host1-345-0", time.Now().Unix())
+	peers["host1-678-0"] = newPeer("host1-678-0", time.Now().Unix())
 
 	// Expected result is that between all instances of 'f1', the topics
 	// 'topic1' and 'topic2' are consumed in full, ie: that all their
@@ -70,8 +70,8 @@ func TestPeerSched(t *testing.T) {
 		}
 		for _, fi := range finsts {
 			for topic, _ := range topics {
-				for _, part := range fi.topicslices[topic] {
-					delete(expected_parts[fi.fname][topic], part)
+				for _, part := range fi.TopicSlices[topic] {
+					delete(expected_parts[fi.Fname][topic], part)
 				}
 			}
 		}
@@ -84,8 +84,8 @@ func TestPeerSched(t *testing.T) {
 		}
 		for _, fi := range finsts {
 			for topic, _ := range topics {
-				if 0 != len(expected_parts[fi.fname][topic]) {
-					t.Fatalf("some partitions were not scheduled for reading: %v %v %v: %v", name, fi.fname, topic, partsstr(expected_parts[fi.fname][topic]))
+				if 0 != len(expected_parts[fi.Fname][topic]) {
+					t.Fatalf("some partitions were not scheduled for reading: %v %v %v: %v", name, fi.Fname, topic, partsstr(expected_parts[fi.Fname][topic]))
 				}
 			}
 		}

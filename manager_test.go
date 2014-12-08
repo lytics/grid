@@ -44,6 +44,7 @@ func TestManager(t *testing.T) {
 		in := p.client(out)
 
 		mgr := NewManager(i, g)
+		mgr.peertimeout = 5000 // We don't want the peers timing out for this test
 		go mgr.stateMachine(in, out)
 
 		mgr.ops = ops

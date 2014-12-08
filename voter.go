@@ -7,11 +7,13 @@ import (
 )
 
 const (
-	Key          = ""
-	Skew         = 20
-	TickMillis   = 500
-	HeartTimeout = 6
-	ElectTimeout = 20
+	Key           = ""
+	Skew          = 20
+	TickMillis    = 500
+	HeartTimeout  = 6
+	ElectTimeout  = 20
+	PeerTimeout   = 30
+	UnhealthyCode = -12
 )
 
 type Voter struct {
