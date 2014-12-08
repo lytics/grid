@@ -120,6 +120,10 @@ func (g *Grid) AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
 	g.log.AddEncoder(makeEncoder, topics...)
 }
 
+func (g *Grid) AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string) {
+	g.log.AddPartitioner(p, topics...)
+}
+
 func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, topics ...string) error {
 	if _, exists := g.ops[fname]; exists {
 		return fmt.Errorf("gird: already added: %v", fname)
@@ -146,7 +150,7 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 	return nil
 }
 
-func (g *Grid) starti(inst *Instance) {
+func (g *Grid) startinst(inst *Instance) {
 	fname := inst.Fname
 
 	// Check that this instance was added by the lib user.
