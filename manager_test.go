@@ -154,7 +154,7 @@ func TestManagerGridDeath(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(2 * time.Second) // lets the cluster run it should stay up since we are sending out pings
+	time.Sleep(2 * time.Second) // let the cluster run longer than the current peer timeout(1 sec) to ensure it remains running.
 
 	//Now we can replace the tko handler so we can count the nodes as they exit.
 	var deadNodes uint64 = 0
