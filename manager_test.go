@@ -125,7 +125,7 @@ func TestManagerGridDeath(t *testing.T) {
 		in := p.client(out)
 
 		mgr := NewManager(i, g)
-		mgr.tkohander = func() {
+		mgr.tkohandler = func() {
 			t.Fatalf("The managers shouldn't have exited yet.")
 		}
 		mgr.peertimeout = 1 // timeout fast
@@ -159,7 +159,7 @@ func TestManagerGridDeath(t *testing.T) {
 	//Now we can replace the tko handler so we can count the nodes as they exit.
 	var deadNodes uint64 = 0
 	for _, mgr := range managers {
-		mgr.tkohander = func() {
+		mgr.tkohandler = func() {
 			atomic.AddUint64(&deadNodes, 1)
 		}
 	}
