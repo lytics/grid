@@ -46,7 +46,7 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 }
 
 var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will take part in the grid.")
-var mode = flag.Int("mode", 1, "the mode to run this process in.  [1] Run as the load_test grid [2] Generate messages (producer)  [3] Print metrics (consumer)")
+var mode = flag.Int("mode", 1, "the mode to run this process in.  [1] Run as the load_test grid [2] Generate messages (producer)")
 
 /*
 	topology map:
@@ -61,8 +61,9 @@ var mode = flag.Int("mode", 1, "the mode to run this process in.  [1] Run as the
 */
 func main() {
 	flag.Parse()
+	go logMetrics()
 	if *mode == 1 {
-		runtime.GOMAXPROCS(4)
+		runtime.GOMAXPROCS(3)
 
 		g, err := grid.New(GridName, *peercnt)
 		if err != nil {
@@ -72,22 +73,22 @@ func main() {
 		g.AddDecoder(NewNumMesgDecoder, "add1", "mulBy2", "divBy2", "sub1", "collector")
 		g.AddEncoder(NewNumMesgEncoder, "add1", "mulBy2", "divBy2", "sub1", "collector")
 
-		err = g.Add("add1", 4, add, "add1")
+		err = g.Add("add1", 3, add, "add1")
 		if err != nil {
 			log.Fatalf("error: example: %v", err)
 		}
 
-		err = g.Add("mulBy2", 4, mul, "mulBy2")
+		err = g.Add("mulBy2", 3, mul, "mulBy2")
 		if err != nil {
 			log.Fatalf("error: example: %v", err)
 		}
 
-		err = g.Add("divBy2", 4, div, "divBy2")
+		err = g.Add("divBy2", 3, div, "divBy2")
 		if err != nil {
 			log.Fatalf("error: example: %v", err)
 		}
 
-		err = g.Add("sub1", 4, sub, "sub1")
+		err = g.Add("sub1", 3, sub, "sub1")
 		if err != nil {
 			log.Fatalf("error: example: %v", err)
 		}
@@ -98,16 +99,15 @@ func main() {
 		}
 
 		g.Start()
-		go logMetrics()
+
 		g.Wait()
 	} else if *mode == 2 {
-		go logMetrics()
 		generateTestMessages()
 	}
 }
 
 func logMetrics() {
-	ticker := time.NewTicker(time.Second * 20)
+	ticker := time.NewTicker(time.Second * 10)
 
 	for now := range ticker.C {
 		fmt.Println("------------ ", now, " ---------------")
@@ -170,7 +170,6 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
-				//log.Printf("add(): in-msg=%d -> out-mgs=%d\n", mesg.Data, outmsg)
 				add.Mark(1)
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("mulBy2", key, NewNumMesg(outmsg))
@@ -197,7 +196,6 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 				outmsg := 2 * mesg.Data
 				mul.Mark(1)
 				key := fmt.Sprintf("%d", mesg.Data)
-				//log.Printf("mul(): in-msg=%d -> out-mgs=%d\n", mesg.Data, outmsg)
 				out <- grid.NewWritable("divBy2", key, NewNumMesg(outmsg))
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
@@ -222,7 +220,6 @@ func div(in <-chan grid.Event) <-chan grid.Event {
 				div.Mark(1)
 				outmsg := mesg.Data / 2
 				key := fmt.Sprintf("%d", mesg.Data)
-				//log.Printf("div(): in-msg=%d -> out-mgs=%d\n", mesg.Data, outmsg)
 				out <- grid.NewWritable("sub1", key, NewNumMesg(outmsg))
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
@@ -245,7 +242,6 @@ func sub(in <-chan grid.Event) <-chan grid.Event {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := mesg.Data - 1
-				//log.Printf("sub(): in-msg=%d -> out-mgs=%d\n", mesg.Data, outmsg)
 				sub.Mark(1)
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("collector", key, NewNumMesg(outmsg))
@@ -271,7 +267,6 @@ func collector(in <-chan grid.Event) <-chan grid.Event {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				meter.Mark(1)
-				//log.Printf("collector(): in-msg=%d\n", mesg.Data)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}

@@ -41,6 +41,7 @@ func New(gridname string, npeers int) (*Grid, error) {
 	pconfig.FlushMsgCount = 10000
 	pconfig.FlushFrequency = 1 * time.Second
 	cconfig := sarama.NewConsumerConfig()
+	cconfig.DefaultFetchSize = 512000
 	cconfig.OffsetMethod = sarama.OffsetMethodNewest
 
 	kafkaClientConfig := &KafkaConfig{
@@ -57,7 +58,7 @@ func New(gridname string, npeers int) (*Grid, error) {
 func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Grid, error) {
 	cmdtopic := gridname + "-cmd"
 
-	kconfig.cmdTopic = cmdtopic
+	kconfig.cmdtopic = cmdtopic
 
 	rwlog, err := NewKafkaReadWriteLog(buildPeerName(0), kconfig)
 	if err != nil {
