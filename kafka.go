@@ -46,6 +46,7 @@ func NewKafkaReadWriteLog(id string, conf *KafkaConfig) (ReadWriteLog, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &kafkalog{conf: conf, client: client, encoders: make(map[string]func(io.Writer) Encoder), decoders: make(map[string]func(io.Reader) Decoder)}, nil
 }
 
@@ -103,15 +104,15 @@ func (kl *kafkalog) AddPartitioner(p func(key io.Reader, parts int32) int32, top
 
 func cloneProducerConfig(conf *sarama.ProducerConfig) *sarama.ProducerConfig {
 	return &sarama.ProducerConfig{
-		RequiredAcks:      conf.RequiredAcks,
-		Timeout:           conf.Timeout,
-		Compression:       conf.Compression,
-		FlushMsgCount:     conf.FlushMsgCount,
-		FlushFrequency:    conf.FlushFrequency,
-		FlushByteCount:    conf.FlushByteCount,
-		AckSuccesses:      conf.AckSuccesses,
-		MaxMessageBytes:   conf.MaxMessageBytes,
-		ChannelBufferSize: conf.ChannelBufferSize,
+		RequiredAcks:      conf.RequiredAcks,      // The level of acknowledgment reliability needed from the broker, defaults to WaitForLocal.
+		Timeout:           conf.Timeout,           // The maximum duration the broker will wait the receipt of the number of RequiredAcks.
+		Compression:       conf.Compression,       // The type of compression to use on messages, defaults to no compression.
+		FlushMsgCount:     conf.FlushMsgCount,     // The number of messages needed to trigger a flush.
+		FlushFrequency:    conf.FlushFrequency,    // If this amount of time elapses without a flush, one will be queued.
+		FlushByteCount:    conf.FlushByteCount,    // If this many bytes of messages are accumulated, a flush will be triggered.
+		AckSuccesses:      conf.AckSuccesses,      // If enabled, successfully delivered messages will be returned on the Successes channel.
+		MaxMessageBytes:   conf.MaxMessageBytes,   // The maximum permitted size of a message, defaults to 1000000.
+		ChannelBufferSize: conf.ChannelBufferSize, // The size of the buffers of the channels between the different goroutines, defaults to 0.
 	}
 }
 

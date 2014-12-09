@@ -12,7 +12,7 @@ const (
 	TickMillis   = 500
 	HeartTimeout = 6
 	ElectTimeout = 20
-	PeerTimeout  = 30
+	PeerTimeout  = 2 * (ElectTimeout + Skew)
 )
 
 type Voter struct {
