@@ -164,8 +164,8 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 		}
 		g.parts[topic] = parts
 
-		if len(parts) > n {
-			return fmt.Errorf("grid: topic: %v: parallelism of function is greater than number of partitions: func: %v, partitions: %d", topic, fname, len(parts))
+		if len(parts) < n {
+			return fmt.Errorf("grid: topic: %v: parallelism of function is greater than number of partitions: func: %v, parallelism: %d partitions: %d", topic, fname, n, len(parts))
 		}
 	}
 
