@@ -46,6 +46,7 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 }
 
 var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will take part in the grid.")
+var mode = flag.Int("mode", 1, "the mode to run this process in.  [1] Run as the load_test grid [2] Generate messages (producer)  [3] Print metrics (consumer)")
 
 /*
 	topology map:
@@ -59,49 +60,50 @@ var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will tak
 	                		                       \->(coll)-->StdOut
 */
 func main() {
-	runtime.GOMAXPROCS(4)
-
 	flag.Parse()
+	if *mode == 1 {
+		runtime.GOMAXPROCS(4)
 
-	g, err := grid.New(GridName, *peercnt)
-	if err != nil {
-		log.Fatalf("error: example: failed to create grid: %v", err)
+		g, err := grid.New(GridName, *peercnt)
+		if err != nil {
+			log.Fatalf("error: example: failed to create grid: %v", err)
+		}
+
+		g.AddDecoder(NewNumMesgDecoder, "add1", "mulBy2", "divBy2", "sub1", "collector")
+		g.AddEncoder(NewNumMesgEncoder, "add1", "mulBy2", "divBy2", "sub1", "collector")
+
+		err = g.Add("add1", 4, add, "add1")
+		if err != nil {
+			log.Fatalf("error: example: %v", err)
+		}
+
+		err = g.Add("mulBy2", 4, mul, "mulBy2")
+		if err != nil {
+			log.Fatalf("error: example: %v", err)
+		}
+
+		err = g.Add("divBy2", 4, div, "divBy2")
+		if err != nil {
+			log.Fatalf("error: example: %v", err)
+		}
+
+		err = g.Add("sub1", 4, sub, "sub1")
+		if err != nil {
+			log.Fatalf("error: example: %v", err)
+		}
+
+		err = g.Add("collector", 1, collector, "collector")
+		if err != nil {
+			log.Fatalf("error: example: %v", err)
+		}
+
+		g.Start()
+		go logMetrics()
+		g.Wait()
+	} else if *mode == 2 {
+		go logMetrics()
+		generateTestMessages()
 	}
-
-	g.AddDecoder(NewNumMesgDecoder, "add1", "mulBy2", "divBy2", "sub1", "collector")
-	g.AddEncoder(NewNumMesgEncoder, "add1", "mulBy2", "divBy2", "sub1", "collector")
-
-	err = g.Add("add1", 4, add, "add1")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-
-	err = g.Add("mulBy2", 4, mul, "mulBy2")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-
-	err = g.Add("divBy2", 4, div, "divBy2")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-
-	err = g.Add("sub1", 4, sub, "sub1")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-
-	err = g.Add("collector", 1, collector, "collector")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-
-	g.Start()
-
-	go logMetrics()
-	go generateTestMessages()
-
-	g.Wait()
 }
 
 func logMetrics() {
@@ -127,7 +129,6 @@ func generateTestMessages() {
 	}
 	defer producer.Close()
 
-	time.Sleep(25 * time.Second)
 	log.Println("Starting to generate test messages.")
 
 	gen := metrics.NewMeter()
