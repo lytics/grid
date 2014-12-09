@@ -188,3 +188,7 @@ func (n *nooprwlog) Partitions(topic string) ([]int32, error) {
 	}
 	return nil, fmt.Errorf("no such topic: %v", topic)
 }
+
+func (n *nooprwlog) AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string) {
+	// Do nothing.
+}
