@@ -74,7 +74,7 @@ func main() {
 		kconf := grid.DefaultKafkaConfig()
 		kconf.Brokers = khosts
 
-		g, err := grid.NewWithKafkaConfig("loadtest", *peercnt, kconf)
+		g, err := grid.NewWithKafkaConfig(GridName, *peercnt, kconf)
 		if err != nil {
 			log.Fatalf("error: example: failed to create grid: %v", err)
 		}
