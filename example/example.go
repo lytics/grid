@@ -89,7 +89,7 @@ func main() {
 //For this grid the source of the stream is a kafka topic named "topic1",
 //Defined by g.Read("add", "topic1") above.
 func consoleMessageSource() {
-	client, err := sarama.NewClient(ConsumerName, []string{"localhost:10092"}, sarama.NewClientConfig())
+	client, err := sarama.NewClient(ConsumerName, khosts, sarama.NewClientConfig())
 	if err != nil {
 		log.Fatalf("failed to create kafka client: %v", err)
 	}
