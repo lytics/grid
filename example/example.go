@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/Shopify/sarama"
 	"github.com/lytics/grid"
@@ -43,11 +44,18 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 }
 
 var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will take part in the grid.")
+var kafka = flag.String("kafka", "localhost:10092", `listof kafka brokers.  example: "localhost:10092,localhost:10093"`)
+var khosts []string
 
 func main() {
 	flag.Parse()
 
-	g, err := grid.New(GridName, *peercnt)
+	khosts = strings.Split(*kafka, ",")
+
+	kconf := grid.DefaultKafkaConfig()
+	kconf.Brokers = khosts
+
+	g, err := grid.NewWithKafkaConfig(GridName, *peercnt, kconf)
 	if err != nil {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
@@ -81,7 +89,7 @@ func main() {
 //For this grid the source of the stream is a kafka topic named "topic1",
 //Defined by g.Read("add", "topic1") above.
 func consoleMessageSource() {
-	client, err := sarama.NewClient(ConsumerName, []string{"localhost:10092"}, sarama.NewClientConfig())
+	client, err := sarama.NewClient(ConsumerName, khosts, sarama.NewClientConfig())
 	if err != nil {
 		log.Fatalf("failed to create kafka client: %v", err)
 	}

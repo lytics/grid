@@ -26,11 +26,11 @@ type ReadWriteLog interface {
 
 type KafkaConfig struct {
 	Brokers        []string
-	BaseName       string
 	ClientConfig   *sarama.ClientConfig
 	ProducerConfig *sarama.ProducerConfig
 	ConsumerConfig *sarama.ConsumerConfig
-	cmdTopic       string
+	cmdtopic       string
+	basename       string
 }
 
 type kafkalog struct {
@@ -118,7 +118,7 @@ func cloneProducerConfig(conf *sarama.ProducerConfig) *sarama.ProducerConfig {
 
 func (kl *kafkalog) Write(topic string, in <-chan Event) {
 	go func() {
-		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.BaseName, topic)
+		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.basename, topic)
 		client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
 		if err != nil {
 			log.Fatalf("fatal: topic: %v: client: %v", topic, err)
@@ -126,7 +126,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 		defer client.Close()
 		conf := cloneProducerConfig(kl.conf.ProducerConfig)
 		conf.Partitioner = kl.newPartitioner(topic)
-		if topic == kl.conf.cmdTopic {
+		if topic == kl.conf.cmdtopic {
 			conf.FlushMsgCount = 2
 			conf.FlushFrequency = 50 * time.Millisecond
 		}
@@ -179,7 +179,7 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 		go func(wg *sync.WaitGroup, part int32, out chan<- Event) {
 			defer wg.Done()
 
-			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kl.conf.BaseName, topic, part)
+			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kl.conf.basename, topic, part)
 			client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
 			if err != nil {
 				log.Fatalf("fatal: topic: %v: client: %v", topic, err)

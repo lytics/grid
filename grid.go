@@ -35,31 +35,33 @@ type Grid struct {
 	maxleadertime int64
 }
 
-func New(gridname string, npeers int) (*Grid, error) {
-
+func DefaultKafkaConfig() *KafkaConfig {
 	brokers := []string{"localhost:10092"}
 
 	pconfig := sarama.NewProducerConfig()
 	pconfig.FlushMsgCount = 10000
 	pconfig.FlushFrequency = 1 * time.Second
 	cconfig := sarama.NewConsumerConfig()
+	cconfig.DefaultFetchSize = 512000
 	cconfig.OffsetMethod = sarama.OffsetMethodNewest
 
-	kafkaClientConfig := &KafkaConfig{
+	return &KafkaConfig{
 		Brokers:        brokers,
-		BaseName:       gridname,
 		ClientConfig:   sarama.NewClientConfig(),
 		ProducerConfig: pconfig,
 		ConsumerConfig: cconfig,
 	}
+}
 
-	return NewWithKafkaConfig(gridname, npeers, kafkaClientConfig)
+func New(gridname string, npeers int) (*Grid, error) {
+	return NewWithKafkaConfig(gridname, npeers, DefaultKafkaConfig())
 }
 
 func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Grid, error) {
 	cmdtopic := gridname + "-cmd"
 
-	kconfig.cmdTopic = cmdtopic
+	kconfig.cmdtopic = cmdtopic
+	kconfig.basename = gridname
 
 	rwlog, err := NewKafkaReadWriteLog(buildPeerName(0), kconfig)
 	if err != nil {
