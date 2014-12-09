@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -47,6 +48,8 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 
 var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will take part in the grid.")
 var mode = flag.Int("mode", 1, "the mode to run this process in.  [1] Run as the load_test grid [2] Generate messages (producer)")
+var kafka = flag.String("kafka", "localhost:10092", `listof kafka brokers.  example: "localhost:10092,localhost:10093"`)
+var khosts []string
 
 /*
 	topology map:
@@ -61,11 +64,17 @@ var mode = flag.Int("mode", 1, "the mode to run this process in.  [1] Run as the
 */
 func main() {
 	flag.Parse()
+
+	khosts = strings.Split(*kafka, ",")
+
 	go logMetrics()
 	if *mode == 1 {
 		runtime.GOMAXPROCS(3)
 
-		g, err := grid.New(GridName, *peercnt)
+		kconf := grid.DefaultKafkaConfig()
+		kconf.Brokers = khosts
+
+		g, err := grid.NewWithKafkaConfig("loadtest", *peercnt, kconf)
 		if err != nil {
 			log.Fatalf("error: example: failed to create grid: %v", err)
 		}
@@ -93,7 +102,7 @@ func main() {
 			log.Fatalf("error: example: %v", err)
 		}
 
-		err = g.Add("collector", 1, collector, "collector")
+		err = g.Add("collector", 3, collector, "collector")
 		if err != nil {
 			log.Fatalf("error: example: %v", err)
 		}
@@ -117,7 +126,7 @@ func logMetrics() {
 }
 
 func generateTestMessages() {
-	client, err := sarama.NewClient(ConsumerName, []string{"localhost:10092"}, sarama.NewClientConfig())
+	client, err := sarama.NewClient(ConsumerName, khosts, sarama.NewClientConfig())
 	if err != nil {
 		log.Fatalf("failed to create kafka client: %v", err)
 	}
@@ -162,15 +171,12 @@ func generateTestMessages() {
 func add(in <-chan grid.Event) <-chan grid.Event {
 	fmt.Println("add started.")
 	out := make(chan grid.Event)
-	add := metrics.NewMeter()
-	metrics.GetOrRegister("add.msg.counter", add)
 	go func() {
 		defer close(out)
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
-				add.Mark(1)
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("mulBy2", key, NewNumMesg(outmsg))
 			default:
@@ -185,16 +191,12 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 func mul(in <-chan grid.Event) <-chan grid.Event {
 	fmt.Println("mul started.")
 	out := make(chan grid.Event)
-	mul := metrics.NewMeter()
-	metrics.GetOrRegister("mul.msg.counter", mul)
-
 	go func() {
 		defer close(out)
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := 2 * mesg.Data
-				mul.Mark(1)
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("divBy2", key, NewNumMesg(outmsg))
 			default:
@@ -209,15 +211,11 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 func div(in <-chan grid.Event) <-chan grid.Event {
 	fmt.Println("div started.")
 	out := make(chan grid.Event)
-	div := metrics.NewMeter()
-	metrics.GetOrRegister("div.msg.counter", div)
-
 	go func() {
 		defer close(out)
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
-				div.Mark(1)
 				outmsg := mesg.Data / 2
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("sub1", key, NewNumMesg(outmsg))
@@ -233,8 +231,6 @@ func div(in <-chan grid.Event) <-chan grid.Event {
 func sub(in <-chan grid.Event) <-chan grid.Event {
 	fmt.Println("sub started.")
 	out := make(chan grid.Event)
-	sub := metrics.NewMeter()
-	metrics.GetOrRegister("sub.msg.counter", sub)
 
 	go func() {
 		defer close(out)
@@ -242,7 +238,6 @@ func sub(in <-chan grid.Event) <-chan grid.Event {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := mesg.Data - 1
-				sub.Mark(1)
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("collector", key, NewNumMesg(outmsg))
 			default:
@@ -257,8 +252,6 @@ func sub(in <-chan grid.Event) <-chan grid.Event {
 func collector(in <-chan grid.Event) <-chan grid.Event {
 	fmt.Println("collector started.")
 	out := make(chan grid.Event)
-	meter := metrics.NewMeter()
-	metrics.GetOrRegister("a.collector.msg.counter", meter)
 
 	go func() {
 		defer close(out)
@@ -266,7 +259,6 @@ func collector(in <-chan grid.Event) <-chan grid.Event {
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
-				meter.Mark(1)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
