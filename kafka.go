@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/Shopify/sarama"
 )
@@ -29,6 +30,7 @@ type KafkaConfig struct {
 	ClientConfig   *sarama.ClientConfig
 	ProducerConfig *sarama.ProducerConfig
 	ConsumerConfig *sarama.ConsumerConfig
+	cmdTopic       string
 }
 
 type kafkalog struct {
@@ -99,6 +101,20 @@ func (kl *kafkalog) AddPartitioner(p func(key io.Reader, parts int32) int32, top
 	}
 }
 
+func cloneProducerConfig(conf *sarama.ProducerConfig) *sarama.ProducerConfig {
+	return &sarama.ProducerConfig{
+		RequiredAcks:      conf.RequiredAcks,      // The level of acknowledgment reliability needed from the broker (defaults to WaitForLocal).
+		Timeout:           conf.Timeout,           // The maximum duration the broker will wait the receipt of the number of RequiredAcks. This is only relevant when RequiredAcks is set to WaitForAll or a number > 1. Only supports millisecond resolution, nanoseconds will be truncated.
+		Compression:       conf.Compression,       // The type of compression to use on messages (defaults to no compression).
+		FlushMsgCount:     conf.FlushMsgCount,     // The number of messages needed to trigger a flush.
+		FlushFrequency:    conf.FlushFrequency,    // If this amount of time elapses without a flush, one will be queued.
+		FlushByteCount:    conf.FlushByteCount,    // If this many bytes of messages are accumulated, a flush will be triggered.
+		AckSuccesses:      conf.AckSuccesses,      // If enabled, successfully delivered messages will be returned on the Successes channel.
+		MaxMessageBytes:   conf.MaxMessageBytes,   // The maximum permitted size of a message (defaults to 1000000)
+		ChannelBufferSize: conf.ChannelBufferSize, // The size of the buffers of the channels between the different goroutines. Defaults to 0 (unbuffered).
+	}
+}
+
 func (kl *kafkalog) Write(topic string, in <-chan Event) {
 	go func() {
 		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.BaseName, topic)
@@ -107,8 +123,14 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 			log.Fatalf("fatal: topic: %v: client: %v", topic, err)
 		}
 		defer client.Close()
+		conf := cloneProducerConfig(kl.conf.ProducerConfig)
+		conf.Partitioner = kl.newPartitioner(topic)
+		if topic == kl.conf.cmdTopic {
+			conf.FlushMsgCount = 2
+			conf.FlushFrequency = 50 * time.Millisecond
+		}
 
-		producer, err := sarama.NewSimpleProducer(client, topic, kl.newPartitioner(topic))
+		producer, err := sarama.NewProducer(client, conf)
 		if err != nil {
 			log.Fatalf("fatal: topic: %v: producer: %v", err)
 		}
@@ -125,7 +147,15 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 				key := []byte(event.Key())
 				val := make([]byte, buf.Len())
 				buf.Read(val)
-				producer.SendMessage(sarama.ByteEncoder(key), sarama.ByteEncoder(val))
+				select {
+				case producer.Input() <- &sarama.MessageToSend{
+					Topic: topic,
+					Key:   sarama.ByteEncoder(key),
+					Value: sarama.ByteEncoder(val),
+				}:
+				case err := <-producer.Errors():
+					log.Fatalf("fatal: topic: %v: producer: %v", err.Err)
+				}
 			}
 		}
 	}()
