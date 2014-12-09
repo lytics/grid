@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/Shopify/sarama"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 type Decoder interface {
@@ -28,6 +29,7 @@ type Grid struct {
 	ops      map[string]*op
 	wg       *sync.WaitGroup
 	exit     chan bool
+	registry metrics.Registry
 	// Test hook, normaly should be 0.
 	maxleadertime int64
 }
@@ -80,7 +82,9 @@ func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Gri
 }
 
 func (g *Grid) Start() error {
-	cmdpart := []int32{0}
+	if g.registry == nil {
+		g.registry = metrics.DefaultRegistry
+	}
 
 	voter := NewVoter(0, g)
 	manager := NewManager(0, g)
@@ -91,6 +95,11 @@ func (g *Grid) Start() error {
 	//  * Our output is the writer's input.
 	var in <-chan Event
 	var out <-chan Event
+
+	// Command topic only uses the 0 partition
+	// to make sure all communication has a
+	// total ordering.
+	cmdpart := []int32{0}
 
 	in = g.log.Read(g.cmdtopic, cmdpart)
 	out = voter.startStateMachine(in)
@@ -110,6 +119,10 @@ func (g *Grid) Wait() {
 func (g *Grid) Stop() {
 	close(g.exit)
 	g.wg.Done()
+}
+
+func (g *Grid) UseMetrics(registry metrics.Registry) {
+	g.registry = registry
 }
 
 func (g *Grid) AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string) {
@@ -165,12 +178,13 @@ func (g *Grid) startinst(inst *Instance) {
 			log.Fatalf("fatal: grid: %v(): not set as reader of: %v", fname, topic)
 		}
 
+		log.Printf("grid: starting: %v: instance: %v: topic: %v: partitions: %v", fname, inst.Id, topic, parts)
 		ins = append(ins, g.log.Read(topic, parts))
 	}
 
 	// The out channel will be used by this instance so send data to
 	// the read-write log.
-	out := g.ops[fname].f(merge(ins))
+	out := g.ops[fname].f(g.merge(fname, ins))
 
 	// The messages on the out channel are de-mux'ed and put on
 	// topic specific out channels.
@@ -197,14 +211,16 @@ type op struct {
 	inputs map[string]bool
 }
 
-func merge(ins []<-chan Event) <-chan Event {
+func (g *Grid) merge(fname string, ins []<-chan Event) <-chan Event {
+	meter := metrics.GetOrRegisterMeter(fname+"-msg-rate", g.registry)
 	merged := make(chan Event, 1024)
 	for _, in := range ins {
-		go func(in <-chan Event) {
+		go func(in <-chan Event, meter metrics.Meter) {
 			for m := range in {
 				merged <- m
+				meter.Mark(1)
 			}
-		}(in)
+		}(in, meter)
 	}
 	return merged
 }

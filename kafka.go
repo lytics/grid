@@ -44,6 +44,7 @@ func NewKafkaReadWriteLog(id string, conf *KafkaConfig) (ReadWriteLog, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &kafkalog{conf: conf, client: client, encoders: make(map[string]func(io.Writer) Encoder), decoders: make(map[string]func(io.Reader) Decoder)}, nil
 }
 

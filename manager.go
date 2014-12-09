@@ -10,17 +10,13 @@ import (
 type Manager struct {
 	name        string
 	peertimeout int64
-	tkohander   func()
 	state       *PeerState
 	*Grid
 }
 
 func NewManager(id int, g *Grid) *Manager {
 	name := buildPeerName(id)
-	defualttkohandler := func() {
-		log.Fatalf("grid: manager %v: Exiting due to one or more peers going unhealthy, the grid needs to be restarted.", name)
-	}
-	return &Manager{name, PeerTimeout, defualttkohandler, newPeerState(), g}
+	return &Manager{name, PeerTimeout, newPeerState(), g}
 }
 
 func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
@@ -33,7 +29,7 @@ func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
 }
 
 func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
-	log.Printf("grid: manager %v: starting: npeers:%v", m.name, m.npeers)
+	log.Printf("grid: manager %v: starting: number of peers: %v", m.name, m.npeers)
 	ticker := time.NewTicker(TickMillis * time.Millisecond)
 	defer ticker.Stop()
 
@@ -41,9 +37,8 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 	m.state.Peers[m.name] = newPeer(m.name, time.Now().Unix())
 
 	var rank Rank
-	var leader string
 	var term uint32
-	var ready bool = false
+	var stateclosed bool
 
 	for {
 		select {
@@ -56,33 +51,26 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 			}
 
 			m.state.Term = term
-			emit := false
 
 			for _, peer := range m.state.Peers {
 				if now.Unix()-peer.LastPongTs > m.peertimeout && len(m.state.Peers) >= m.npeers {
-					// Update peers that have timed out.  This should only happen if the peer was happen and then became unhealthy.
-					log.Printf("grid: manager %v: peer[%v] transitioned from Health[Active -> Inactive]", m.name, peer.Name)
-					m.tkohander()
+					// Update peers that have timed out. This should only happen if the peer became unhealthy.
+					log.Printf("grid: manager %v: Peer[%v] transitioned from Health[Active -> Inactive]", m.name, peer.Name)
+					log.Fatalf("grid: manager %v: exiting due to one or more peers going unhealthy, the grid needs to be restarted.", m.name)
 					return
-				} else if len(m.state.Peers) >= m.npeers && !ready {
-					//We've reached the required number of peers for the first time
-					ready = true
-					emit = true
+				} else if len(m.state.Peers) >= m.npeers && !stateclosed {
+					if rank != Leader {
+						continue
+					}
+					// We've reached the required number of peers for the first time, note that
+					// we only ever emit once because of the guard.
+					stateclosed = true
+					m.state.Version++
+					m.state.Sched = peersched(m.state.Peers, m.ops, m.parts)
+					log.Printf("grid: manager %v: emitting start state v%d", m.name, m.state.Version)
+					out <- NewWritable(m.cmdtopic, Key, &CmdMesg{Data: *m.state})
 				}
 			}
-
-			if rank != Leader {
-				continue
-			}
-
-			if emit {
-				emit = false
-				m.state.Version++
-				m.state.Sched = peersched(m.state.Peers, m.ops, m.parts)
-				log.Printf("grid: manager %v: emitting new start state; \ngstate:%s ", m.name, m.state)
-				out <- NewWritable(m.cmdtopic, Key, &CmdMesg{Data: *m.state})
-			}
-
 		case event := <-in:
 			var cmdmsg *CmdMesg
 
@@ -91,7 +79,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 			case *CmdMesg:
 				cmdmsg = msg
 			default:
-				log.Printf("The message type %T didn't match the expected type of %T", msg, &CmdMesg{})
+				log.Printf("warning: grid: manager %v: message type %T didn't match the expected type %T", m.name, msg, &CmdMesg{})
 				continue
 			}
 
@@ -99,39 +87,34 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 			switch data := cmdmsg.Data.(type) {
 			case Ping:
 				lasthearbeat = time.Now().Unix()
-				// log.Printf("ping:[%v] rank:%v cterm:%v myname:%v ", data, m.rank, m.term, m.name)
 				if data.Term < term {
-					log.Printf("gird: manager %v: ping: term mismatch: rank: %v cterm: %v leader: %v", m.name, rank, term, leader)
+					log.Printf("warning: gird: manager %v: received leader ping term mismatch: current: %d: new term: %d", m.name, term, data.Term)
 					continue
 				}
 				term = data.Term
 				if data.Leader == m.name {
 					rank = Leader
-					leader = m.name
 					m.state.Peers[m.name].LastPongTs = time.Now().Unix()
 				} else {
 					rank = Follower
-					leader = data.Leader
 					out <- NewWritable(m.cmdtopic, Key, newPong(m.name, data.Term))
 				}
 				m.state.Peers[data.Leader] = newPeer(data.Leader, time.Now().Unix())
 			case Pong:
-				// log.Printf("pong:[%v] rank:%v cterm:%v", data, m.rank, m.term)
 				if data.Term < term {
 					continue
 				}
 				if _, ok := m.state.Peers[data.Follower]; !ok {
-					log.Printf("grid: manager %v: peer[%v] transitioned from Health[Undiscovered -> Active]", m.name, data.Follower)
+					log.Printf("grid: manager %v: Peer[%v] transitioned from Health[Inactive -> Active]", m.name, data.Follower)
 				}
 				m.state.Peers[data.Follower] = newPeer(data.Follower, time.Now().Unix())
 			case PeerState:
-				log.Printf("grid: manager %v rank:%v leader:%v cterm:%v newgstate[%v] currgstate:[%v]  ", m.name, rank, leader, term, data, m.state)
 				if data.Version < m.state.Version {
-					log.Printf("warning: grid: manager %v: gstate: got a new gstate with an old version; oldgs:%v \nnewgs:%v ", m.name, m.state, data)
+					log.Printf("warning: grid: manager %v: received a new state with an old version: current: %d: new: %d", m.name, m.state.Version, data.Version)
 					continue
 				}
 				if data.Term < term {
-					log.Printf("warning: grid: manager %v: gstate: got a new gstate with an old term; oldgs:%v \nnewgs:%v ", m.name, m.state, data)
+					log.Printf("warning: grid: manager %v: received a new state with an old term: current: %d: new: %d", m.name, m.state.Term, data.Term)
 					continue
 				}
 				m.state = &data
@@ -148,7 +131,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 func buildPeerName(id int) string {
 	host, err := os.Hostname()
 	if err != nil {
-		log.Printf("grid: failed to aquire the peer's hostname: %v", err)
+		log.Fatalf("fatal: grid: failed to aquire hostname: %v", err)
 	}
 
 	return fmt.Sprintf("%v-%v-%v", host, os.Getpid(), id)
