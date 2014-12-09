@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/Shopify/sarama"
 	metrics "github.com/rcrowley/go-metrics"
@@ -39,6 +40,8 @@ func New(gridname string, npeers int) (*Grid, error) {
 	brokers := []string{"localhost:10092"}
 
 	pconfig := sarama.NewProducerConfig()
+	pconfig.FlushMsgCount = 10000
+	pconfig.FlushFrequency = 1 * time.Second
 	cconfig := sarama.NewConsumerConfig()
 	cconfig.OffsetMethod = sarama.OffsetMethodNewest
 
@@ -55,6 +58,8 @@ func New(gridname string, npeers int) (*Grid, error) {
 
 func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Grid, error) {
 	cmdtopic := gridname + "-cmd"
+
+	kconfig.cmdTopic = cmdtopic
 
 	rwlog, err := NewKafkaReadWriteLog(buildPeerName(0), kconfig)
 	if err != nil {
