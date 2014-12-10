@@ -125,15 +125,28 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
+	Recovery: // Phase.
+		for e := range in {
+			switch mesg := e.Message().(type) {
+			case grid.MinMaxOffset:
+			case grid.NeedOffset:
+				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: 0})
+			case grid.Ready:
+				break Recovery
+			default:
+				log.Printf("example: add(): rx: unknown: %T :: %v", mesg, mesg)
+			}
+		}
+		// Recovered Phase.
+		log.Printf("example: add(): recovered")
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
 				// Output to "topic2" which is read by "mul" for further processing.
+				log.Printf("add(): %d -> %d\n", mesg.Data, outmsg)
 				out <- grid.NewWritable("topic2", Key, NewNumMesg(outmsg))
-				log.Printf("add(): in-msg=%d -> out-msg=%d\n", mesg.Data, outmsg)
 			default:
-				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
 		}
 	}()
@@ -146,15 +159,28 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
+	Recovery: // Phase.
+		for e := range in {
+			switch mesg := e.Message().(type) {
+			case grid.MinMaxOffset:
+			case grid.NeedOffset:
+				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: 0})
+			case grid.Ready:
+				break Recovery
+			default:
+				log.Printf("example: mul(): rx: unknown: %T :: %v", mesg, mesg)
+			}
+		}
+		// Recovered Phase.
+		log.Printf("example: mul(): recovered")
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
 				outmsg := 2 * mesg.Data
 				// Output to "topic3" which is the final resting place of the processing.
+				log.Printf("mul(): %d -> %d\n", mesg.Data, outmsg)
 				out <- grid.NewWritable("topic3", Key, NewNumMesg(outmsg))
-				log.Printf("mul(): in-msg=%d -> out-msg=%d\n", mesg.Data, outmsg)
 			default:
-				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
 		}
 	}()

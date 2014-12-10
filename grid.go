@@ -176,6 +176,7 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 
 func (g *Grid) startinst(inst *Instance) {
 	fname := inst.Fname
+	id := inst.Id
 
 	// Check that this instance was added by the lib user.
 	if _, exists := g.ops[fname]; !exists {
@@ -189,32 +190,88 @@ func (g *Grid) startinst(inst *Instance) {
 			log.Fatalf("fatal: grid: %v(): not set as reader of: %v", fname, topic)
 		}
 
-		log.Printf("grid: starting: %v: instance: %v: topic: %v: partitions: %v", fname, inst.Id, topic, parts)
+		log.Printf("grid: starting: %v: instance: %v: topic: %v: partitions: %v", fname, id, topic, parts)
 		ins = append(ins, g.log.Read(topic, parts))
 	}
 
-	// The out channel will be used by this instance so send data to
-	// the read-write log.
-	out := g.ops[fname].f(g.merge(fname, ins))
+	go func() {
+		// The init channel is used for the recovery phase of each function instance.
+		init := make(chan Event)
 
-	// The messages on the out channel are de-mux'ed and put on
-	// topic specific out channels.
-	outs := make(map[string]chan Event)
-	for topic, _ := range g.log.EncodedTopics() {
-		outs[topic] = make(chan Event, 1024)
-		g.log.Write(topic, outs[topic])
+		// The out channel will be used by this instance so send data to
+		// the read-write log.
+		out := g.ops[fname].f(g.merge(fname, id, init, ins))
 
-		go func(fname string, out <-chan Event, outs map[string]chan Event) {
-			for event := range out {
-				if topicout, found := outs[event.Topic()]; found {
-					topicout <- event
-				} else {
-					log.Fatalf("fatal: grid: %v(): not set as writer of: %v", fname, event.Topic())
+		wg := new(sync.WaitGroup)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer close(init)
+			cnt := 0
+			for topic, parts := range inst.TopicSlices {
+				for _, part := range parts {
+					init <- NewReadable(g.gridname, 0, MinMaxOffset{Topic: topic, Part: part, Min: 0, Max: 0})
+					init <- NewReadable(g.gridname, 0, NeedOffset{Topic: topic, Part: part})
+					cnt++
 				}
 			}
-		}(fname, out, outs)
-	}
+			for event := range out {
+				switch msg := event.Message().(type) {
+				case UseOffset:
+					log.Printf("grid: %v: instance: %v: topic: %v: partition: %d: using offset: %d", fname, id, msg.Topic, msg.Part, msg.Offset)
+					cnt--
+				default:
+				}
+				if cnt == 0 {
+					init <- NewReadable(g.gridname, 0, Ready(true))
+					return
+				}
+			}
+		}()
+
+		wg.Wait()
+
+		log.Printf("grid: %v: instance: %v: connecting output...", fname, id)
+
+		// The messages on the out channel are de-mux'ed and put on
+		// topic specific out channels.
+		outs := make(map[string]chan Event)
+		for topic, _ := range g.log.EncodedTopics() {
+			outs[topic] = make(chan Event, 1024)
+			g.log.Write(topic, outs[topic])
+
+			go func(fname string, out <-chan Event, outs map[string]chan Event) {
+				for event := range out {
+					if topicout, found := outs[event.Topic()]; found {
+						topicout <- event
+					} else {
+						log.Fatalf("fatal: grid: %v(): not set as writer of: %v", fname, event.Topic())
+					}
+				}
+			}(fname, out, outs)
+		}
+	}()
 }
+
+type MinMaxOffset struct {
+	Topic string
+	Part  int32
+	Min   int64
+	Max   int64
+}
+
+type NeedOffset struct {
+	Topic string
+	Part  int32
+}
+
+type UseOffset struct {
+	Topic  string
+	Part   int32
+	Offset int64
+}
+
+type Ready bool
 
 type op struct {
 	n      int
@@ -222,16 +279,26 @@ type op struct {
 	inputs map[string]bool
 }
 
-func (g *Grid) merge(fname string, ins []<-chan Event) <-chan Event {
+func (g *Grid) merge(fname string, id int, init <-chan Event, ins []<-chan Event) <-chan Event {
 	meter := metrics.GetOrRegisterMeter(fname+"-msg-rate", g.registry)
 	merged := make(chan Event, 1024)
 	for _, in := range ins {
-		go func(in <-chan Event, meter metrics.Meter) {
-			for m := range in {
-				merged <- m
+		go func(init <-chan Event, in <-chan Event, meter metrics.Meter) {
+			for event := range init {
+				switch msg := event.Message().(type) {
+				case Ready:
+					merged <- event
+					log.Printf("grid: ready: %v", msg)
+				default:
+					merged <- event
+				}
+			}
+			log.Printf("grid: %v: instance: %v: connecting input...", fname, id)
+			for event := range in {
+				merged <- event
 				meter.Mark(1)
 			}
-		}(in, meter)
+		}(init, in, meter)
 	}
 	return merged
 }
