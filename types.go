@@ -7,6 +7,48 @@ import (
 	"io"
 )
 
+// Event is the interface implemented by all messages flowing
+// through the grid.
+type Event interface {
+	Offset() int64
+	Topic() string
+	Key() string
+	Message() interface{}
+}
+
+type event struct {
+	offset  int64
+	topic   string
+	key     string
+	message interface{}
+}
+
+func (e *event) Offset() int64 {
+	return e.offset
+}
+
+func (e *event) Topic() string {
+	return e.topic
+}
+
+func (e *event) Key() string {
+	return e.key
+}
+
+func (e *event) Message() interface{} {
+	return e.message
+}
+
+// NewReadable is used to create an event suitable for reading.
+func NewReadable(topic string, offset int64, message interface{}) Event {
+	return &event{topic: topic, offset: offset, message: message}
+}
+
+// NewWritable is used to create an event suitable for writing.
+func NewWritable(topic, key string, message interface{}) Event {
+	return &event{topic: topic, key: key, message: message}
+}
+
 // CmdMesg is an envelope for more specific messages on the command topic.
 type CmdMesg struct {
 	Data interface{}
@@ -37,6 +79,7 @@ func NewCmdMesgEncoder(w io.Writer) Encoder {
 	return &coder{gob.NewEncoder(w), nil}
 }
 
+// Rank is the rank of any given peer.
 type Rank int
 
 const (
@@ -107,6 +150,7 @@ func (e Election) String() string {
 	return fmt.Sprintf("Election{Term: %d, Votes: %d, Candidate: %v}", e.Term, e.Votes, e.Candidate)
 }
 
+// Peer is use to track liveness of each peer.
 type Peer struct {
 	Name       string
 	LastPongTs int64
@@ -116,6 +160,8 @@ func newPeer(name string, lastpong int64) *Peer {
 	return &Peer{Name: name, LastPongTs: lastpong}
 }
 
+// PeerState is used to track the state of all the peers together
+// as well as issue schedules.
 type PeerState struct {
 	Term    uint32
 	Version uint32
@@ -171,6 +217,5 @@ func init() {
 	gob.Register(PeerSched{})
 	gob.Register(Instance{})
 	gob.Register(CmdMesg{})
-
-	gob.Register(Follower) // register the Rank type def
+	gob.Register(Follower)
 }
