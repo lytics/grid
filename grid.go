@@ -178,40 +178,33 @@ func (g *Grid) startinst(inst *Instance) {
 	fname := inst.Fname
 	id := inst.Id
 
-	// Check that this instance was added by the lib user.
+	// Validate early that the instance was added to the grid.
 	if _, exists := g.ops[fname]; !exists {
 		log.Fatalf("fatal: grid: does not exist: %v()", fname)
 	}
 
-	// Setup all the topic readers for this instance of the function.
-	ins := make([]<-chan Event, 0)
-	for topic, parts := range inst.TopicSlices {
+	// Validate early that the instance has valid topics and partition subsets.
+	for topic, _ := range inst.TopicSlices {
 		if !g.ops[fname].inputs[topic] {
 			log.Fatalf("fatal: grid: %v(): not set as reader of: %v", fname, topic)
 		}
-
-		log.Printf("grid: starting: %v: instance: %v: topic: %v: partitions: %v", fname, id, topic, parts)
-		ins = append(ins, g.log.Read(topic, parts))
 	}
 
 	go func() {
-		// The init channel is used for the recovery phase of each function instance.
-		init := make(chan Event)
+		// The in channel will be used by this instance to receive data, ie: its input.
+		in := make(chan Event, 1024)
 
-		// The out channel will be used by this instance so send data to
-		// the read-write log.
-		out := g.ops[fname].f(g.merge(fname, id, init, ins))
+		// The out channel will be used by this instance to transmit data, ie: its output.
+		out := g.ops[fname].f(in)
 
 		wg := new(sync.WaitGroup)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer close(init)
 			cnt := 0
 			for topic, parts := range inst.TopicSlices {
 				for _, part := range parts {
-					init <- NewReadable(g.gridname, 0, MinMaxOffset{Topic: topic, Part: part, Min: 0, Max: 0})
-					init <- NewReadable(g.gridname, 0, NeedOffset{Topic: topic, Part: part})
+					in <- NewReadable(g.gridname, 0, MinMaxOffset{Topic: topic, Part: part, Min: 0, Max: 0})
 					cnt++
 				}
 			}
@@ -223,7 +216,7 @@ func (g *Grid) startinst(inst *Instance) {
 				default:
 				}
 				if cnt == 0 {
-					init <- NewReadable(g.gridname, 0, Ready(true))
+					in <- NewReadable(g.gridname, 0, Ready(true))
 					return
 				}
 			}
@@ -231,10 +224,23 @@ func (g *Grid) startinst(inst *Instance) {
 
 		wg.Wait()
 
+		log.Printf("grid: %v: instance: %v: connecting input...", fname, id)
+
+		// The messages on the input channels are mux'ed and put onto
+		// a single merged input channel.
+		for topic, parts := range inst.TopicSlices {
+			go func() {
+				log.Printf("grid: starting: %v: instance: %v: topic: %v: partitions: %v", fname, id, topic, parts)
+				for event := range g.log.Read(topic, parts) {
+					in <- event
+				}
+			}()
+		}
+
 		log.Printf("grid: %v: instance: %v: connecting output...", fname, id)
 
-		// The messages on the out channel are de-mux'ed and put on
-		// topic specific out channels.
+		// The messages on the output channel are de-mux'ed and put on
+		// topic specific output channels.
 		outs := make(map[string]chan Event)
 		for topic, _ := range g.log.EncodedTopics() {
 			outs[topic] = make(chan Event, 1024)
@@ -260,11 +266,6 @@ type MinMaxOffset struct {
 	Max   int64
 }
 
-type NeedOffset struct {
-	Topic string
-	Part  int32
-}
-
 type UseOffset struct {
 	Topic  string
 	Part   int32
@@ -279,26 +280,6 @@ type op struct {
 	inputs map[string]bool
 }
 
-func (g *Grid) merge(fname string, id int, init <-chan Event, ins []<-chan Event) <-chan Event {
-	meter := metrics.GetOrRegisterMeter(fname+"-msg-rate", g.registry)
-	merged := make(chan Event, 1024)
-	for _, in := range ins {
-		go func(init <-chan Event, in <-chan Event, meter metrics.Meter) {
-			for event := range init {
-				switch msg := event.Message().(type) {
-				case Ready:
-					merged <- event
-					log.Printf("grid: ready: %v", msg)
-				default:
-					merged <- event
-				}
-			}
-			log.Printf("grid: %v: instance: %v: connecting input...", fname, id)
-			for event := range in {
-				merged <- event
-				meter.Mark(1)
-			}
-		}(init, in, meter)
-	}
-	return merged
+func merge(out chan<- Event, ins []<-chan Event) {
+
 }
