@@ -27,7 +27,18 @@ func TestWriter(t *testing.T) {
 		return
 	}
 
-	config := &KafkaConfig{BaseName: ClientName, Brokers: []string{"localhost:10092"}, ClientConfig: sarama.NewClientConfig()}
+	pconfig := sarama.NewProducerConfig()
+	cconfig := sarama.NewConsumerConfig()
+	cconfig.OffsetMethod = sarama.OffsetMethodNewest
+
+	config := &KafkaConfig{
+		Brokers:        []string{"localhost:10092"},
+		ClientConfig:   sarama.NewClientConfig(),
+		ProducerConfig: pconfig,
+		ConsumerConfig: cconfig,
+		basename:       ClientName,
+	}
+
 	rwlog, err := NewKafkaReadWriteLog(ClientName, config)
 	if err != nil {
 		t.Fatalf("Failed to create kafka log readwriter: %v", err)
@@ -53,10 +64,10 @@ func TestReadWriter(t *testing.T) {
 
 	config := &KafkaConfig{
 		Brokers:        []string{"localhost:10092"},
-		BaseName:       ClientName,
 		ClientConfig:   sarama.NewClientConfig(),
 		ProducerConfig: pconfig,
 		ConsumerConfig: cconfig,
+		basename:       ClientName,
 	}
 
 	rwlog, err := NewKafkaReadWriteLog(ClientName, config)
