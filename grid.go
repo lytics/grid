@@ -212,6 +212,9 @@ func (g *Grid) startinst(inst *Instance) {
 			log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: failed to get partition data: %v", fname, id, g.statetopic, err)
 		}
 
+		// Here we get the min and max offset of the state topic.
+		// This is used below to determin if there is anything
+		// in the topic.
 		maxs := make([]int64, len(parts))
 		mins := make([]int64, len(parts))
 		for _, part := range parts {
@@ -223,6 +226,8 @@ func (g *Grid) startinst(inst *Instance) {
 			mins[part] = min
 		}
 
+		// If there is a difference between any partition's
+		// min and max, then we have state events to read.
 		var readstate bool
 		for i, max := range maxs {
 			if mins[i] != max {
@@ -230,6 +235,9 @@ func (g *Grid) startinst(inst *Instance) {
 			}
 		}
 
+		// If there are state events, use a reader to read them
+		// and pump them into the instance, so it can recover
+		// its state.
 		if readstate {
 			exit := make(chan bool)
 			for event := range g.log.Read(g.statetopic, parts, mins, exit) {
