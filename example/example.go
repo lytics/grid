@@ -153,7 +153,7 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 		for event := range in {
 			switch mesg := event.Message().(type) {
 			case grid.MinMaxOffset:
-				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: mesg.Max})
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			case grid.Ready:
 				goto Recovered
 			default:
