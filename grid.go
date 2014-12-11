@@ -199,56 +199,66 @@ func (g *Grid) startinst(inst *Instance) {
 		}
 	}
 
-	go func() {
-		// The in channel will be used by this instance to receive data, ie: its input.
-		in := make(chan Event, 1024)
+	// The in channel will be used by this instance to receive data, ie: its input.
+	in := make(chan Event)
 
-		// The out channel will be used by this instance to transmit data, ie: its output.
-		out := g.ops[fname].f(in)
+	// The out channel will be used by this instance to transmit data, ie: its output.
+	out := g.ops[fname].f(in)
 
-		if "" == g.statetopic {
-			return
-		}
+	if "" == g.statetopic {
+		return
+	}
 
-		parts, err := g.log.Partitions(g.statetopic)
+	parts, err := g.log.Partitions(g.statetopic)
+	if err != nil {
+		log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: failed to get partition data: %v", fname, id, g.statetopic, err)
+	}
+
+	maxs := make([]int64, len(parts))
+	mins := make([]int64, len(parts))
+	for _, part := range parts {
+		min, max, err := g.log.Offsets(g.statetopic, part)
 		if err != nil {
-			log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: failed to get partition data: %v", fname, id, g.statetopic, err)
+			log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: part: %v: failed to get offset: %v", fname, id, g.statetopic, part, err)
 		}
+		maxs[part] = max
+		mins[part] = min
+	}
 
-		maxs := make([]int64, len(parts))
-		mins := make([]int64, len(parts))
-		for _, part := range parts {
-			min, max, err := g.log.Offsets(g.statetopic, part)
-			if err != nil {
-				log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: part: %v: failed to get offset: %v", fname, id, g.statetopic, part, err)
+	var readstate bool
+	for i, max := range maxs {
+		if mins[i] != max {
+			readstate = true
+		}
+	}
+
+	if readstate {
+		exit := make(chan bool)
+		for event := range g.log.Read(g.statetopic, parts, mins, exit) {
+			if event.Offset()+1 >= maxs[event.Part()] {
+				in <- NewReadable(g.gridname, 0, 0, Ready(true))
+				close(exit)
+			} else {
+				in <- event
 			}
-			maxs[part] = max
-			mins[part] = min
 		}
+	} else {
+		in <- NewReadable(g.gridname, 0, 0, Ready(true))
+	}
 
-		var readstate bool
-		for i, max := range maxs {
-			if mins[i] != max {
-				readstate = true
-			}
-		}
+	cnt := 0
+	topicoffsets := make(map[string]map[int32]int64)
 
-		if readstate {
-			exit := make(chan bool)
-			for event := range g.log.Read(g.statetopic, parts, mins, exit) {
-				log.Printf("grid: %v: instance: %v: sending state event: %v: max: %v", fname, id, event.Offset(), maxs[event.Part()])
-				if event.Offset()+1 >= maxs[event.Part()] {
-					in <- NewReadable(g.gridname, 0, 0, Ready(true))
-					close(exit)
-				} else {
-					in <- event
-				}
-			}
-		} else {
-			in <- NewReadable(g.gridname, 0, 0, Ready(true))
-		}
+	for topic, parts := range inst.TopicSlices {
+		cnt += len(parts)
+		topicoffsets[topic] = make(map[int32]int64)
+	}
 
-		cnt := 0
+	wg := new(sync.WaitGroup)
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
 		for topic, parts := range inst.TopicSlices {
 			for _, part := range parts {
 				min, max, err := g.log.Offsets(topic, part)
@@ -256,79 +266,65 @@ func (g *Grid) startinst(inst *Instance) {
 					log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: partition: %v: failed getting offset: %v", fname, id, topic, part, err)
 				}
 				in <- NewReadable(g.gridname, 0, 0, MinMaxOffset{Topic: topic, Part: part, Min: min, Max: max})
-				cnt++
 			}
 		}
+	}()
 
-		log.Printf("grid: %v: instance: %v: setting offsets: %v", fname, id, cnt)
-
-		topicoffsets := make(map[string]map[int32]int64)
-		for topic, _ := range inst.TopicSlices {
-			topicoffsets[topic] = make(map[int32]int64)
-		}
+	go func() {
+		defer wg.Done()
 		for event := range out {
 			switch msg := event.Message().(type) {
 			case UseOffset:
 				topicoffsets[msg.Topic][msg.Part] = msg.Offset
 				cnt--
 			default:
-				log.Fatalf("fatal: grid: %v: instance: %v: unknown message type: %T :: %v", fname, id, msg, msg)
 			}
 			if cnt == 0 {
 				in <- NewReadable(g.gridname, 0, 0, Ready(true))
-				break
+				return
 			}
-		}
-
-		log.Printf("grid: %v: instance: %v: connecting input: %v", fname, id, topicoffsets)
-
-		// The messages on the input channels are mux'ed and put onto
-		// a single merged input channel.
-		for topic, parts := range inst.TopicSlices {
-			if topic == g.statetopic {
-				continue
-			}
-
-			if _, found := topicoffsets[topic]; !found {
-				log.Fatalf("fatal: grid: %v: instance: %v: failed to find offsets for topic: %v", fname, id, topic)
-			}
-			go func() {
-				offsets := make([]int64, len(parts))
-				for i, part := range parts {
-					if offset, found := topicoffsets[topic][part]; !found {
-						log.Fatalf("fatal: grid: %v: instance: %v: failed to find offset for topic: %v: partition: %v", fname, id, topic, part)
-					} else {
-						offsets[i] = offset
-					}
-				}
-
-				log.Printf("grid: starting: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", fname, id, topic, parts, offsets)
-				for event := range g.log.Read(topic, parts, offsets, g.exit) {
-					in <- event
-				}
-			}()
-		}
-
-		log.Printf("grid: %v: instance: %v: connecting output...", fname, id)
-
-		// The messages on the output channel are de-mux'ed and put on
-		// topic specific output channels.
-		outs := make(map[string]chan Event)
-		for topic, _ := range g.log.EncodedTopics() {
-			outs[topic] = make(chan Event, 1024)
-			g.log.Write(topic, outs[topic])
-
-			go func(fname string, out <-chan Event, outs map[string]chan Event) {
-				for event := range out {
-					if topicout, found := outs[event.Topic()]; found {
-						topicout <- event
-					} else {
-						log.Fatalf("fatal: grid: %v(): not set as writer of: %v", fname, event.Topic())
-					}
-				}
-			}(fname, out, outs)
 		}
 	}()
+
+	wg.Wait()
+
+	// The messages on the input channels are mux'ed and put onto
+	// a single merged input channel.
+	for topic, parts := range inst.TopicSlices {
+		go func() {
+			offsets := make([]int64, len(parts))
+			for i, part := range parts {
+				if offset, found := topicoffsets[topic][part]; !found {
+					log.Fatalf("fatal: grid: %v: instance: %v: failed to find offset for topic: %v: partition: %v", fname, id, topic, part)
+				} else {
+					offsets[i] = offset
+				}
+			}
+
+			log.Printf("grid: starting: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", fname, id, topic, parts, offsets)
+			for event := range g.log.Read(topic, parts, offsets, g.exit) {
+				in <- event
+			}
+		}()
+	}
+
+	// The messages on the output channel are de-mux'ed and put on
+	// topic specific output channels.
+	outs := make(map[string]chan Event)
+	for topic, _ := range g.log.EncodedTopics() {
+		outs[topic] = make(chan Event, 1024)
+		g.log.Write(topic, outs[topic])
+		go func() {
+			for event := range out {
+				if topicout, found := outs[event.Topic()]; found {
+					topicout <- event
+				} else {
+					log.Fatalf("fatal: grid: %v(): not set as writer of: %v", fname, event.Topic())
+				}
+			}
+		}()
+	}
+
 }
 
 type MinMaxOffset struct {

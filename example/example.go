@@ -108,7 +108,6 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 		for event := range in {
 			switch mesg := event.Message().(type) {
 			case grid.MinMaxOffset:
-				log.Printf("example: add(): topic: %v: partition: %v: asking for offset: %v", mesg.Topic, mesg.Part, mesg.Max)
 				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: mesg.Max})
 			case grid.Ready:
 				goto Recovered
@@ -154,7 +153,6 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 		for event := range in {
 			switch mesg := event.Message().(type) {
 			case grid.MinMaxOffset:
-				log.Printf("example: mul(): topic: %v: partition: %v: asking for offset: %v", mesg.Topic, mesg.Part, mesg.Max)
 				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: mesg.Max})
 			case grid.Ready:
 				goto Recovered
