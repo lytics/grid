@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 
-	"github.com/Shopify/sarama"
 	"github.com/lytics/grid"
 )
 
@@ -49,7 +49,7 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 	return &numcoder{json.NewEncoder(w), nil}
 }
 
-var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will take part in the grid")
+var peercnt = flag.Int("peers", 1, "the expected number of peers that will take part in the grid")
 var kafka = flag.String("kafka", "localhost:10092", "listof kafka brokers, for example: localhost:10092,localhost:10093")
 var khosts []string
 
@@ -66,18 +66,15 @@ func main() {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
 
-	g.UseStateTopic("state")
-
-	g.AddDecoder(NewNumMesgDecoder, "state", "topic1", "topic2", "topic3")
-	g.AddEncoder(NewNumMesgEncoder, "state", "topic1", "topic2", "topic3")
+	g.AddDecoder(NewNumMesgDecoder, "topic1", "topic2", "topic3")
+	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
 	g.Add("add", 2, add, "topic1")
 	g.Add("mul", 2, mul, "topic2")
 
+	g.Add("readline", 1, readline)
+
 	g.Start()
-
-	go readline()
-
 	g.Wait()
 }
 
@@ -86,36 +83,25 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
+		var ready bool
 
-		// Recovery Phase I.
-		for event := range in {
-			switch mesg := event.Message().(type) {
-			case *NumMesg:
-				log.Printf("example: add(): state message: NumMesg%v", mesg)
-			case grid.Ready:
-				goto Offsets
-			default:
-			}
-		}
-
-	Offsets:
 		for event := range in {
 			switch mesg := event.Message().(type) {
 			case grid.MinMaxOffset:
-				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: mesg.Max})
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			case grid.Ready:
-				goto Recovered
+				ready = true
 			default:
+			}
+			if ready {
+				break
 			}
 		}
 
-	Recovered:
-		log.Printf("example: add(): recovered")
 		for event := range in {
 			switch mesg := event.Message().(type) {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
-				out <- grid.NewWritable("state", Key, NewCheckpointMesg(event.Part(), event.Offset()))
 				out <- grid.NewWritable("topic2", Key, NewNumMesg(outmsg))
 				log.Printf("add(): %d -> %d\n", mesg.Data, outmsg)
 			default:
@@ -131,31 +117,21 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
+		var ready bool
 
-		// Recovery Phase I.
-		for event := range in {
-			switch mesg := event.Message().(type) {
-			case *NumMesg:
-				log.Printf("example: mul(): state message: NumMesg%v", mesg)
-			case grid.Ready:
-				goto Offsets
-			default:
-			}
-		}
-
-	Offsets:
 		for event := range in {
 			switch mesg := event.Message().(type) {
 			case grid.MinMaxOffset:
 				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			case grid.Ready:
-				goto Recovered
+				ready = true
 			default:
+			}
+			if ready {
+				break
 			}
 		}
 
-	Recovered:
-		log.Printf("example: mul(): recovered")
 		for event := range in {
 			switch mesg := event.Message().(type) {
 			case *NumMesg:
@@ -170,37 +146,21 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 	return out
 }
 
-func readline() {
-	const topic = "topic1"
+func readline(in <-chan grid.Event) <-chan grid.Event {
+	out := make(chan grid.Event)
 
-	client, err := sarama.NewClient(ConsumerName, khosts, sarama.NewClientConfig())
-	if err != nil {
-		log.Fatalf("fatal: example: failed to create kafka client: %v", err)
-	}
-	defer client.Close()
-
-	producer, err := sarama.NewSimpleProducer(client, topic, sarama.NewHashPartitioner)
-	if err != nil {
-		log.Fatalf("fatal: example: topic: %v: failed to create producer: %v", topic, err)
-	}
-	defer producer.Close()
-
-	for {
+	go func() {
+		defer close(out)
 		var i int
-		fmt.Println("example: enter a number:")
-		if _, err := fmt.Scanf("%d", &i); err != nil {
-			log.Printf("error: example: bad input")
-		} else {
-			data := struct {
-				Data int
-			}{
-				i,
-			}
-			if bytes, err := json.Marshal(data); err != nil {
-				log.Printf("error: example: %v", err)
+		for {
+			fmt.Print("\nenter a number: ")
+			if _, err := fmt.Scanf("%d", &i); err != nil {
+				fmt.Print("\nerror: not a number")
 			} else {
-				producer.SendMessage(nil, sarama.StringEncoder(bytes))
+				out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
 			}
 		}
-	}
+	}()
+
+	return out
 }

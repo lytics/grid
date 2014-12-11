@@ -275,6 +275,12 @@ func (g *Grid) startinst(inst *Instance) {
 	// for each min-max topic-partition pair sent to it.
 	go func() {
 		defer wg.Done()
+
+		if 0 == len(inst.TopicSlices) {
+			log.Printf("grid: %v: instance: %v: is a source", fname, id)
+			return
+		}
+
 		for event := range out {
 			switch msg := event.Message().(type) {
 			case UseOffset:
