@@ -205,58 +205,59 @@ func (g *Grid) startinst(inst *Instance) {
 	// The out channel will be used by this instance to transmit data, ie: its output.
 	out := g.ops[fname].f(in)
 
-	if "" == g.statetopic {
-		return
-	}
-
-	parts, err := g.log.Partitions(g.statetopic)
-	if err != nil {
-		log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: failed to get partition data: %v", fname, id, g.statetopic, err)
-	}
-
-	maxs := make([]int64, len(parts))
-	mins := make([]int64, len(parts))
-	for _, part := range parts {
-		min, max, err := g.log.Offsets(g.statetopic, part)
+	// Recover previous state if the grid sepcifies a state topic.
+	if "" != g.statetopic {
+		parts, err := g.log.Partitions(g.statetopic)
 		if err != nil {
-			log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: part: %v: failed to get offset: %v", fname, id, g.statetopic, part, err)
+			log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: failed to get partition data: %v", fname, id, g.statetopic, err)
 		}
-		maxs[part] = max
-		mins[part] = min
-	}
 
-	var readstate bool
-	for i, max := range maxs {
-		if mins[i] != max {
-			readstate = true
+		maxs := make([]int64, len(parts))
+		mins := make([]int64, len(parts))
+		for _, part := range parts {
+			min, max, err := g.log.Offsets(g.statetopic, part)
+			if err != nil {
+				log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: part: %v: failed to get offset: %v", fname, id, g.statetopic, part, err)
+			}
+			maxs[part] = max
+			mins[part] = min
 		}
-	}
 
-	if readstate {
-		exit := make(chan bool)
-		for event := range g.log.Read(g.statetopic, parts, mins, exit) {
-			if event.Offset()+1 >= maxs[event.Part()] {
-				in <- NewReadable(g.gridname, 0, 0, Ready(true))
-				close(exit)
-			} else {
-				in <- event
+		var readstate bool
+		for i, max := range maxs {
+			if mins[i] != max {
+				readstate = true
 			}
 		}
-	} else {
-		in <- NewReadable(g.gridname, 0, 0, Ready(true))
+
+		if readstate {
+			exit := make(chan bool)
+			for event := range g.log.Read(g.statetopic, parts, mins, exit) {
+				if event.Offset()+1 >= maxs[event.Part()] {
+					in <- NewReadable(g.gridname, 0, 0, Ready(true))
+					close(exit)
+				} else {
+					in <- event
+				}
+			}
+		}
 	}
 
 	cnt := 0
-	topicoffsets := make(map[string]map[int32]int64)
+	useoffsets := make(map[string]map[int32]int64)
 
+	// Initialize to track which offsets for each topic and partition
+	// the instance will want to use.
 	for topic, parts := range inst.TopicSlices {
 		cnt += len(parts)
-		topicoffsets[topic] = make(map[int32]int64)
+		useoffsets[topic] = make(map[int32]int64)
 	}
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 
+	// For each topic-partition the instance is setup to read from,
+	// offer it the available min and max.
 	go func() {
 		defer wg.Done()
 		for topic, parts := range inst.TopicSlices {
@@ -270,12 +271,14 @@ func (g *Grid) startinst(inst *Instance) {
 		}
 	}()
 
+	// At the same time expect that the instance will respond with a use-offset
+	// for each min-max topic-partition pair sent to it.
 	go func() {
 		defer wg.Done()
 		for event := range out {
 			switch msg := event.Message().(type) {
 			case UseOffset:
-				topicoffsets[msg.Topic][msg.Part] = msg.Offset
+				useoffsets[msg.Topic][msg.Part] = msg.Offset
 				cnt--
 			default:
 			}
@@ -288,13 +291,13 @@ func (g *Grid) startinst(inst *Instance) {
 
 	wg.Wait()
 
-	// The messages on the input channels are mux'ed and put onto
-	// a single merged input channel.
+	// Start the true topic reading. The messages on the input channels are
+	// mux'ed and put onto a single merged input channel.
 	for topic, parts := range inst.TopicSlices {
 		go func() {
 			offsets := make([]int64, len(parts))
 			for i, part := range parts {
-				if offset, found := topicoffsets[topic][part]; !found {
+				if offset, found := useoffsets[topic][part]; !found {
 					log.Fatalf("fatal: grid: %v: instance: %v: failed to find offset for topic: %v: partition: %v", fname, id, topic, part)
 				} else {
 					offsets[i] = offset
@@ -308,8 +311,8 @@ func (g *Grid) startinst(inst *Instance) {
 		}()
 	}
 
-	// The messages on the output channel are de-mux'ed and put on
-	// topic specific output channels.
+	// Start the true topic writing. The messages on the output channel are
+	// de-mux'ed and put on topic specific output channels.
 	outs := make(map[string]chan Event)
 	for topic, _ := range g.log.EncodedTopics() {
 		outs[topic] = make(chan Event, 1024)
@@ -324,30 +327,10 @@ func (g *Grid) startinst(inst *Instance) {
 			}
 		}()
 	}
-
 }
-
-type MinMaxOffset struct {
-	Topic string
-	Part  int32
-	Min   int64
-	Max   int64
-}
-
-type UseOffset struct {
-	Topic  string
-	Part   int32
-	Offset int64
-}
-
-type Ready bool
 
 type op struct {
 	n      int
 	f      func(in <-chan Event) <-chan Event
 	inputs map[string]bool
-}
-
-func merge(out chan<- Event, ins []<-chan Event) {
-
 }
