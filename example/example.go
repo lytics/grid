@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"strings"
 
 	"github.com/Shopify/sarama"
@@ -19,11 +21,17 @@ const (
 )
 
 type NumMesg struct {
-	Data int
+	Data   int
+	Part   int32
+	Offset int64
 }
 
 func NewNumMesg(i int) *NumMesg {
-	return &NumMesg{i}
+	return &NumMesg{Data: i}
+}
+
+func NewCheckpointMesg(part int32, offset int64) *NumMesg {
+	return &NumMesg{Part: part, Offset: offset}
 }
 
 type numcoder struct {
@@ -60,6 +68,8 @@ func main() {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
 
+	g.UseStateTopic("state")
+
 	g.AddDecoder(NewNumMesgDecoder, "state", "topic1", "topic2", "topic3")
 	g.AddEncoder(NewNumMesgEncoder, "state", "topic1", "topic2", "topic3")
 
@@ -70,6 +80,10 @@ func main() {
 
 	go readline()
 
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	g.Wait()
 }
 
@@ -78,29 +92,37 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
-		var recovered bool
 
-		// Recovery Phase.
+		// Recovery Phase I.
 		for event := range in {
 			switch mesg := event.Message().(type) {
-			case grid.MinMaxOffset:
-				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: 0})
+			case *NumMesg:
+				log.Printf("example: add(): state message: NumMesg%v", mesg)
 			case grid.Ready:
-				recovered = true
+				goto Offsets
 			default:
-			}
-
-			if recovered {
-				break
 			}
 		}
 
-		// Recovered Phase.
+	Offsets:
+		for event := range in {
+			switch mesg := event.Message().(type) {
+			case grid.MinMaxOffset:
+				log.Printf("example: add(): topic: %v: partition: %v: asking for offset: %v", mesg.Topic, mesg.Part, mesg.Max)
+				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: mesg.Max})
+			case grid.Ready:
+				goto Recovered
+			default:
+			}
+		}
+
+	Recovered:
 		log.Printf("example: add(): recovered")
 		for event := range in {
 			switch mesg := event.Message().(type) {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
+				out <- grid.NewWritable("state", Key, NewCheckpointMesg(event.Part(), event.Offset()))
 				out <- grid.NewWritable("topic2", Key, NewNumMesg(outmsg))
 				log.Printf("add(): %d -> %d\n", mesg.Data, outmsg)
 			default:
@@ -116,24 +138,31 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
-		var recovered bool
 
-		// Recovery Phase.
+		// Recovery Phase I.
 		for event := range in {
 			switch mesg := event.Message().(type) {
-			case grid.MinMaxOffset:
-				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: 0})
+			case *NumMesg:
+				log.Printf("example: mul(): state message: NumMesg%v", mesg)
 			case grid.Ready:
-				recovered = true
+				goto Offsets
 			default:
-			}
-
-			if recovered {
-				break
 			}
 		}
 
-		// Recovered Phase.
+	Offsets:
+		for event := range in {
+			switch mesg := event.Message().(type) {
+			case grid.MinMaxOffset:
+				log.Printf("example: mul(): topic: %v: partition: %v: asking for offset: %v", mesg.Topic, mesg.Part, mesg.Max)
+				out <- grid.NewWritable("", "", grid.UseOffset{Topic: mesg.Topic, Part: mesg.Part, Offset: mesg.Max})
+			case grid.Ready:
+				goto Recovered
+			default:
+			}
+		}
+
+	Recovered:
 		log.Printf("example: mul(): recovered")
 		for event := range in {
 			switch mesg := event.Message().(type) {
