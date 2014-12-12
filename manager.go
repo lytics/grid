@@ -174,7 +174,7 @@ func peerids(ps *PeerState) []string {
 	return peers
 }
 
-func genEpochid(peers []string) uint64 {
+func epochid(peers []string) uint64 {
 
 	sort.Strings(peers)
 	bytes := make([]byte, 0)

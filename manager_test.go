@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-func TestManager(t *testing.T) {
+func TestManagerBasic(t *testing.T) {
 
 	const (
-		topic      = "test-election"
+		topic      = "test-basic"
 		managercnt = 3
 	)
 
@@ -29,6 +29,7 @@ func TestManager(t *testing.T) {
 	f := func(in <-chan Event) <-chan Event { return nil }
 	p := newPartition()
 	managers := make([]*Manager, 0)
+	manager_state := make(map[string]string)
 
 	topics := make(map[string]bool)
 	topics["topic1"] = true
@@ -59,36 +60,15 @@ func TestManager(t *testing.T) {
 	for i := 0; i < managercnt; i++ {
 		createManager(i)
 	}
-
-	leader := managers[0]
-	p.write(NewWritable(topic, Key, newPing(0, leader.name, 1)))
-
-	time.Sleep(1 * time.Second)
-
-	// The head of the partition should be a PeerState message.
-	b := p.data[p.head-1]
-	inmsg := p.toevent(b)
-
-	var cmdmsg *CmdMesg
-
-	// Extract command message.
-	switch msg := inmsg.Message().(type) {
-	case *CmdMesg:
-		cmdmsg = msg
-	default:
-		t.Logf("unknown type :%T, psize:%v", msg, p.head)
-	}
-
-	// Check for type of message.
-	switch data := cmdmsg.Data.(type) {
-	case PeerState:
-		t.Logf("The head of the partition is a gridstate message as expected. %v", data)
-	default:
-		t.Fatalf("unknown type:%T, psize:%v", data, p.head)
-	}
+	leader := managers[2]
+	go mockLeader(leader, p, topic, manager_state)
+	time.Sleep(2 * time.Second)
 
 	// Ensure all the managers have the same grid state.
 	for _, mgr := range managers {
+		if len(mgr.state.Peers) != managercnt {
+			t.Fatalf("peer %v should have a peer count of %v, but has %v", mgr.name, len(mgr.state.Peers), managercnt)
+		}
 		if !reflect.DeepEqual(mgr.state, leader.state) {
 			t.Fatalf("peers have mismatch states.  \n%v \nNot Equal \n%v", mgr.state, leader.state)
 		}
@@ -242,47 +222,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 		createManager(i, 1)
 	}
 
-	leaderpinger := func(mgr *Manager) {
-		out := make(chan Event, 100)
-		in := p.client(out)
-		pingmsg := NewWritable(topic, Key, newPing(0, mgr.name, 1))
-
-		ticker := time.NewTicker(300 * time.Millisecond)
-		defer ticker.Stop()
-		log.Printf("-- starting mock leader for : %v", mgr.name)
-		var epoch uint64 = 0
-		for {
-			select {
-			case event := <-in:
-				var cmdmsg *CmdMesg
-				switch msg := event.Message().(type) {
-				case *CmdMesg:
-					cmdmsg = msg
-				default:
-					continue
-				}
-
-				if cmdmsg.Epoch != epoch {
-					continue
-				}
-				// Check for type of message.
-				switch data := cmdmsg.Data.(type) {
-				case PeerState:
-					pingmsg = NewWritable(topic, Key, newPing(data.Epoch, mgr.name, 1))
-					epoch = data.Epoch
-				default:
-				}
-			case <-ticker.C:
-				if manager_state[mgr.name] == "dead" {
-					log.Printf("-- mock leader %v exiting because it's manager is in state 'dead'", mgr.name)
-					return
-				}
-				p.write(pingmsg)
-			}
-		}
-	}
-
-	go leaderpinger(managers[1])
+	go mockLeader(managers[1], p, topic, manager_state)
 	time.Sleep(2000 * time.Millisecond)
 
 	//Make sure the cluster is still alive and has established an epoch
@@ -315,7 +255,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 		}
 	}
 
-	go leaderpinger(managers[4])
+	go mockLeader(managers[4], p, topic, manager_state)
 	createManager(5, 1)
 	time.Sleep(2000 * time.Millisecond) // "-- done sleeping after new peer 5 started --"
 
@@ -345,5 +285,44 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 			}
 		}
 	}
+}
 
+func mockLeader(mgr *Manager, p *partition, topic string, manager_state map[string]string) {
+	out := make(chan Event, 100)
+	in := p.client(out)
+	pingmsg := NewWritable(topic, Key, newPing(0, mgr.name, 1))
+
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+	log.Printf("-- starting mock leader for : %v", mgr.name)
+	var epoch uint64 = 0
+	for {
+		select {
+		case event := <-in:
+			var cmdmsg *CmdMesg
+			switch msg := event.Message().(type) {
+			case *CmdMesg:
+				cmdmsg = msg
+			default:
+				continue
+			}
+
+			if cmdmsg.Epoch != epoch {
+				continue
+			}
+			// Check for type of message.
+			switch data := cmdmsg.Data.(type) {
+			case PeerState:
+				pingmsg = NewWritable(topic, Key, newPing(data.Epoch, mgr.name, 1))
+				epoch = data.Epoch
+			default:
+			}
+		case <-ticker.C:
+			if manager_state[mgr.name] == "dead" {
+				log.Printf("-- mock leader %v exiting because it's manager is in state 'dead'", mgr.name)
+				return
+			}
+			p.write(pingmsg)
+		}
+	}
 }
