@@ -190,6 +190,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 		managercnt = 3
 	)
 	managers := make([]*Manager, 0)
+	manager_state := make(map[string]string)
 
 	g, err := New("test-grid", managercnt)
 	if err != nil {
@@ -228,19 +229,19 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 
 		mgr.ops = ops
 		mgr.parts = parts
+		manager_state[mgr.name] = "alive"
 
 		mgr.tkohandler = func() {
-			log.Printf("-- peer %v died -------------------------------------------------------------", id)
+			log.Printf("-- mock tkohandler: peer %v died", mgr.name)
+			manager_state[mgr.name] = "dead"
 		}
 		managers = append(managers, mgr)
-		t.Logf("created peer %v.", id)
 	}
 
 	for i := 0; i < managercnt; i++ {
 		createManager(i, 1)
 	}
 
-	abortpinger := make(chan bool)
 	leaderpinger := func(mgr *Manager) {
 		out := make(chan Event, 100)
 		in := p.client(out)
@@ -248,7 +249,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 
 		ticker := time.NewTicker(300 * time.Millisecond)
 		defer ticker.Stop()
-		log.Printf("starting mock leader ")
+		log.Printf("-- starting mock leader for : %v", mgr.name)
 		var epoch uint64 = 0
 		for {
 			select {
@@ -262,69 +263,87 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 				}
 
 				if cmdmsg.Epoch != epoch {
-					log.Printf("---mock leader %v: command message epoch mismatch %v != %v, msg: %v", mgr.name, cmdmsg.Epoch, epoch, cmdmsg.Data)
 					continue
 				}
 				// Check for type of message.
 				switch data := cmdmsg.Data.(type) {
 				case PeerState:
-					log.Printf("---mock leader %v: has gotten a PeerState message and is switching its epoch to %v", mgr.name, data.Epoch)
 					pingmsg = NewWritable(topic, Key, newPing(data.Epoch, mgr.name, 1))
 					epoch = data.Epoch
 				default:
 				}
 			case <-ticker.C:
+				if manager_state[mgr.name] == "dead" {
+					log.Printf("-- mock leader %v exiting because it's manager is in state 'dead'", mgr.name)
+					return
+				}
 				p.write(pingmsg)
-			case <-abortpinger:
-				log.Printf("mock leader is aborting.")
-				return
 			}
 		}
 	}
+
 	go leaderpinger(managers[1])
+	time.Sleep(2000 * time.Millisecond)
 
-	sleep(4000*time.Millisecond, "-- done sleeping to let the cluster run in a healthy state for a bit --")
-	//sleep(40000*time.Millisecond, "-- done sleeping to let the cluster run in a healthy state for a bit --")
-	/*
-		for _, mgr := range managers {
-			if mgr.epoch == 0 {
-				t.Fatalf("The epoch should have changed for manager %v", mgr.name)
+	//Make sure the cluster is still alive and has established an epoch
+	for i := 0; i < 3; i++ {
+		mgr := managers[i]
+		if manager_state[mgr.name] == "dead" {
+			t.Fatalf("The manager %v should be alive, not dead", mgr.name)
+		}
+		if mgr.epoch == 0 {
+			t.Fatalf("The epoch should have changed for manager %v", mgr.name)
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////
+	//Do a rolling restart of the grid
+	managers[2].exithook <- true // kill peeer1_1 who isn't the leader
+	log.Printf("-- manager: peer %v killed by test harness", managers[2].name)
+	manager_state[managers[2].name] = "dead"
+
+	createManager(3, 1)
+	time.Sleep(1000 * time.Millisecond)
+	createManager(4, 1)
+	time.Sleep(2000 * time.Millisecond)
+
+	//The old grid (peers [0,1,2]) should be dead by now.
+	for i := 0; i < 3; i++ {
+		mgr := managers[i]
+		if manager_state[mgr.name] == "alive" {
+			t.Fatalf("The manager %v should be dead by now", mgr.name)
+		}
+	}
+
+	go leaderpinger(managers[4])
+	createManager(5, 1)
+	time.Sleep(2000 * time.Millisecond) // "-- done sleeping after new peer 5 started --"
+
+	// Make sure the new grid (peers [3,4,5]) didn't accept any peers from the old grid (peers [0,1,2])
+	// Also make sure the new grid is running
+	for i := 3; i < 6; i++ {
+		mgr := managers[i]
+		for pname, _ := range mgr.state.Peers {
+			if managers[0].name == pname || managers[1].name == pname || managers[2].name == pname {
+				t.Fatalf("manager:%v: peernames from the old epoch are in the current epoch: state %v", mgr.name, mgr.state.Peers)
 			}
 		}
-		managers[2].exithook <- true // kill peeer1_1 who isn't the leader
+		if manager_state[mgr.name] == "dead" {
+			t.Fatalf("The manager %v should be alive, not dead", mgr.name)
+		}
+		if mgr.epoch == 0 {
+			t.Fatalf("The epoch should have changed for manager %v", mgr.name)
+		}
+	}
 
-		createManager(5500, 1)
-		sleep(1000*time.Millisecond, "-- done sleeping after new peer 5500 started --")
-		createManager(5501, 1)
-		sleep(900*time.Millisecond, "-- done sleeping after new peer 5501 started --")
-		go leaderpinger(managers[4])
-		createManager(5502, 1)
-		sleep(2000*time.Millisecond, "-- done sleeping after new peer 5502 started --")
-
-		// Loop through all the new peers to make sure they never let any old peers join there epoch
-		for i := 3; i < 6; i++ {
-			mgr := managers[i]
-			for pname, _ := range mgr.state.Peers {
-				if managers[0].name == pname || managers[1].name == pname || managers[2].name == pname {
-					t.Fatalf("manager:%v: peernames from the old epoch are in the current epoch: state %v", mgr.name, mgr.state.Peers)
-				}
+	// Make sure the old grid (peers [0,1,2]) didn't accept any peers from the new grid (peers [3,4,5])
+	for i := 0; i < 3; i++ {
+		mgr := managers[i]
+		for pname, _ := range mgr.state.Peers {
+			if managers[3].name == pname || managers[4].name == pname || managers[5].name == pname {
+				t.Fatalf("manager:%v: peernames from the old epoch are in the current epoch: state %v", mgr.name, mgr.state.Peers)
 			}
 		}
+	}
 
-		// Loop through all the old peers to make sure they never let any news peers join there epoch
-		for i := 0; i < 3; i++ {
-			mgr := managers[i]
-			for pname, _ := range mgr.state.Peers {
-				if managers[3].name == pname || managers[4].name == pname || managers[5].name == pname {
-					t.Fatalf("manager:%v: peernames from the old epoch are in the current epoch: state %v", mgr.name, mgr.state.Peers)
-				}
-			}
-		}
-	*/
-
-}
-
-func sleep(t time.Duration, msg string) {
-	time.Sleep(t) // let the cluster run longer than the current peer timeout(1 sec) to ensure it remains running.
-	log.Printf(msg)
 }

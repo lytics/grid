@@ -57,7 +57,6 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 		case <-m.exit:
 			return
 		case now := <-ticker.C:
-
 			if now.Unix()-lasthearbeat > HeartTimeout {
 				rank = Follower
 			}
@@ -121,20 +120,17 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					rank = Follower
 					out <- NewWritable(m.cmdtopic, Key, newPong(m.epoch, m.name, data.Term))
 				}
-				log.Printf("---------- Ping %v : data %v peer: %v", m.name, data, newPeer(data.Leader, time.Now().Unix()))
 				m.state.Peers[data.Leader] = newPeer(data.Leader, time.Now().Unix())
 			case Pong:
 				if data.Term < term {
-					log.Printf("----------- Term mismatch: manager %v term %v", m.name, term)
 					continue
 				}
-				if !stateclosed {
-					if _, ok := m.state.Peers[data.Follower]; !ok {
-						log.Printf("grid: manager %v: Peer[%v] transitioned from Health[Inactive -> Active]", m.name, data.Follower)
-					}
-					log.Printf("---------- Pong %v : data %v peer %v", m.name, data, newPeer(data.Follower, time.Now().Unix()))
-					m.state.Peers[data.Follower] = newPeer(data.Follower, time.Now().Unix())
+
+				if _, ok := m.state.Peers[data.Follower]; !ok {
+					log.Printf("grid: manager %v: Peer[%v] transitioned from Health[Inactive -> Active]", m.name, data.Follower)
 				}
+
+				m.state.Peers[data.Follower] = newPeer(data.Follower, time.Now().Unix())
 			case PeerState:
 				if data.Version < m.state.Version {
 					log.Printf("warning: grid: manager %v: received a new state with an old version: current: %d: new: %d", m.name, m.state.Version, data.Version)
@@ -148,10 +144,12 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				for _, instance := range m.state.Sched[m.name] {
 					m.startinst(instance)
 				}
-				if data.Epoch != 0 {
-					log.Printf("grid: manager %v: setting the epoch to %v", m.name, data.Epoch)
-					m.epoch = data.Epoch
-				}
+
+				stateclosed = true
+
+				log.Printf("grid: manager %v: setting the epoch to %v", m.name, data.Epoch)
+				m.epoch = data.Epoch
+
 			default:
 				// Ignore other command messages.
 			}

@@ -181,7 +181,7 @@ func newPartition() *partition {
 func (p *partition) client(in <-chan Event) <-chan Event {
 	out := make(chan Event, 100)
 	go func(out chan<- Event) {
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 		offset := p.head // New consumers/writers should read/write at the end of the topic
 		for {
@@ -197,7 +197,7 @@ func (p *partition) client(in <-chan Event) <-chan Event {
 			}
 		}
 	}(out)
-	// Our output is someone elses input.
+	// Our output is someone else's input.
 	return out
 }
 
