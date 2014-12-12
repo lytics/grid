@@ -141,7 +141,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				}
 				m.state = &data
 				for _, instance := range m.state.Sched[m.name] {
-					m.startinst(instance)
+					go m.startinst(instance)
 				}
 
 				stateclosed = true

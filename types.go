@@ -12,6 +12,7 @@ import (
 type Event interface {
 	Offset() int64
 	Topic() string
+	Part() int32
 	Key() string
 	Message() interface{}
 }
@@ -19,6 +20,7 @@ type Event interface {
 type event struct {
 	offset  int64
 	topic   string
+	part    int32
 	key     string
 	message interface{}
 }
@@ -31,6 +33,10 @@ func (e *event) Topic() string {
 	return e.topic
 }
 
+func (e *event) Part() int32 {
+	return e.part
+}
+
 func (e *event) Key() string {
 	return e.key
 }
@@ -40,14 +46,39 @@ func (e *event) Message() interface{} {
 }
 
 // NewReadable is used to create an event suitable for reading.
-func NewReadable(topic string, offset int64, message interface{}) Event {
-	return &event{topic: topic, offset: offset, message: message}
+func NewReadable(topic string, part int32, offset int64, message interface{}) Event {
+	return &event{topic: topic, part: part, offset: offset, message: message}
 }
 
 // NewWritable is used to create an event suitable for writing.
 func NewWritable(topic, key string, message interface{}) Event {
 	return &event{topic: topic, key: key, message: message}
 }
+
+// MinMaxOffset is used inform the min and max offsets for a given
+// topic partition pair.
+type MinMaxOffset struct {
+	Topic string
+	Part  int32
+	Min   int64
+	Max   int64
+}
+
+// UseOffset is used to indicate which offset in the interval [min,max]
+// of available offsets to use for a particular topic partition pair.
+type UseOffset struct {
+	Topic  string
+	Part   int32
+	Offset int64
+}
+
+func NewUseOffset(topic string, part int32, offset int64) Event {
+	return NewWritable("", "", UseOffset{Topic: topic, Part: part, Offset: offset})
+}
+
+// Ready indicates that something is ready, and is used in multiple
+// scenarios.
+type Ready bool
 
 // CmdMesg is an envelope for more specific messages on the command topic.
 type CmdMesg struct {

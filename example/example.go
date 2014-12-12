@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 
-	"github.com/Shopify/sarama"
 	"github.com/lytics/grid"
 )
 
@@ -43,81 +43,43 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 	return &numcoder{json.NewEncoder(w), nil}
 }
 
-var peercnt = flag.Int("peercnt", 1, "the expected number of peers that will take part in the grid.")
-var kafka = flag.String("kafka", "localhost:10092", `listof kafka brokers.  example: "localhost:10092,localhost:10093"`)
-var khosts []string
+var peercnt = flag.Int("peers", 1, "the expected number of peers that will take part in the grid")
+var kafka = flag.String("kafka", "localhost:10092", "listof kafka brokers, for example: localhost:10092,localhost:10093")
 
+// Runs the example; it can be started in a few different ways:
+//
+// Mixes log and interactive messages:
+//    $ ./example
+//
+// Sends log to a file, leaves interactive messages on stdout:
+//    $ ./example 2>log
+//
+// Starts the example expecting two peers, so make sure to start both:
+//    $ ./example -peers 2
+//
 func main() {
 	flag.Parse()
 
-	khosts = strings.Split(*kafka, ",")
-
 	kconf := grid.DefaultKafkaConfig()
-	kconf.Brokers = khosts
+	kconf.Brokers = strings.Split(*kafka, ",")
 
 	g, err := grid.NewWithKafkaConfig(GridName, *peercnt, kconf)
 	if err != nil {
 		log.Fatalf("error: example: failed to create grid: %v", err)
 	}
 
+	// Set encoders and decoders.
 	g.AddDecoder(NewNumMesgDecoder, "topic1", "topic2", "topic3")
 	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
-	// Add layer "add", with two instances of add's function running
-	// in the grid. The layer reads from "topic1".
-	err = g.Add("add", 2, add, "topic1")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
+	// Set processing layers.
+	g.Add("add", 2, add, "topic1")
+	g.Add("mul", 2, mul, "topic2")
+	g.Add("readline", 1, readline, "topic3")
 
-	// Add layer "mul", with two instances of mul's function running
-	// in the grid. The layer reads from "topic2".
-	err = g.Add("mul", 2, mul, "topic2")
-	if err != nil {
-		log.Fatalf("error: example: %v", err)
-	}
-
+	// Start and wait for exit.
 	g.Start()
-
-	go consoleMessageSource()
-
 	g.Wait()
-}
-
-//Read integers from the console and sends them into the grid's first topic.
-//
-//For this grid the source of the stream is a kafka topic named "topic1",
-//Defined by g.Read("add", "topic1") above.
-func consoleMessageSource() {
-	client, err := sarama.NewClient(ConsumerName, khosts, sarama.NewClientConfig())
-	if err != nil {
-		log.Fatalf("failed to create kafka client: %v", err)
-	}
-	producer, err := sarama.NewSimpleProducer(client, "topic1", sarama.NewHashPartitioner)
-	if err != nil {
-		log.Fatalf("error: topic: failed to create producer: %v", err)
-	}
-	defer producer.Close()
-
-	for {
-		var i int
-		fmt.Println("Enter a number:")
-		if _, err := fmt.Scanf("%d", &i); err != nil {
-			log.Printf("error: bad input")
-		} else {
-			log.Printf("sending %d to the grid for processing.\n", i)
-			data := struct {
-				Data int
-			}{
-				i,
-			}
-			if bytes, err := json.Marshal(data); err != nil {
-				log.Printf("error: %v", err)
-			} else {
-				producer.SendMessage(nil, sarama.StringEncoder(bytes))
-			}
-		}
-	}
 }
 
 func add(in <-chan grid.Event) <-chan grid.Event {
@@ -125,15 +87,31 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
-		for e := range in {
-			switch mesg := e.Message().(type) {
+
+		// Before doing any real work, each function must read its MinMaxOffset
+		// messages and respond to each with a UseOffset message. The offset
+		// chosen can of course be retrieved from anywhere, but it must be
+		// between the min and max value.
+		for event := range in {
+			switch mesg := event.Message().(type) {
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
+			case grid.Ready:
+				goto Ready
+			default:
+			}
+		}
+
+	Ready:
+		// After requesting the offsets, the in channel will contain messages
+		// from the actual input topics, starting at the requested offsets.
+		for event := range in {
+			switch mesg := event.Message().(type) {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
-				// Output to "topic2" which is read by "mul" for further processing.
 				out <- grid.NewWritable("topic2", Key, NewNumMesg(outmsg))
-				log.Printf("add(): in-msg=%d -> out-msg=%d\n", mesg.Data, outmsg)
+				log.Printf("add(): %d -> %d\n", mesg.Data, outmsg)
 			default:
-				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
 		}
 	}()
@@ -146,18 +124,89 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
-		for e := range in {
-			switch mesg := e.Message().(type) {
+
+		// Before doing any real work, each function must read its MinMaxOffset
+		// messages and respond to each with a UseOffset message. The offset
+		// chosen can of course be retrieved from anywhere, but it must be
+		// between the min and max value.
+		for event := range in {
+			switch mesg := event.Message().(type) {
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
+			case grid.Ready:
+				goto Ready
+			default:
+			}
+		}
+
+	Ready:
+		// After requesting the offsets, the in channel will contain messages
+		// from the actual input topics, starting at the requested offsets.
+		for event := range in {
+			switch mesg := event.Message().(type) {
 			case *NumMesg:
 				outmsg := 2 * mesg.Data
-				// Output to "topic3" which is the final resting place of the processing.
 				out <- grid.NewWritable("topic3", Key, NewNumMesg(outmsg))
-				log.Printf("mul(): in-msg=%d -> out-msg=%d\n", mesg.Data, outmsg)
+				log.Printf("mul(): %d -> %d\n", mesg.Data, outmsg)
 			default:
-				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
 		}
 	}()
 
 	return out
+}
+
+func readline(in <-chan grid.Event) <-chan grid.Event {
+	out := make(chan grid.Event)
+
+	go func() {
+		defer close(out)
+
+		// Before doing any real work, each function must read its MinMaxOffset
+		// messages and respond to each with a UseOffset message. The offset
+		// chosen can of course be retrieved from anywhere, but it must be
+		// between the min and max value.
+		for event := range in {
+			switch mesg := event.Message().(type) {
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
+			case grid.Ready:
+				goto Ready
+			default:
+			}
+		}
+
+	Ready:
+		// Start things off with an initial message.
+		i := readnumber()
+		out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
+
+		// After requesting the offsets, the in channel will contain messages
+		// from the actual input topics, starting at the requested offsets.
+		for event := range in {
+			switch mesg := event.Message().(type) {
+			case *NumMesg:
+				if "topic3" == event.Topic() {
+					fmt.Printf("\nresult: %v", mesg.Data)
+				}
+			default:
+			}
+			i = readnumber()
+			out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
+		}
+	}()
+
+	return out
+}
+
+func readnumber() int {
+	var i int
+	for {
+		fmt.Printf("\nenter a number: ")
+		if _, err := fmt.Scanf("%d", &i); err != nil {
+			fmt.Printf("\nerror: that's not a number")
+		} else {
+			return i
+		}
+	}
 }

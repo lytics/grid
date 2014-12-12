@@ -15,13 +15,14 @@ import (
 
 type ReadWriteLog interface {
 	Write(topic string, in <-chan Event)
-	Read(topic string, parts []int32) <-chan Event
+	Read(topic string, parts []int32, offsets []int64, exit <-chan bool) <-chan Event
 	AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
 	AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string)
 	AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string)
 	EncodedTopics() map[string]bool
 	DecodedTopics() map[string]bool
 	Partitions(topic string) ([]int32, error)
+	Offsets(topic string, part int32) (int64, int64, error)
 }
 
 type KafkaConfig struct {
@@ -94,6 +95,19 @@ func (kl *kafkalog) Partitions(topic string) ([]int32, error) {
 	return parts, err
 }
 
+func (kl *kafkalog) Offsets(topic string, part int32) (int64, int64, error) {
+	min, err := kl.client.GetOffset(topic, part, sarama.EarliestOffset)
+	if err != nil {
+		return 0, 0, err
+	}
+	max, err := kl.client.GetOffset(topic, part, sarama.LatestOffsets)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return min, max, nil
+}
+
 func (kl *kafkalog) AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string) {
 	for _, topic := range topics {
 		if _, added := kl.partitioners[topic]; !added {
@@ -162,7 +176,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 	}()
 }
 
-func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
+func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-chan bool) <-chan Event {
 
 	// Consumers read from the real topic and push data
 	// into the out channel.
@@ -173,10 +187,10 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 	// exited.
 	wg := new(sync.WaitGroup)
 
-	for _, part := range parts {
+	for i, part := range parts {
 		wg.Add(1)
 
-		go func(wg *sync.WaitGroup, part int32, out chan<- Event) {
+		go func(wg *sync.WaitGroup, part int32, offset int64, out chan<- Event) {
 			defer wg.Done()
 
 			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kl.conf.basename, topic, part)
@@ -184,16 +198,20 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 			if err != nil {
 				log.Fatalf("fatal: topic: %v: client: %v", topic, err)
 			}
-			defer client.Close()
 
 			config := sarama.NewConsumerConfig()
-			config.OffsetMethod = sarama.OffsetMethodNewest
+			config.OffsetValue = offset
 
 			consumer, err := sarama.NewConsumer(client, topic, part, name, config)
 			if err != nil {
 				log.Fatalf("fatal: topic: %v: consumer: %v", topic, err)
 			}
-			defer consumer.Close()
+
+			go func() {
+				defer consumer.Close()
+				defer client.Close()
+				<-exit
+			}()
 
 			var buf bytes.Buffer
 			for event := range consumer.Events() {
@@ -204,12 +222,15 @@ func (kl *kafkalog) Read(topic string, parts []int32) <-chan Event {
 				err = dec.Decode(msg)
 
 				if err != nil {
-					log.Printf("error: topic: %v decode failed: %v: msg: %v value: %v", topic, err, msg, string(buf.Bytes()))
+					log.Printf("error: topic: %v: partition: %v: decode failed: %v: msg: %v value: %v", topic, part, err, msg, string(buf.Bytes()))
 				} else {
-					out <- NewReadable(event.Topic, event.Offset, msg)
+					select {
+					case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
+					case <-exit:
+					}
 				}
 			}
-		}(wg, part, out)
+		}(wg, part, offsets[i], out)
 	}
 
 	// When the kafka consumers have exited, it means there is
