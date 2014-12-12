@@ -82,15 +82,16 @@ type Ready bool
 
 // CmdMesg is an envelope for more specific messages on the command topic.
 type CmdMesg struct {
-	Data interface{}
+	Epoch uint64
+	Data  interface{}
 }
 
-func newCmdMesg(data interface{}) *CmdMesg {
-	return &CmdMesg{Data: data}
+func newCmdMesg(epoch uint64, data interface{}) *CmdMesg {
+	return &CmdMesg{Epoch: epoch, Data: data}
 }
 
 func (m *CmdMesg) String() string {
-	return fmt.Sprintf("CmdMesg{Data: %v}", m.Data)
+	return fmt.Sprintf("CmdMesg{Epoch: %v, Data: %v}", m.Epoch, m.Data)
 }
 
 type coder struct {
@@ -125,8 +126,8 @@ type Ping struct {
 	Term   uint32
 }
 
-func newPing(leader string, term uint32) *CmdMesg {
-	return &CmdMesg{Data: Ping{Leader: leader, Term: term}}
+func newPing(epoch uint64, leader string, term uint32) *CmdMesg {
+	return &CmdMesg{Epoch: epoch, Data: Ping{Leader: leader, Term: term}}
 }
 
 func (p Ping) String() string {
@@ -139,8 +140,8 @@ type Pong struct {
 	Term     uint32
 }
 
-func newPong(follower string, term uint32) *CmdMesg {
-	return &CmdMesg{Data: Pong{Follower: follower, Term: term}}
+func newPong(epoch uint64, follower string, term uint32) *CmdMesg {
+	return &CmdMesg{Epoch: epoch, Data: Pong{Follower: follower, Term: term}}
 }
 
 func (p Pong) String() string {
@@ -154,8 +155,8 @@ type Vote struct {
 	From      string
 }
 
-func newVote(candidate string, term uint32, from string) *CmdMesg {
-	return &CmdMesg{Data: Vote{Term: term, Candidate: candidate, From: from}}
+func newVote(epoch uint64, candidate string, term uint32, from string) *CmdMesg {
+	return &CmdMesg{Epoch: epoch, Data: Vote{Term: term, Candidate: candidate, From: from}}
 }
 
 func (v Vote) String() string {
@@ -169,8 +170,8 @@ type Election struct {
 	Candidate string
 }
 
-func newElection(candidate string, term uint32) *CmdMesg {
-	return &CmdMesg{Data: Election{Term: term, Votes: 1, Candidate: candidate}}
+func newElection(epoch uint64, candidate string, term uint32) *CmdMesg {
+	return &CmdMesg{Epoch: epoch, Data: Election{Term: term, Votes: 1, Candidate: candidate}}
 }
 
 func (e Election) Copy() *Election {
@@ -197,6 +198,7 @@ type PeerState struct {
 	Term    uint32
 	Version uint32
 	Sched   PeerSched
+	Epoch   uint64 // indicates a new epoch for the cluster of peers
 	Peers   map[string]*Peer
 }
 
@@ -210,6 +212,10 @@ func (ps *PeerState) String() string {
 
 func newPeerState() *PeerState {
 	return &PeerState{Term: 0, Peers: make(map[string]*Peer)}
+}
+
+func newPeerStateMsg(epoch uint64, peerstate *PeerState) *CmdMesg {
+	return &CmdMesg{Epoch: epoch, Data: peerstate}
 }
 
 // Instance is the full mapping of topic slices that a particular

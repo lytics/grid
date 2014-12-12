@@ -1,6 +1,9 @@
 package grid
 
 import (
+	"bytes"
+	"encoding/gob"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -97,7 +100,7 @@ func isleaderelected(t *testing.T, p *partition, quorum uint32) {
 
 	// First message should be a command-message, the container
 	// type for the command topic.
-	switch msg := p.data[0].Message().(type) {
+	switch msg := p.toevent(p.data[0]).Message().(type) {
 	case *CmdMesg:
 		cmdmsg = msg
 	default:
@@ -105,7 +108,7 @@ func isleaderelected(t *testing.T, p *partition, quorum uint32) {
 	}
 
 	// The contents of the first command-message should be an
-	// election request, this is becuase when the system
+	// election request, this is because when the system
 	// starts no leader exists, eventually the voters will
 	// timeout their leader heartbeats, and one of them
 	// should be the first to send out an election request.
@@ -123,7 +126,7 @@ func isleaderelected(t *testing.T, p *partition, quorum uint32) {
 		// Skip over anything that is not a command-message,
 		// since elections don't involve any other type
 		// of message.
-		switch msg := p.data[i].Message().(type) {
+		switch msg := p.toevent(p.data[i]).Message().(type) {
 		case *CmdMesg:
 			cmdmsg = msg
 		default:
@@ -160,13 +163,13 @@ func isleaderelected(t *testing.T, p *partition, quorum uint32) {
 // operates as a log readable by multiple clients.
 type partition struct {
 	head  int
-	data  []Event
+	data  [][]byte
 	mutex *sync.Mutex
 }
 
 // newPartition creates a new partition.
 func newPartition() *partition {
-	return &partition{data: make([]Event, 1000000), mutex: new(sync.Mutex)}
+	return &partition{data: make([][]byte, 1000000), mutex: new(sync.Mutex)}
 }
 
 // client creates a "client" for the partition. A client
@@ -178,9 +181,9 @@ func newPartition() *partition {
 func (p *partition) client(in <-chan Event) <-chan Event {
 	out := make(chan Event, 100)
 	go func(out chan<- Event) {
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
-		offset := 0
+		offset := p.head // New consumers/writers should read/write at the end of the topic
 		for {
 			select {
 			case <-ticker.C:
@@ -194,7 +197,7 @@ func (p *partition) client(in <-chan Event) <-chan Event {
 			}
 		}
 	}(out)
-	// Our output is someone elses input.
+	// Our output is someone else's input.
 	return out
 }
 
@@ -204,7 +207,8 @@ func (p *partition) read(offset int) Event {
 	defer p.mutex.Unlock()
 
 	if offset < p.head {
-		return p.data[offset]
+		bytes := p.data[offset]
+		return p.toevent(bytes)
 	} else {
 		return nil
 	}
@@ -217,9 +221,31 @@ func (p *partition) write(m Event) {
 	defer p.mutex.Unlock()
 
 	if p.head < 1000000 {
-		p.data[p.head] = m
+		bb := new(bytes.Buffer)
+		encoder := gob.NewEncoder(bb)
+		err := encoder.Encode(m.Message())
+		if err != nil {
+			fmt.Printf("write: error encoding: Error:%v\n", err)
+		}
+		p.data[p.head] = bb.Bytes()
 		p.head++
 	} else {
 		panic("out of space")
 	}
+}
+
+func (p *partition) toevent(b []byte) Event {
+	evt := &event{}
+	cmsg := &CmdMesg{}
+
+	bb := bytes.NewBuffer(b)
+	decoder := gob.NewDecoder(bb)
+	err := decoder.Decode(cmsg)
+	if err != nil {
+		fmt.Printf("read: error decoding: Error:%v\n", err)
+		return nil
+	}
+
+	evt.message = cmsg
+	return evt
 }
