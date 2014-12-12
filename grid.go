@@ -183,6 +183,38 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 	return nil
 }
 
+// startinst starts an instance of a function which will process messages from its input topics
+// and possibly write messages to output topics.
+//
+// The high level points of starting an instance are:
+//
+//     1. Create the functions input channel, grid write to
+//        this channel the events it reads from Kafka.
+//
+//     2. Start the function, passing in the input topic, and
+//        getting back the function's output channel.
+//
+//     3. If a state topic is specified, first all messages
+//        from this topic need to be read and fed into the
+//        instance, that is the guarantee of the state topic,
+//        that the first events the instance gets our its
+//        state events, so that it can rebuild its state.
+//
+//     4. Then discover the min and max offset available in
+//        Kafka of each topic-partition that the instance
+//        specifies as an input topic, and send this min and
+//        max information to the instance.
+//
+//     5. Wait to get use-offset messages from the instance
+//        of each topic-partition the instance is reading
+//        from.
+//
+//     6. With requested offsets in hand, connect the instance
+//        to it's actual input topics at the offsets requested.
+//
+//     7. Connect the instance to the topic writers, so that
+//        the instance can write data.
+//
 func (g *Grid) startinst(inst *Instance) {
 	fname := inst.Fname
 	id := inst.Id
