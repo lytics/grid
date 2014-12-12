@@ -102,7 +102,7 @@ func main() {
 			log.Fatalf("error: example: %v", err)
 		}
 
-		err = g.Add("collector", 3, collector, "collector")
+		err = g.Add("collector", 1, collector, "collector")
 		if err != nil {
 			log.Fatalf("error: example: %v", err)
 		}
