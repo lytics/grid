@@ -220,31 +220,6 @@ func (g *Grid) startinst(inst *Instance) {
 	fname := inst.Fname
 	id := inst.Id
 
-	// Used to check if the instance is taking to long to start up.
-	// This may be caused because it is not sending the offset
-	// information or is not reading its state events, both
-	// end-user mistakes.
-	finished := make(chan bool)
-
-	// Help the user remember what the responsibilities of the function
-	// instance are, when it looks like things are just hung.
-	go func() {
-		starttime := time.Now().Unix()
-		ticker := time.NewTicker(20 * time.Second)
-		for {
-			select {
-			case <-finished:
-				ticker.Stop()
-				return
-			case now := <-ticker.C:
-				if "" != g.statetopic {
-					log.Printf("warn: grid: %v: instance: %v: has been starting for %d seconds, did it read all its state data?", fname, id, now.Unix()-starttime)
-				}
-				log.Printf("warn: grid: %v: instance: %v: has been starting for %d seconds, did it send its offset data?", fname, id, now.Unix()-starttime)
-			}
-		}
-	}()
-
 	// Validate early that the instance was added to the grid.
 	if _, exists := g.ops[fname]; !exists {
 		log.Fatalf("fatal: grid: does not exist: %v()", fname)
@@ -399,8 +374,6 @@ func (g *Grid) startinst(inst *Instance) {
 			}
 		}()
 	}
-
-	close(finished)
 }
 
 type op struct {
