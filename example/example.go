@@ -19,17 +19,11 @@ const (
 )
 
 type NumMesg struct {
-	Data   int
-	Part   int32
-	Offset int64
+	Data int
 }
 
 func NewNumMesg(i int) *NumMesg {
 	return &NumMesg{Data: i}
-}
-
-func NewCheckpointMesg(part int32, offset int64) *NumMesg {
-	return &NumMesg{Part: part, Offset: offset}
 }
 
 type numcoder struct {
@@ -153,9 +147,9 @@ func readline(in <-chan grid.Event) <-chan grid.Event {
 		defer close(out)
 		var i int
 		for {
-			fmt.Print("\nenter a number: ")
+			fmt.Println("enter a number:")
 			if _, err := fmt.Scanf("%d", &i); err != nil {
-				fmt.Print("\nerror: not a number")
+				fmt.Println("error: not a number")
 			} else {
 				out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
 			}
