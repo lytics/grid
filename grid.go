@@ -188,8 +188,8 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 //
 // The high level points of starting an instance are:
 //
-//     1. Create the functions input channel, grid write to
-//        this channel the events it reads from Kafka.
+//     1. Create the function's input channel, events read from
+//        Kafka are written to this channel.
 //
 //     2. Start the function, passing in the input topic, and
 //        getting back the function's output channel.
@@ -198,16 +198,17 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 //        from this topic need to be read and fed into the
 //        instance, that is the guarantee of the state topic,
 //        that the first events the instance gets our its
-//        state events, so that it can rebuild its state.
+//        state events, so that it can rebuild its state
+//        before dealing with the real input. The state topic
+//        can be considered a WAL: Write Ahead Log.
 //
-//     4. Then discover the min and max offset available in
+//     4. Next discover the min and max offset available in
 //        Kafka of each topic-partition that the instance
 //        specifies as an input topic, and send this min and
 //        max information to the instance.
 //
-//     5. Wait to get use-offset messages from the instance
-//        of each topic-partition the instance is reading
-//        from.
+//     5. Wait to get messages from the instance which specify
+//        which offset to use for each topic-partition.
 //
 //     6. With requested offsets in hand, connect the instance
 //        to it's actual input topics at the offsets requested.
@@ -218,6 +219,31 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 func (g *Grid) startinst(inst *Instance) {
 	fname := inst.Fname
 	id := inst.Id
+
+	// Used to check if the instance is taking to long to start up.
+	// This may be caused because it is not sending the offset
+	// information or is not reading its state events, both
+	// end-user mistakes.
+	finished := make(chan bool)
+
+	// Help the user remember what the responsibilities of the function
+	// instance are, when it looks like things are just hung.
+	go func() {
+		starttime := time.Now().Unix()
+		ticker := time.NewTicker(20 * time.Second)
+		for {
+			select {
+			case <-finished:
+				ticker.Stop()
+				return
+			case now := <-ticker.C:
+				if "" != g.statetopic {
+					log.Printf("warn: grid: %v: instance: %v: has been starting for %d seconds, did it read all its state data?", fname, id, now.Unix()-starttime)
+				}
+				log.Printf("warn: grid: %v: instance: %v: has been starting for %d seconds, did it send its offset data?", fname, id, now.Unix()-starttime)
+			}
+		}
+	}()
 
 	// Validate early that the instance was added to the grid.
 	if _, exists := g.ops[fname]; !exists {
@@ -373,6 +399,8 @@ func (g *Grid) startinst(inst *Instance) {
 			}
 		}()
 	}
+
+	close(finished)
 }
 
 type op struct {
