@@ -113,11 +113,17 @@ func (g *Grid) Start() error {
 		log.Fatalf("fatal: grid: topic: %v: failed to get offset for partition: %v: %v", g.cmdtopic, 0, err)
 	}
 
-	in = g.log.Read(g.cmdtopic, []int32{0}, []int64{max}, g.exit)
+	// Read needs to know topic, partitions, offsets, and
+	// an exit channel for early exits.
+
+	cmdpart := []int32{0}
+	cmdoffset := []int64{max}
+
+	in = g.log.Read(g.cmdtopic, cmdpart, cmdoffset, g.exit)
 	out = voter.startStateMachine(in)
 	g.log.Write(g.cmdtopic, out)
 
-	in = g.log.Read(g.cmdtopic, []int32{0}, []int64{max}, g.exit)
+	in = g.log.Read(g.cmdtopic, cmdpart, cmdoffset, g.exit)
 	out = manager.startStateMachine(in)
 	g.log.Write(g.cmdtopic, out)
 
@@ -358,11 +364,17 @@ func (g *Grid) startinst(inst *Instance) {
 		}()
 	}
 
-	// Start the true topic writing. The messages on the output channel are
-	// de-mux'ed and put on topic specific output channels.
+	// Create a mapping of all output topics defined which the instance
+	// may write to before we finish connecting the instance to its
+	// output channel.
 	outs := make(map[string]chan Event)
 	for topic, _ := range g.log.EncodedTopics() {
 		outs[topic] = make(chan Event, 1024)
+	}
+
+	// Start the true topic writing. The messages on the output channel are
+	// de-mux'ed and put on topic specific output channels.
+	for topic, _ := range g.log.EncodedTopics() {
 		g.log.Write(topic, outs[topic])
 		go func() {
 			for event := range out {
