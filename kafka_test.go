@@ -85,10 +85,20 @@ func TestReadWriter(t *testing.T) {
 		t.Fatalf("error: topic: %v: failed getting kafka partition data: %v", TopicName, err)
 	}
 
+	offsets := make([]int64, len(parts))
+	for _, part := range parts {
+		_, max, err := rwlog.Offsets(TopicName, part)
+		if err != nil {
+			t.Fatalf("error: topic: %v: failed getting offset for partition: %v: %v", TopicName, part, err)
+		}
+		offsets[part] = max
+	}
+
 	cnt := 0
 	expcnt := 10
+	exit := make(chan bool)
 	go func(cnt *int) {
-		for e := range rwlog.Read(TopicName, parts) {
+		for e := range rwlog.Read(TopicName, parts, offsets, exit) {
 			switch msg := e.Message().(type) {
 			case *TestMesg:
 				// fmt.Printf("rx: %v\n", msg)
@@ -160,7 +170,7 @@ func (n *nooprwlog) Write(topic string, in <-chan Event) {
 	// Do nothing.
 }
 
-func (n *nooprwlog) Read(topic string, parts []int32) <-chan Event {
+func (n *nooprwlog) Read(topic string, parts []int32, offsets []int64, exit <-chan bool) <-chan Event {
 	out := make(chan Event)
 	go func() {
 		for _ = range out {
@@ -198,6 +208,10 @@ func (n *nooprwlog) Partitions(topic string) ([]int32, error) {
 		return []int32{0}, nil
 	}
 	return nil, fmt.Errorf("no such topic: %v", topic)
+}
+
+func (n *nooprwlog) Offsets(topic string, part int32) (int64, int64, error) {
+	return 0, 0, nil
 }
 
 func (n *nooprwlog) AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string) {
