@@ -45,15 +45,12 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 
 var peercnt = flag.Int("peers", 1, "the expected number of peers that will take part in the grid")
 var kafka = flag.String("kafka", "localhost:10092", "listof kafka brokers, for example: localhost:10092,localhost:10093")
-var khosts []string
 
 func main() {
 	flag.Parse()
 
-	khosts = strings.Split(*kafka, ",")
-
 	kconf := grid.DefaultKafkaConfig()
-	kconf.Brokers = khosts
+	kconf.Brokers = strings.Split(*kafka, ",")
 
 	g, err := grid.NewWithKafkaConfig(GridName, *peercnt, kconf)
 	if err != nil {
@@ -65,8 +62,7 @@ func main() {
 
 	g.Add("add", 2, add, "topic1")
 	g.Add("mul", 2, mul, "topic2")
-
-	g.Add("readline", 1, readline)
+	g.Add("readline", 1, readline, "topic3")
 
 	g.Start()
 	g.Wait()
@@ -145,13 +141,47 @@ func readline(in <-chan grid.Event) <-chan grid.Event {
 
 	go func() {
 		defer close(out)
+		var ready bool
+
+		for event := range in {
+			switch mesg := event.Message().(type) {
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
+			case grid.Ready:
+				ready = true
+			default:
+			}
+			if ready {
+				break
+			}
+		}
+
 		var i int
-		for {
-			fmt.Println("enter a number:")
-			if _, err := fmt.Scanf("%d", &i); err != nil {
-				fmt.Println("error: not a number")
-			} else {
-				out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
+		fmt.Printf("\nenter a number: ")
+		if _, err := fmt.Scanf("%d", &i); err != nil {
+			fmt.Printf("\nerror: that's not a number")
+		} else {
+			out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
+		}
+
+		// Read from topic3, think of it as the result topic.
+		for event := range in {
+			switch mesg := event.Message().(type) {
+			case *NumMesg:
+				if "topic3" == event.Topic() {
+					fmt.Printf("\nresult: %v", mesg.Data)
+				}
+			default:
+			}
+
+			for {
+				fmt.Printf("\nenter a number: ")
+				if _, err := fmt.Scanf("%d", &i); err != nil {
+					fmt.Printf("\nerror: that's not a number")
+				} else {
+					out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
+					break
+				}
 			}
 		}
 	}()
