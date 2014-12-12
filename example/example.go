@@ -23,7 +23,7 @@ type NumMesg struct {
 }
 
 func NewNumMesg(i int) *NumMesg {
-	return &NumMesg{Data: i}
+	return &NumMesg{i}
 }
 
 type numcoder struct {
