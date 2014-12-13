@@ -188,6 +188,10 @@ type Peer struct {
 	LastPongTs int64
 }
 
+func (p *Peer) Copy() *Peer {
+	return &Peer{Name: p.Name, LastPongTs: p.LastPongTs}
+}
+
 func newPeer(name string, lastpong int64) *Peer {
 	return &Peer{Name: name, LastPongTs: lastpong}
 }
@@ -198,7 +202,7 @@ type PeerState struct {
 	Term    uint32
 	Version uint32
 	Sched   PeerSched
-	Epoch   uint64 // indicates a new epoch for the cluster of peers
+	Epoch   uint64 // Indicates a new epoch for the cluster of peers.
 	Peers   map[string]*Peer
 }
 
@@ -208,6 +212,21 @@ func (ps *PeerState) String() string {
 		return ""
 	}
 	return string(b)
+}
+
+func (ps *PeerState) Copy() *PeerState {
+
+	peers := make(map[string]*Peer)
+	for name, peer := range ps.Peers {
+		peers[name] = peer.Copy()
+	}
+
+	var sched PeerSched
+	if nil != ps.Sched {
+		sched = ps.Sched.Copy()
+	}
+
+	return &PeerState{Term: ps.Term, Version: ps.Version, Epoch: ps.Epoch, Peers: peers, Sched: sched}
 }
 
 func newPeerState() *PeerState {
@@ -231,6 +250,18 @@ func (fi *Instance) String() string {
 	return fmt.Sprintf("Instance{i: %v, fname: %v, topic slices: %v}", fi.Id, fi.Fname, fi.TopicSlices)
 }
 
+func (fi *Instance) Copy() *Instance {
+
+	ts := make(map[string][]int32)
+	for topic, parts := range fi.TopicSlices {
+		newparts := make([]int32, len(parts))
+		copy(newparts, parts)
+		ts[topic] = newparts
+	}
+
+	return &Instance{Id: fi.Id, Fname: fi.Fname, TopicSlices: ts}
+}
+
 func NewInstance(i int, fname string) *Instance {
 	return &Instance{Id: i, Fname: fname, TopicSlices: make(map[string][]int32)}
 }
@@ -239,9 +270,16 @@ func NewInstance(i int, fname string) *Instance {
 // definitions that should run on that peer.
 type PeerSched map[string][]*Instance
 
-func (ps PeerSched) Instances(name string) ([]*Instance, bool) {
-	fi, found := ps[name]
-	return fi, found
+func (ps PeerSched) Copy() PeerSched {
+	sched := PeerSched{}
+	for name, insts := range ps {
+		newinsts := make([]*Instance, len(insts))
+		for i, inst := range insts {
+			newinsts[i] = inst.Copy()
+		}
+		sched[name] = newinsts
+	}
+	return sched
 }
 
 func init() {

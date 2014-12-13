@@ -80,7 +80,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					m.state.Sched = peersched(m.state.Peers, m.ops, m.parts)
 					log.Printf("grid: manager %v: emitting start state v%d", m.name, m.state.Version)
 					m.state.Epoch = epochid(peerids(m.state)) //The peerstate case below will set m.epoch using this value
-					out <- NewWritable(m.cmdtopic, Key, newPeerStateMsg(m.epoch, m.state))
+					out <- NewWritable(m.cmdtopic, Key, newPeerStateMsg(m.epoch, m.state.Copy()))
 				}
 			}
 		case event := <-in:
