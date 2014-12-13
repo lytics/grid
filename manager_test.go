@@ -78,7 +78,7 @@ func TestManagerBasic(t *testing.T) {
 func TestManagerGridDeath(t *testing.T) {
 
 	const (
-		topic      = "test-election"
+		topic      = "test-grid-death"
 		managercnt = 3
 	)
 
@@ -166,7 +166,7 @@ func TestManagerGridDeath(t *testing.T) {
 func TestManagerRollingRestartOfGrid(t *testing.T) {
 
 	const (
-		topic      = "test-election"
+		topic      = "test-rolling-restart"
 		managercnt = 3
 	)
 	managers := make([]*Manager, 0)

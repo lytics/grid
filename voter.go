@@ -62,7 +62,7 @@ func (v *Voter) startStateMachine(in <-chan Event) <-chan Event {
 //     leaders to give up leadership in very short time periods.
 //     In normal running, set it to 0 to disable.
 //
-//     The parmeter 'id' is a testing hook, to enable having
+//     The parameter 'id' is a testing hook, to enable having
 //     multiple voters in a single process running the test.
 //
 func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
