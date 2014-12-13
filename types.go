@@ -188,18 +188,33 @@ type Peer struct {
 	LastPongTs int64
 }
 
+func (p *Peer) Copy() *Peer {
+	return &Peer{Name: p.Name, LastPongTs: p.LastPongTs}
+}
+
 func newPeer(name string, lastpong int64) *Peer {
 	return &Peer{Name: name, LastPongTs: lastpong}
+}
+
+type PeerSet map[string]*Peer
+
+func (ps PeerSet) Copy() PeerSet {
+	newpeerset := make(map[string]*Peer)
+	for name, peer := range ps {
+		newpeerset[name] = peer.Copy()
+	}
+	return newpeerset
 }
 
 // PeerState is used to track the state of all the peers together
 // as well as issue schedules.
 type PeerState struct {
+	// Indicates a new epoch for the cluster of peers.
+	Epoch   uint64
 	Term    uint32
 	Version uint32
+	Peers   PeerSet
 	Sched   PeerSched
-	Epoch   uint64 // indicates a new epoch for the cluster of peers
-	Peers   map[string]*Peer
 }
 
 func (ps *PeerState) String() string {
@@ -210,12 +225,16 @@ func (ps *PeerState) String() string {
 	return string(b)
 }
 
+func (ps *PeerState) Copy() *PeerState {
+	return &PeerState{Term: ps.Term, Version: ps.Version, Epoch: ps.Epoch, Peers: ps.Peers.Copy(), Sched: ps.Sched.Copy()}
+}
+
 func newPeerState() *PeerState {
 	return &PeerState{Term: 0, Peers: make(map[string]*Peer)}
 }
 
-func newPeerStateMsg(epoch uint64, peerstate *PeerState) *CmdMesg {
-	return &CmdMesg{Epoch: epoch, Data: peerstate}
+func newPeerStateCmdMsg(epoch uint64, gs *PeerState) *CmdMesg {
+	return &CmdMesg{Epoch: epoch, Data: gs}
 }
 
 // Instance is the full mapping of topic slices that a particular
@@ -231,6 +250,16 @@ func (fi *Instance) String() string {
 	return fmt.Sprintf("Instance{i: %v, fname: %v, topic slices: %v}", fi.Id, fi.Fname, fi.TopicSlices)
 }
 
+func (fi *Instance) Copy() *Instance {
+	newtopicslices := make(map[string][]int32)
+	for topic, parts := range fi.TopicSlices {
+		newparts := make([]int32, len(parts))
+		copy(newparts, parts)
+		newtopicslices[topic] = newparts
+	}
+	return &Instance{Id: fi.Id, Fname: fi.Fname, TopicSlices: newtopicslices}
+}
+
 func NewInstance(i int, fname string) *Instance {
 	return &Instance{Id: i, Fname: fname, TopicSlices: make(map[string][]int32)}
 }
@@ -242,6 +271,22 @@ type PeerSched map[string][]*Instance
 func (ps PeerSched) Instances(name string) ([]*Instance, bool) {
 	fi, found := ps[name]
 	return fi, found
+}
+
+func (ps PeerSched) Copy() PeerSched {
+	if ps == nil {
+		return nil
+	}
+
+	newpeersched := PeerSched{}
+	for name, insts := range ps {
+		newinsts := make([]*Instance, len(insts))
+		for i, inst := range insts {
+			newinsts[i] = inst.Copy()
+		}
+		newpeersched[name] = newinsts
+	}
+	return newpeersched
 }
 
 func init() {
