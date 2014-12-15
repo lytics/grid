@@ -324,7 +324,7 @@ func (g *Grid) startinst(inst *Instance) {
 		defer wg.Done()
 
 		if 0 == len(inst.TopicSlices) {
-			log.Printf("grid: %v: instance: %v: is a source", fname, id)
+			log.Printf("grid: %v: instance: %v: is a source and has no input topics", fname, id)
 			return
 		}
 
@@ -381,7 +381,7 @@ func (g *Grid) startinst(inst *Instance) {
 				if topicout, found := outs[event.Topic()]; found {
 					topicout <- event
 				} else {
-					log.Fatalf("fatal: grid: %v(): not set as writer of: %v", fname, event.Topic())
+					log.Fatalf("fatal: grid: %v: instance: %v: no encoder found for topic: %v", fname, id, event.Topic())
 				}
 			}
 		}()
