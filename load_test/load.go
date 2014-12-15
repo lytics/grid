@@ -179,6 +179,8 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 				outmsg := 1 + mesg.Data
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("mulBy2", key, NewNumMesg(outmsg))
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
@@ -199,6 +201,8 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 				outmsg := 2 * mesg.Data
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("divBy2", key, NewNumMesg(outmsg))
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
@@ -219,6 +223,8 @@ func div(in <-chan grid.Event) <-chan grid.Event {
 				outmsg := mesg.Data / 2
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("sub1", key, NewNumMesg(outmsg))
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
@@ -240,6 +246,8 @@ func sub(in <-chan grid.Event) <-chan grid.Event {
 				outmsg := mesg.Data - 1
 				key := fmt.Sprintf("%d", mesg.Data)
 				out <- grid.NewWritable("collector", key, NewNumMesg(outmsg))
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
@@ -259,6 +267,8 @@ func collector(in <-chan grid.Event) <-chan grid.Event {
 		for e := range in {
 			switch mesg := e.Message().(type) {
 			case *NumMesg:
+			case grid.MinMaxOffset:
+				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
 				log.Printf("example: unknown message: %T :: %v", mesg, mesg)
 			}
