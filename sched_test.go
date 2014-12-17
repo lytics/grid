@@ -17,11 +17,11 @@ func TestPeerSched(t *testing.T) {
 	topics["topic1"] = true
 	topics["topic2"] = true
 
-	ops := make(map[string]*op)
-	op1 := &op{n: 11, inputs: topics}
-	ops["f1"] = op1
-	op2 := &op{n: 7, inputs: topics}
-	ops["f2"] = op2
+	lines := make(map[string]*line)
+	line1 := &line{n: 11, inputs: topics}
+	lines["f1"] = line1
+	line2 := &line{n: 7, inputs: topics}
+	lines["f2"] = line2
 
 	peers := make(map[string]*Peer)
 	peers["host1-123-0"] = newPeer("host1-123-0", time.Now().Unix())
@@ -32,7 +32,7 @@ func TestPeerSched(t *testing.T) {
 	// 'topic1' and 'topic2' are consumed in full, ie: that all their
 	// partitions are being read by one instance of 'f1' or another.
 	// The same expectation holds for instances of 'f2'.
-	sched := peersched(peers, ops, kafkaparts)
+	sched := peersched(peers, lines, kafkaparts)
 
 	// This deep map structure reflects the full list of partitions
 	// that are expected to exist under each function/topic pair.

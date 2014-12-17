@@ -8,6 +8,16 @@ import (
 	"time"
 )
 
+type nilactor struct{}
+
+func (a *nilactor) Act(in <-chan Event) <-chan Event {
+	return nil
+}
+
+func newNilActor() Actor {
+	return &nilactor{}
+}
+
 func TestManagerBasic(t *testing.T) {
 
 	const (
@@ -26,7 +36,6 @@ func TestManagerBasic(t *testing.T) {
 	// unrelated for the purposes of this test.
 	g.log = newNoOpReadWriteLog()
 
-	f := func(in <-chan Event) <-chan Event { return nil }
 	p := newPartition()
 	managers := make([]*Manager, 0)
 	manager_state := make(map[string]string)
@@ -39,8 +48,8 @@ func TestManagerBasic(t *testing.T) {
 	parts["topic1"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
-	ops := make(map[string]*op)
-	ops["f1"] = &op{f: f, n: 2, inputs: topics}
+	lines := make(map[string]*line)
+	lines["f1"] = &line{a: newNilActor(), n: 2, inputs: topics}
 
 	createManager := func(id int) *Manager {
 		out := make(chan Event)
@@ -50,7 +59,7 @@ func TestManagerBasic(t *testing.T) {
 		mgr.peertimeout = 5000 // We don't want the peers timing out for this test
 		go mgr.stateMachine(in, out)
 
-		mgr.ops = ops
+		mgr.lines = lines
 		mgr.parts = parts
 
 		managers = append(managers, mgr)
@@ -93,7 +102,6 @@ func TestManagerGridDeath(t *testing.T) {
 	// unrelated for the purposes of this test.
 	g.log = newNoOpReadWriteLog()
 
-	f := func(in <-chan Event) <-chan Event { return nil }
 	p := newPartition()
 	managers := make([]*Manager, 0)
 
@@ -105,8 +113,8 @@ func TestManagerGridDeath(t *testing.T) {
 	parts["topic1"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
-	ops := make(map[string]*op)
-	ops["f1"] = &op{f: f, n: 2, inputs: topics}
+	lines := make(map[string]*line)
+	lines["f1"] = &line{a: newNilActor(), n: 2, inputs: topics}
 
 	for i := 0; i < managercnt; i++ {
 		out := make(chan Event)
@@ -119,7 +127,7 @@ func TestManagerGridDeath(t *testing.T) {
 		mgr.peertimeout = 1 // timeout fast
 		go mgr.stateMachine(in, out)
 
-		mgr.ops = ops
+		mgr.lines = lines
 		mgr.parts = parts
 
 		managers = append(managers, mgr)
@@ -183,7 +191,6 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 	// unrelated for the purposes of this test.
 	g.log = newNoOpReadWriteLog()
 
-	f := func(in <-chan Event) <-chan Event { return nil }
 	p := newPartition()
 
 	topics := make(map[string]bool)
@@ -194,8 +201,8 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 	parts["topic1"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
-	ops := make(map[string]*op)
-	ops["f1"] = &op{f: f, n: 2, inputs: topics}
+	lines := make(map[string]*line)
+	lines["f1"] = &line{a: newNilActor(), n: 2, inputs: topics}
 
 	createManager := func(id int, peertimeout int64) {
 		out := make(chan Event)
@@ -207,7 +214,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 		mgr.exithook = exit
 		go mgr.stateMachine(in, out)
 
-		mgr.ops = ops
+		mgr.lines = lines
 		mgr.parts = parts
 		manager_state[mgr.name] = "alive"
 

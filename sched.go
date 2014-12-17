@@ -1,7 +1,7 @@
 package grid
 
 // peersched creates the schedule of which function instance should run on which peer.
-func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]int32) PeerSched {
+func peersched(peers map[string]*Peer, lines map[string]*line, parts map[string][]int32) PeerSched {
 
 	sched := PeerSched{}
 
@@ -12,17 +12,17 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 		sched[peer] = make([]*Instance, 0)
 	}
 
-	for fname, op := range ops {
+	for name, line := range lines {
 
 		// Every function will have N instances of it running
 		// somewhere on the grid. Also, each instance can
 		// read from multiple topics, but only from a sub
 		// set of the partitions.
 
-		finsts := make([]*Instance, op.n)
-		for i := 0; i < op.n; i++ {
-			finsts[i] = NewInstance(i, fname)
-			for topic, _ := range op.inputs {
+		finsts := make([]*Instance, line.n)
+		for i := 0; i < line.n; i++ {
+			finsts[i] = NewInstance(i, name)
+			for topic, _ := range line.inputs {
 				// For every instance create its "topic slice" for
 				// each topic it reads from. A "topic slice" is
 				// just a topic name and a slice partition numbers.
@@ -34,12 +34,12 @@ func peersched(peers map[string]*Peer, ops map[string]*op, parts map[string][]in
 		// remaining partitions of that topic. This basically round-
 		// robins the partitions of a topic to the instance of
 		// functions.
-		for topic, _ := range op.inputs {
+		for topic, _ := range line.inputs {
 			tparts := make([]int32, len(parts[topic]))
 			copy(tparts, parts[topic])
 
 			for i := 0; i < len(tparts); i++ {
-				finsts[i%op.n].TopicSlices[topic] = append(finsts[i%op.n].TopicSlices[topic], tparts[i])
+				finsts[i%line.n].TopicSlices[topic] = append(finsts[i%line.n].TopicSlices[topic], tparts[i])
 			}
 		}
 

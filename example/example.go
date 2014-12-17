@@ -73,16 +73,21 @@ func main() {
 	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
 	// Set processing layers.
-	g.Add("add", 2, add, "topic1")
-	g.Add("mul", 2, mul, "topic2")
-	g.Add("readline", 1, readline, "topic3")
+	g.Add("add", 2, NewAdder(), "topic1")
+	g.Add("mul", 2, NewMultiplier(), "topic2")
+	g.Add("readline", 1, NewReader(), "topic3")
 
 	// Start and wait for exit.
 	g.Start()
 	g.Wait()
 }
 
-func add(in <-chan grid.Event) <-chan grid.Event {
+type add struct{}
+
+func NewAdder() grid.Actor { return &add{} }
+
+func (*add) Act(in <-chan grid.Event) <-chan grid.Event {
+
 	out := make(chan grid.Event)
 
 	go func() {
@@ -119,7 +124,12 @@ func add(in <-chan grid.Event) <-chan grid.Event {
 	return out
 }
 
-func mul(in <-chan grid.Event) <-chan grid.Event {
+type mul struct{}
+
+func NewMultiplier() grid.Actor { return &mul{} }
+
+func (*mul) Act(in <-chan grid.Event) <-chan grid.Event {
+
 	out := make(chan grid.Event)
 
 	go func() {
@@ -156,7 +166,11 @@ func mul(in <-chan grid.Event) <-chan grid.Event {
 	return out
 }
 
-func readline(in <-chan grid.Event) <-chan grid.Event {
+type reader struct{}
+
+func NewReader() grid.Actor { return &reader{} }
+
+func (*reader) Act(in <-chan grid.Event) <-chan grid.Event {
 	out := make(chan grid.Event)
 
 	go func() {

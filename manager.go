@@ -77,7 +77,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					// we only ever emit once because of the guard.
 					stateclosed = true
 					m.state.Version++
-					m.state.Sched = peersched(m.state.Peers, m.ops, m.parts)
+					m.state.Sched = peersched(m.state.Peers, m.lines, m.parts)
 					log.Printf("grid: manager %v: emitting start state v%d", m.name, m.state.Version)
 					m.state.Epoch = epochid(peerids(m.state)) //The peerstate case below will set m.epoch using this value
 					out <- NewWritable(m.cmdtopic, Key, newPeerStateCmdMsg(m.epoch, m.state.Copy()))
