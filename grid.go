@@ -11,6 +11,10 @@ import (
 	metrics "github.com/rcrowley/go-metrics"
 )
 
+type Actor interface {
+	Act(in <-chan Event) <-chan Event
+}
+
 type Decoder interface {
 	New() interface{}
 	Decode(d interface{}) error
@@ -28,7 +32,7 @@ type Grid struct {
 	npeers     int
 	quorum     uint32
 	parts      map[string][]int32
-	ops        map[string]*op
+	lines      map[string]*line
 	wg         *sync.WaitGroup
 	exit       chan bool
 	registry   metrics.Registry
@@ -76,7 +80,7 @@ func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Gri
 		npeers:   npeers,
 		quorum:   uint32((npeers / 2) + 1),
 		parts:    make(map[string][]int32),
-		ops:      make(map[string]*op),
+		lines:    make(map[string]*line),
 		wg:       new(sync.WaitGroup),
 		exit:     make(chan bool),
 	}
@@ -159,18 +163,18 @@ func (g *Grid) AddPartitioner(p func(key io.Reader, parts int32) int32, topics .
 	g.log.AddPartitioner(p, topics...)
 }
 
-func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, topics ...string) error {
-	if _, exists := g.ops[fname]; exists {
-		return fmt.Errorf("gird: already added: %v", fname)
+func (g *Grid) Add(name string, n int, a Actor, topics ...string) error {
+	if _, exists := g.lines[name]; exists {
+		return fmt.Errorf("gird: already added: %v", name)
 	}
 
-	op := &op{f: f, n: n, inputs: make(map[string]bool)}
+	line := &line{a: a, n: n, inputs: make(map[string]bool)}
 
 	for _, topic := range topics {
 		if _, found := g.log.DecodedTopics()[topic]; !found {
 			return fmt.Errorf("grid: topic: %v: no decoder found for topic", topic)
 		}
-		op.inputs[topic] = true
+		line.inputs[topic] = true
 
 		// Discover the available partitions for the topic.
 		parts, err := g.log.Partitions(topic)
@@ -180,11 +184,11 @@ func (g *Grid) Add(fname string, n int, f func(in <-chan Event) <-chan Event, to
 		g.parts[topic] = parts
 
 		if len(parts) < n {
-			return fmt.Errorf("grid: topic: %v: parallelism of function is greater than number of partitions: func: %v, parallelism: %d partitions: %d", topic, fname, n, len(parts))
+			return fmt.Errorf("grid: topic: %v: parallelism of function is greater than number of partitions: func: %v, parallelism: %d partitions: %d", topic, name, n, len(parts))
 		}
 	}
 
-	g.ops[fname] = op
+	g.lines[name] = line
 
 	return nil
 }
@@ -227,13 +231,13 @@ func (g *Grid) startinst(inst *Instance) {
 	id := inst.Id
 
 	// Validate early that the instance was added to the grid.
-	if _, exists := g.ops[fname]; !exists {
+	if _, exists := g.lines[fname]; !exists {
 		log.Fatalf("fatal: grid: does not exist: %v()", fname)
 	}
 
 	// Validate early that the instance has valid topics and partition subsets.
 	for topic, _ := range inst.TopicSlices {
-		if !g.ops[fname].inputs[topic] {
+		if !g.lines[fname].inputs[topic] {
 			log.Fatalf("fatal: grid: %v(): not set as reader of: %v", fname, topic)
 		}
 	}
@@ -242,7 +246,7 @@ func (g *Grid) startinst(inst *Instance) {
 	in := make(chan Event)
 
 	// The out channel will be used by this instance to transmit data, ie: its output.
-	out := g.ops[fname].f(in)
+	out := g.lines[fname].a.Act(in)
 
 	// Recover previous state if the grid sepcifies a state topic.
 	if "" != g.statetopic {
@@ -388,8 +392,10 @@ func (g *Grid) startinst(inst *Instance) {
 	}
 }
 
-type op struct {
+// line is a line of actors in the grid. The name
+// is a bit jokey though, ie: "grid line"
+type line struct {
 	n      int
-	f      func(in <-chan Event) <-chan Event
+	a      Actor
 	inputs map[string]bool
 }
