@@ -7,6 +7,25 @@ import (
 	"io"
 )
 
+// Actor is a stateful processing element in the grid.
+type Actor interface {
+	Act(in <-chan Event) <-chan Event
+}
+
+// NewActor creates a new actor giving it a name and an it.
+type NewActor func(string, int) Actor
+
+// Decoder decodes messages of topics the grid reads from.
+type Decoder interface {
+	New() interface{}
+	Decode(d interface{}) error
+}
+
+// Encoder encodes messages of topics the grid writes to.
+type Encoder interface {
+	Encode(e interface{}) error
+}
+
 // Event is the interface implemented by all messages flowing
 // through the grid.
 type Event interface {

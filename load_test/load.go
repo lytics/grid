@@ -168,14 +168,16 @@ func generateTestMessages() {
 	}
 }
 
-type add struct{}
-
-func newAdd() grid.Actor {
-	return &add{}
+type add struct {
+	name string
 }
 
-func (*add) Act(in <-chan grid.Event) <-chan grid.Event {
-	fmt.Println("add started.")
+func newAdd() grid.NewActor {
+	return func(name string, id int) grid.Actor { return &add{name: name} }
+}
+
+func (a *add) Act(in <-chan grid.Event) <-chan grid.Event {
+	fmt.Printf("%v: started", a.name)
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
@@ -196,14 +198,16 @@ func (*add) Act(in <-chan grid.Event) <-chan grid.Event {
 	return out
 }
 
-type mul struct{}
-
-func newMul() grid.Actor {
-	return &mul{}
+type mul struct {
+	name string
 }
 
-func (*mul) Act(in <-chan grid.Event) <-chan grid.Event {
-	fmt.Println("mul started.")
+func newMul() grid.NewActor {
+	return func(name string, id int) grid.Actor { return &mul{name: name} }
+}
+
+func (m *mul) Act(in <-chan grid.Event) <-chan grid.Event {
+	fmt.Printf("%v: started", m.name)
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
@@ -224,14 +228,16 @@ func (*mul) Act(in <-chan grid.Event) <-chan grid.Event {
 	return out
 }
 
-type div struct{}
-
-func newDiv() grid.Actor {
-	return &div{}
+type div struct {
+	name string
 }
 
-func (*div) Act(in <-chan grid.Event) <-chan grid.Event {
-	fmt.Println("div started.")
+func newDiv() grid.NewActor {
+	return func(name string, id int) grid.Actor { return &div{name: name} }
+}
+
+func (d *div) Act(in <-chan grid.Event) <-chan grid.Event {
+	fmt.Printf("%v: started", d.name)
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
@@ -252,14 +258,16 @@ func (*div) Act(in <-chan grid.Event) <-chan grid.Event {
 	return out
 }
 
-type sub struct{}
-
-func newSub() grid.Actor {
-	return &sub{}
+type sub struct {
+	name string
 }
 
-func (*sub) Act(in <-chan grid.Event) <-chan grid.Event {
-	fmt.Println("sub started.")
+func newSub() grid.NewActor {
+	return func(name string, id int) grid.Actor { return &sub{name: name} }
+}
+
+func (s *sub) Act(in <-chan grid.Event) <-chan grid.Event {
+	fmt.Printf("%v: started", s.name)
 	out := make(chan grid.Event)
 
 	go func() {
@@ -281,14 +289,16 @@ func (*sub) Act(in <-chan grid.Event) <-chan grid.Event {
 	return out
 }
 
-type collector struct{}
-
-func newCollector() grid.Actor {
-	return &collector{}
+type collector struct {
+	name string
 }
 
-func (*collector) Act(in <-chan grid.Event) <-chan grid.Event {
-	fmt.Println("collector started.")
+func newCollector() grid.NewActor {
+	return func(name string, id int) grid.Actor { return &collector{name: name} }
+}
+
+func (c *collector) Act(in <-chan grid.Event) <-chan grid.Event {
+	fmt.Printf("%v: started", c.name)
 	out := make(chan grid.Event)
 
 	go func() {

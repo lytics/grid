@@ -11,19 +11,6 @@ import (
 	metrics "github.com/rcrowley/go-metrics"
 )
 
-type Actor interface {
-	Act(in <-chan Event) <-chan Event
-}
-
-type Decoder interface {
-	New() interface{}
-	Decode(d interface{}) error
-}
-
-type Encoder interface {
-	Encode(e interface{}) error
-}
-
 type Grid struct {
 	log        ReadWriteLog
 	gridname   string
@@ -163,12 +150,12 @@ func (g *Grid) AddPartitioner(p func(key io.Reader, parts int32) int32, topics .
 	g.log.AddPartitioner(p, topics...)
 }
 
-func (g *Grid) Add(name string, n int, a Actor, topics ...string) error {
+func (g *Grid) Add(name string, n int, af NewActor, topics ...string) error {
 	if _, exists := g.lines[name]; exists {
 		return fmt.Errorf("gird: already added: %v", name)
 	}
 
-	line := &line{a: a, n: n, inputs: make(map[string]bool)}
+	line := &line{af: af, n: n, inputs: make(map[string]bool)}
 
 	for _, topic := range topics {
 		if _, found := g.log.DecodedTopics()[topic]; !found {
@@ -246,7 +233,7 @@ func (g *Grid) startinst(inst *Instance) {
 	in := make(chan Event)
 
 	// The out channel will be used by this instance to transmit data, ie: its output.
-	out := g.lines[fname].a.Act(in)
+	out := g.lines[fname].af(fname, id).Act(in)
 
 	// Recover previous state if the grid sepcifies a state topic.
 	if "" != g.statetopic {
@@ -396,6 +383,6 @@ func (g *Grid) startinst(inst *Instance) {
 // is a bit jokey though, ie: "grid line"
 type line struct {
 	n      int
-	a      Actor
+	af     NewActor
 	inputs map[string]bool
 }

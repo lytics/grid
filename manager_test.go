@@ -14,8 +14,8 @@ func (a *nilactor) Act(in <-chan Event) <-chan Event {
 	return nil
 }
 
-func newNilActor() Actor {
-	return &nilactor{}
+func newNilActor() NewActor {
+	return func(name string, id int) Actor { return &nilactor{} }
 }
 
 func TestManagerBasic(t *testing.T) {
@@ -49,7 +49,7 @@ func TestManagerBasic(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	lines := make(map[string]*line)
-	lines["f1"] = &line{a: newNilActor(), n: 2, inputs: topics}
+	lines["f1"] = &line{af: newNilActor(), n: 2, inputs: topics}
 
 	createManager := func(id int) *Manager {
 		out := make(chan Event)
@@ -114,7 +114,7 @@ func TestManagerGridDeath(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	lines := make(map[string]*line)
-	lines["f1"] = &line{a: newNilActor(), n: 2, inputs: topics}
+	lines["f1"] = &line{af: newNilActor(), n: 2, inputs: topics}
 
 	for i := 0; i < managercnt; i++ {
 		out := make(chan Event)
@@ -202,7 +202,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	lines := make(map[string]*line)
-	lines["f1"] = &line{a: newNilActor(), n: 2, inputs: topics}
+	lines["f1"] = &line{af: newNilActor(), n: 2, inputs: topics}
 
 	createManager := func(id int, peertimeout int64) {
 		out := make(chan Event)
