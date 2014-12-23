@@ -84,7 +84,9 @@ func main() {
 
 type add struct{}
 
-func NewAdder() grid.Actor { return &add{} }
+func NewAdder() grid.NewActor {
+	return func(name string, id int) grid.Actor { return &add{} }
+}
 
 func (*add) Act(in <-chan grid.Event) <-chan grid.Event {
 
@@ -126,7 +128,9 @@ func (*add) Act(in <-chan grid.Event) <-chan grid.Event {
 
 type mul struct{}
 
-func NewMultiplier() grid.Actor { return &mul{} }
+func NewMultiplier() grid.NewActor {
+	return func(name string, id int) grid.Actor { return &mul{} }
+}
 
 func (*mul) Act(in <-chan grid.Event) <-chan grid.Event {
 
@@ -168,7 +172,9 @@ func (*mul) Act(in <-chan grid.Event) <-chan grid.Event {
 
 type reader struct{}
 
-func NewReader() grid.Actor { return &reader{} }
+func NewReader() grid.NewActor {
+	return func(name string, id int) grid.Actor { return &reader{} }
+}
 
 func (*reader) Act(in <-chan grid.Event) <-chan grid.Event {
 	out := make(chan grid.Event)
