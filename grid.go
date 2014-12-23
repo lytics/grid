@@ -11,21 +11,6 @@ import (
 	metrics "github.com/rcrowley/go-metrics"
 )
 
-type Actor interface {
-	Act(in <-chan Event) <-chan Event
-}
-
-type NewActor func(string, int) Actor
-
-type Decoder interface {
-	New() interface{}
-	Decode(d interface{}) error
-}
-
-type Encoder interface {
-	Encode(e interface{}) error
-}
-
 type Grid struct {
 	log        ReadWriteLog
 	gridname   string
@@ -165,7 +150,7 @@ func (g *Grid) AddPartitioner(p func(key io.Reader, parts int32) int32, topics .
 	g.log.AddPartitioner(p, topics...)
 }
 
-func (g *Grid) Add(name string, n int, af func(string, int) Actor, topics ...string) error {
+func (g *Grid) Add(name string, n int, af NewActor, topics ...string) error {
 	if _, exists := g.lines[name]; exists {
 		return fmt.Errorf("gird: already added: %v", name)
 	}
@@ -398,6 +383,6 @@ func (g *Grid) startinst(inst *Instance) {
 // is a bit jokey though, ie: "grid line"
 type line struct {
 	n      int
-	af     func(string, int) Actor
+	af     NewActor
 	inputs map[string]bool
 }
