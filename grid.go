@@ -19,7 +19,7 @@ type Grid struct {
 	npeers     int
 	quorum     uint32
 	parts      map[string][]int32
-	lines      map[string]*line
+	actorconfs map[string]*actorconf
 	wg         *sync.WaitGroup
 	exit       chan bool
 	registry   metrics.Registry
@@ -61,15 +61,15 @@ func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Gri
 	}
 
 	g := &Grid{
-		log:      rwlog,
-		gridname: gridname,
-		cmdtopic: cmdtopic,
-		npeers:   npeers,
-		quorum:   uint32((npeers / 2) + 1),
-		parts:    make(map[string][]int32),
-		lines:    make(map[string]*line),
-		wg:       new(sync.WaitGroup),
-		exit:     make(chan bool),
+		log:        rwlog,
+		gridname:   gridname,
+		cmdtopic:   cmdtopic,
+		npeers:     npeers,
+		quorum:     uint32((npeers / 2) + 1),
+		parts:      make(map[string][]int32),
+		actorconfs: make(map[string]*actorconf),
+		wg:         new(sync.WaitGroup),
+		exit:       make(chan bool),
 	}
 
 	g.wg.Add(1)
@@ -151,17 +151,17 @@ func (g *Grid) AddPartitioner(p func(key io.Reader, parts int32) int32, topics .
 }
 
 func (g *Grid) Add(name string, n int, af NewActor, topics ...string) error {
-	if _, exists := g.lines[name]; exists {
+	if _, exists := g.actorconfs[name]; exists {
 		return fmt.Errorf("gird: already added: %v", name)
 	}
 
-	line := &line{af: af, n: n, inputs: make(map[string]bool)}
+	actorconf := &actorconf{af: af, n: n, inputs: make(map[string]bool)}
 
 	for _, topic := range topics {
 		if _, found := g.log.DecodedTopics()[topic]; !found {
 			return fmt.Errorf("grid: topic: %v: no decoder found for topic", topic)
 		}
-		line.inputs[topic] = true
+		actorconf.inputs[topic] = true
 
 		// Discover the available partitions for the topic.
 		parts, err := g.log.Partitions(topic)
@@ -175,7 +175,7 @@ func (g *Grid) Add(name string, n int, af NewActor, topics ...string) error {
 		}
 	}
 
-	g.lines[name] = line
+	g.actorconfs[name] = actorconf
 
 	return nil
 }
@@ -218,13 +218,13 @@ func (g *Grid) startinst(inst *Instance) {
 	id := inst.Id
 
 	// Validate early that the instance was added to the grid.
-	if _, exists := g.lines[fname]; !exists {
+	if _, exists := g.actorconfs[fname]; !exists {
 		log.Fatalf("fatal: grid: does not exist: %v()", fname)
 	}
 
 	// Validate early that the instance has valid topics and partition subsets.
 	for topic, _ := range inst.TopicSlices {
-		if !g.lines[fname].inputs[topic] {
+		if !g.actorconfs[fname].inputs[topic] {
 			log.Fatalf("fatal: grid: %v(): not set as reader of: %v", fname, topic)
 		}
 	}
@@ -233,7 +233,7 @@ func (g *Grid) startinst(inst *Instance) {
 	in := make(chan Event)
 
 	// The out channel will be used by this instance to transmit data, ie: its output.
-	out := g.lines[fname].af(fname, id).Act(in)
+	out := g.actorconfs[fname].af(fname, id).Act(in)
 
 	// Recover previous state if the grid sepcifies a state topic.
 	if "" != g.statetopic {
@@ -379,9 +379,9 @@ func (g *Grid) startinst(inst *Instance) {
 	}
 }
 
-// line is a line of actors in the grid. The name
-// is a bit jokey though, ie: "grid line"
-type line struct {
+// actorconf is a actorconf of actors in the grid. The name
+// is a bit jokey though, ie: "grid actorconf"
+type actorconf struct {
 	n      int
 	af     NewActor
 	inputs map[string]bool
