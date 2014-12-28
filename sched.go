@@ -1,7 +1,7 @@
 package grid
 
 // peersched creates the schedule of which actor instance should run on which peer.
-func peersched(peers map[string]*Peer, actorconfs map[string]*actorconf, parts map[string][]int32) PeerSched {
+func peersched(peers map[string]*Peer, actorconfs map[string]*actorconf, parts map[string][]int32, statetopic string) PeerSched {
 
 	sched := PeerSched{}
 
@@ -12,6 +12,9 @@ func peersched(peers map[string]*Peer, actorconfs map[string]*actorconf, parts m
 		sched[peer] = make([]*Instance, 0)
 	}
 
+	// We go actor-configuration by actor-configuration. Note that this is
+	// different than going actor by actor, because each configuration
+	// will configure N actor instances.
 	for name, actorconf := range actorconfs {
 
 		// Every actor will have N instances of it running
@@ -35,11 +38,26 @@ func peersched(peers map[string]*Peer, actorconfs map[string]*actorconf, parts m
 		// robins the partitions of a topic to the instance of
 		// actors.
 		for topic, _ := range actorconf.inputs {
-			tparts := make([]int32, len(parts[topic]))
-			copy(tparts, parts[topic])
-
-			for i := 0; i < len(tparts); i++ {
-				actors[i%actorconf.n].TopicSlices[topic] = append(actors[i%actorconf.n].TopicSlices[topic], tparts[i])
+			if topic == statetopic {
+				// For the state-topic, every actor instance gets all the partitions, in
+				// otherwords, they all read the full topic. Each can hence recreate the
+				// state of the other. This is important in the cases where the user
+				// changes the number of instances of an actor, and new instances need
+				// to take care of work that in a previous version of the grid was
+				// being done by no longer existing actors.
+				for i := 0; i < actorconf.n; i++ {
+					tparts := make([]int32, len(parts[topic]))
+					copy(tparts, parts[topic])
+					actors[i].TopicSlices[topic] = tparts
+				}
+			} else {
+				// For a normal, non-state topic, the partitions are just round-robined
+				// to the actor instances until the topic is being read in full.
+				tparts := make([]int32, len(parts[topic]))
+				copy(tparts, parts[topic])
+				for i := 0; i < len(tparts); i++ {
+					actors[i%actorconf.n].TopicSlices[topic] = append(actors[i%actorconf.n].TopicSlices[topic], tparts[i])
+				}
 			}
 		}
 
@@ -56,7 +74,7 @@ func peersched(peers map[string]*Peer, actorconfs map[string]*actorconf, parts m
 			}
 		}
 
-		// Now move on to the next actor...
+		// Now move on to the next actor configuration...
 	}
 
 	return sched
