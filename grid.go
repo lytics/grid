@@ -236,12 +236,7 @@ func (g *Grid) startinst(inst *Instance) {
 	out := g.actorconfs[fname].af(fname, id).Act(in)
 
 	// Recover previous state if the grid sepcifies a state topic.
-	if "" != g.statetopic {
-		parts, err := g.log.Partitions(g.statetopic)
-		if err != nil {
-			log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: failed to get partition data: %v", fname, id, g.statetopic, err)
-		}
-
+	if parts, found := inst.TopicSlices[g.statetopic]; found {
 		// Here we get the min and max offset of the state topic.
 		// This is used below to determin if there is anything
 		// in the topic.
@@ -262,6 +257,7 @@ func (g *Grid) startinst(inst *Instance) {
 		for i, max := range maxs {
 			if mins[i] != max {
 				readstate = true
+				log.Printf("grid: %v: instance: %v: starting state recovery since state messages exist", fname, id)
 			}
 		}
 
@@ -278,6 +274,9 @@ func (g *Grid) startinst(inst *Instance) {
 					in <- event
 				}
 			}
+		} else {
+			in <- NewReadable(g.gridname, 0, 0, Ready(true))
+			log.Printf("grid: %v: instance: %v: skipping state recovery since no state messages exist", fname, id)
 		}
 	}
 
@@ -304,7 +303,12 @@ func (g *Grid) startinst(inst *Instance) {
 				if err != nil {
 					log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: partition: %v: failed getting offset: %v", fname, id, topic, part, err)
 				}
-				in <- NewReadable(g.gridname, 0, 0, MinMaxOffset{Topic: topic, Part: part, Min: min, Max: max})
+
+				if topic == g.statetopic {
+					useoffsets[g.statetopic][part] = min
+				} else {
+					in <- NewReadable(g.gridname, 0, 0, MinMaxOffset{Topic: topic, Part: part, Min: min, Max: max})
+				}
 			}
 		}
 	}()
@@ -313,9 +317,17 @@ func (g *Grid) startinst(inst *Instance) {
 	// for each min-max topic-partition pair sent to it.
 	go func() {
 		defer wg.Done()
+		ntopics := len(inst.TopicSlices)
 
-		if 0 == len(inst.TopicSlices) {
+		// Check if this is a source.
+		if 0 == ntopics {
 			log.Printf("grid: %v: instance: %v: is a source and has no input topics", fname, id)
+			return
+		}
+
+		// Check if this instance only reads the state topic,
+		// we always use the min offset, so don't ask.
+		if _, usesstate := inst.TopicSlices[g.statetopic]; 1 == ntopics && usesstate {
 			return
 		}
 
