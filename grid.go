@@ -318,11 +318,16 @@ func (g *Grid) startinst(inst *Instance) {
 	go func() {
 		defer wg.Done()
 		ntopics := len(inst.TopicSlices)
-		_, usesstate := inst.TopicSlices[g.statetopic]
 
-		// Check if this is a source, which includes actors that only read the state topic.
-		if 0 == ntopics || (1 == ntopics && usesstate) {
+		// Check if this is a source.
+		if 0 == ntopics {
 			log.Printf("grid: %v: instance: %v: is a source and has no input topics", fname, id)
+			return
+		}
+
+		// Check if this instance only reads the state topic,
+		// we always use the min offset, so don't ask.
+		if _, usesstate := inst.TopicSlices[g.statetopic]; 1 == ntopics && usesstate {
 			return
 		}
 
