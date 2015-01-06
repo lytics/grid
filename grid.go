@@ -233,10 +233,14 @@ func (g *Grid) startinst(inst *Instance) {
 	in := make(chan Event)
 
 	// The out channel will be used by this instance to transmit data, ie: its output.
-	out := g.actorconfs[fname].af(fname, id).Act(in)
+	var out <-chan Event
 
 	// Recover previous state if the grid sepcifies a state topic.
 	if parts, found := inst.TopicSlices[g.statetopic]; found {
+		// Pass both the in and state channels to the actor.
+		state := make(chan Event)
+		out = g.actorconfs[fname].af(fname, id).Act(in, state)
+
 		// Here we get the min and max offset of the state topic.
 		// This is used below to determin if there is anything
 		// in the topic.
@@ -268,16 +272,19 @@ func (g *Grid) startinst(inst *Instance) {
 			exit := make(chan bool)
 			for event := range g.log.Read(g.statetopic, parts, mins, exit) {
 				if event.Offset()+1 >= maxs[event.Part()] {
-					in <- NewReadable(g.gridname, 0, 0, Ready(true))
+					state <- NewReadable(g.gridname, 0, 0, Ready(true))
 					close(exit)
 				} else {
-					in <- event
+					state <- event
 				}
 			}
 		} else {
-			in <- NewReadable(g.gridname, 0, 0, Ready(true))
+			state <- NewReadable(g.gridname, 0, 0, Ready(true))
 			log.Printf("grid: %v: instance: %v: skipping state recovery since no state messages exist", fname, id)
 		}
+	} else {
+		// Pass only the in channel to the actor, since no state topic was requested.
+		out = g.actorconfs[fname].af(fname, id).Act(in)
 	}
 
 	cnt := 0
