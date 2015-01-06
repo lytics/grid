@@ -7,11 +7,9 @@ import (
 	"io"
 )
 
-// Actor is a stateful processing element in the grid. The state
-// vararg will always either have zero or one arguments. The
-// vararg is used to make it optional.
+// Actor is a stateful processing element in the grid.
 type Actor interface {
-	Act(in <-chan Event, state ...<-chan Event) <-chan Event
+	Act(in <-chan Event, state <-chan Event) <-chan Event
 }
 
 // NewActor creates a new actor giving it a name and an it.
