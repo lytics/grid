@@ -229,57 +229,26 @@ func (g *Grid) startinst(inst *Instance) {
 		}
 	}
 
-	// The in channel will be used by this instance to receive data, ie: its input.
-	in := make(chan Event)
+	// The in and state channel will be used by this instance to receive data, ie: its input.
+	var in chan Event
+	var state chan Event
 
 	// The out channel will be used by this instance to transmit data, ie: its output.
-	out := g.actorconfs[fname].af(fname, id).Act(in)
+	var out <-chan Event
 
-	// Recover previous state if the grid sepcifies a state topic.
-	if parts, found := inst.TopicSlices[g.statetopic]; found {
-		// Here we get the min and max offset of the state topic.
-		// This is used below to determin if there is anything
-		// in the topic.
-		maxs := make([]int64, len(parts))
-		mins := make([]int64, len(parts))
-		for _, part := range parts {
-			min, max, err := g.log.Offsets(g.statetopic, part)
-			if err != nil {
-				log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: part: %v: failed to get offset: %v", fname, id, g.statetopic, part, err)
-			}
-			maxs[part] = max
-			mins[part] = min
-		}
-
-		// If there is a difference between any partition's
-		// min and max, then we have state events to read.
-		var readstate bool
-		for i, max := range maxs {
-			if mins[i] != max {
-				readstate = true
-				log.Printf("grid: %v: instance: %v: starting state recovery since state messages exist", fname, id)
-			}
-		}
-
-		// If there are state events, use a reader to read them
-		// and pump them into the instance, so it can recover
-		// its state.
-		if readstate {
-			exit := make(chan bool)
-			for event := range g.log.Read(g.statetopic, parts, mins, exit) {
-				if event.Offset()+1 >= maxs[event.Part()] {
-					in <- NewReadable(g.gridname, 0, 0, Ready(true))
-					close(exit)
-				} else {
-					in <- event
-				}
-			}
-		} else {
-			in <- NewReadable(g.gridname, 0, 0, Ready(true))
-			log.Printf("grid: %v: instance: %v: skipping state recovery since no state messages exist", fname, id)
-		}
+	if _, found := inst.TopicSlices[g.statetopic]; found {
+		// Pass both the in and state channels to the actor.
+		in = make(chan Event)
+		state = make(chan Event)
+	} else {
+		// Pass only the in channel to the actor, since no state topic was requested.
+		in = make(chan Event)
 	}
 
+	// Start the actor.
+	out = g.actorconfs[fname].af(fname, id).Act(in, state)
+
+	// Calculate how many partitions need offset information.
 	cnt := 0
 	useoffsets := make(map[string]map[int32]int64)
 
@@ -303,12 +272,7 @@ func (g *Grid) startinst(inst *Instance) {
 				if err != nil {
 					log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: partition: %v: failed getting offset: %v", fname, id, topic, part, err)
 				}
-
-				if topic == g.statetopic {
-					useoffsets[g.statetopic][part] = min
-				} else {
-					in <- NewReadable(g.gridname, 0, 0, MinMaxOffset{Topic: topic, Part: part, Min: min, Max: max})
-				}
+				in <- NewReadable(g.gridname, 0, 0, MinMaxOffset{Topic: topic, Part: part, Min: min, Max: max})
 			}
 		}
 	}()
@@ -317,17 +281,10 @@ func (g *Grid) startinst(inst *Instance) {
 	// for each min-max topic-partition pair sent to it.
 	go func() {
 		defer wg.Done()
-		ntopics := len(inst.TopicSlices)
 
 		// Check if this is a source.
-		if 0 == ntopics {
+		if 0 == len(inst.TopicSlices) {
 			log.Printf("grid: %v: instance: %v: is a source and has no input topics", fname, id)
-			return
-		}
-
-		// Check if this instance only reads the state topic,
-		// we always use the min offset, so don't ask.
-		if _, usesstate := inst.TopicSlices[g.statetopic]; 1 == ntopics && usesstate {
 			return
 		}
 
@@ -350,21 +307,30 @@ func (g *Grid) startinst(inst *Instance) {
 	// Start the true topic reading. The messages on the input channels are
 	// mux'ed and put onto a single merged input channel.
 	for topic, parts := range inst.TopicSlices {
-		go func() {
-			offsets := make([]int64, len(parts))
-			for i, part := range parts {
-				if offset, found := useoffsets[topic][part]; !found {
-					log.Fatalf("fatal: grid: %v: instance: %v: failed to find offset for topic: %v: partition: %v", fname, id, topic, part)
-				} else {
-					offsets[i] = offset
-				}
+		offsets := make([]int64, len(parts))
+		for i, part := range parts {
+			if offset, found := useoffsets[topic][part]; !found {
+				log.Fatalf("fatal: grid: %v: instance: %v: failed to find offset for topic: %v: partition: %v", fname, id, topic, part)
+			} else {
+				offsets[i] = offset
 			}
+		}
 
-			log.Printf("grid: starting: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", fname, id, topic, parts, offsets)
-			for event := range g.log.Read(topic, parts, offsets, g.exit) {
-				in <- event
-			}
-		}()
+		log.Printf("grid: starting reader for: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", fname, id, topic, parts, offsets)
+
+		if topic == g.statetopic {
+			go func(topic string, parts []int32, offsets []int64) {
+				for event := range g.log.Read(topic, parts, offsets, g.exit) {
+					state <- event
+				}
+			}(topic, parts, offsets)
+		} else {
+			go func(topic string, parts []int32, offsets []int64) {
+				for event := range g.log.Read(topic, parts, offsets, g.exit) {
+					in <- event
+				}
+			}(topic, parts, offsets)
+		}
 	}
 
 	// Create a mapping of all output topics defined which the instance

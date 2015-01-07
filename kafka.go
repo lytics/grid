@@ -215,6 +215,10 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 
 			var buf bytes.Buffer
 			for event := range consumer.Events() {
+				if event.Err != nil {
+					log.Printf("error: topic: %v: partition: %v: %v", topic, part, event.Err)
+					continue
+				}
 				buf.Reset()
 				dec := kl.decoders[topic](&buf)
 				buf.Write(event.Value)
@@ -222,7 +226,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 				err = dec.Decode(msg)
 
 				if err != nil {
-					log.Printf("error: topic: %v: partition: %v: decode failed: %v: msg: %v value: %v", topic, part, err, msg, string(buf.Bytes()))
+					log.Printf("error: topic: %v: partition: %v: decode failed: %v: instance: %T :: %v: buffer: %v", topic, part, err, msg, msg, string(buf.Bytes()))
 				} else {
 					select {
 					case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):

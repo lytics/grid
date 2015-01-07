@@ -10,7 +10,7 @@ import (
 
 type nilactor struct{}
 
-func (a *nilactor) Act(in <-chan Event) <-chan Event {
+func (a *nilactor) Act(in <-chan Event, state <-chan Event) <-chan Event {
 	return nil
 }
 
