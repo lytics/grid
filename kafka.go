@@ -3,7 +3,6 @@ package grid
 import (
 	"bytes"
 	"fmt"
-	"hash"
 	"hash/fnv"
 	"io"
 	"log"
@@ -13,12 +12,16 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+type Partitioner interface {
+	Partition(key []byte, parts int32) int32
+}
+
 type ReadWriteLog interface {
 	Write(topic string, in <-chan Event)
 	Read(topic string, parts []int32, offsets []int64, exit <-chan bool) <-chan Event
 	AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
 	AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string)
-	AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string)
+	AddPartitioner(p Partitioner, topics ...string)
 	EncodedTopics() map[string]bool
 	DecodedTopics() map[string]bool
 	Partitions(topic string) ([]int32, error)
@@ -39,7 +42,7 @@ type kafkalog struct {
 	client       *sarama.Client
 	encoders     map[string]func(io.Writer) Encoder
 	decoders     map[string]func(io.Reader) Decoder
-	partitioners map[string]func(io.Reader, int32) int32
+	partitioners map[string]Partitioner
 }
 
 func NewKafkaReadWriteLog(id string, conf *KafkaConfig) (ReadWriteLog, error) {
@@ -48,7 +51,13 @@ func NewKafkaReadWriteLog(id string, conf *KafkaConfig) (ReadWriteLog, error) {
 		return nil, err
 	}
 
-	return &kafkalog{conf: conf, client: client, encoders: make(map[string]func(io.Writer) Encoder), decoders: make(map[string]func(io.Reader) Decoder)}, nil
+	return &kafkalog{
+		conf:         conf,
+		client:       client,
+		encoders:     make(map[string]func(io.Writer) Encoder),
+		decoders:     make(map[string]func(io.Reader) Decoder),
+		partitioners: make(map[string]Partitioner),
+	}, nil
 }
 
 func (kl *kafkalog) AddDecoder(makeDecoder func(io.Reader) Decoder, topics ...string) {
@@ -108,7 +117,7 @@ func (kl *kafkalog) Offsets(topic string, part int32) (int64, int64, error) {
 	return min, max, nil
 }
 
-func (kl *kafkalog) AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string) {
+func (kl *kafkalog) AddPartitioner(p Partitioner, topics ...string) {
 	for _, topic := range topics {
 		if _, added := kl.partitioners[topic]; !added {
 			kl.partitioners[topic] = p
@@ -252,15 +261,14 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 
 func (kl *kafkalog) newPartitioner(topic string) func() sarama.Partitioner {
 	if p, found := kl.partitioners[topic]; found {
-		return func() sarama.Partitioner { return &wrappartitioner{p: p, buf: new(bytes.Buffer)} }
+		return func() sarama.Partitioner { return &wrappartitioner{p: p} }
 	} else {
-		return func() sarama.Partitioner { return &partitioner{hasher: fnv.New32a()} }
+		return func() sarama.Partitioner { return &partitioner{} }
 	}
 }
 
 type wrappartitioner struct {
-	buf *bytes.Buffer
-	p   func(key io.Reader, parts int32) int32
+	p Partitioner
 }
 
 func (w *wrappartitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
@@ -268,12 +276,10 @@ func (w *wrappartitioner) Partition(key sarama.Encoder, numPartitions int32) int
 	if err != nil {
 		return 0
 	}
-	w.buf.Write(bytes)
-	return w.p(w.buf, numPartitions)
+	return w.p.Partition(bytes, numPartitions)
 }
 
 type partitioner struct {
-	hasher hash.Hash32
 }
 
 func (p *partitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
@@ -284,12 +290,12 @@ func (p *partitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
 	if len(bytes) == 0 {
 		return 0
 	}
-	p.hasher.Reset()
-	_, err = p.hasher.Write(bytes)
+	hasher := fnv.New32a()
+	_, err = hasher.Write(bytes)
 	if err != nil {
 		return 0
 	}
-	hash := int32(p.hasher.Sum32())
+	hash := int32(hasher.Sum32())
 	if hash < 0 {
 		hash = -hash
 	}

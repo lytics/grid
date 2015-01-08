@@ -49,7 +49,7 @@ func TestWriter(t *testing.T) {
 	rwlog.Write(TopicName, in)
 
 	for i := 0; i < 10; i++ {
-		in <- NewWritable(TopicName, "", newTestMesg(i))
+		in <- NewWritable(TopicName, nil, newTestMesg(i))
 	}
 }
 
@@ -119,7 +119,7 @@ func TestReadWriter(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	for i := 0; i < expcnt; i++ {
-		in <- NewWritable(TopicName, "", newTestMesg(i))
+		in <- NewWritable(TopicName, nil, newTestMesg(i))
 	}
 
 	// Removing this time-sleep will cause the reader to not
@@ -214,6 +214,6 @@ func (n *nooprwlog) Offsets(topic string, part int32) (int64, int64, error) {
 	return 0, 0, nil
 }
 
-func (n *nooprwlog) AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string) {
+func (n *nooprwlog) AddPartitioner(p Partitioner, topics ...string) {
 	// Do nothing.
 }

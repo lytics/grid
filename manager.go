@@ -80,7 +80,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					m.state.Sched = peersched(m.state.Peers, m.actorconfs, m.parts, m.statetopic)
 					// The peerstate case below will set m.epoch using this value.
 					m.state.Epoch = epochid(peerids(m.state))
-					out <- NewWritable(m.cmdtopic, Key, newPeerStateCmdMsg(m.epoch, m.state.Copy()))
+					out <- NewWritable(m.cmdtopic, nil, newPeerStateCmdMsg(m.epoch, m.state.Copy()))
 				}
 			}
 		case event := <-in:
@@ -117,7 +117,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					}
 				} else {
 					rank = Follower
-					out <- NewWritable(m.cmdtopic, Key, newPong(m.epoch, m.name, data.Term))
+					out <- NewWritable(m.cmdtopic, nil, newPong(m.epoch, m.name, data.Term))
 				}
 				m.state.Peers[data.Leader] = newPeer(data.Leader, time.Now().Unix())
 			case Pong:
