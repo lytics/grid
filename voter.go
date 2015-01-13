@@ -7,7 +7,6 @@ import (
 )
 
 const (
-	Key          = ""
 	Skew         = 20
 	TickMillis   = 500
 	HeartTimeout = 6
@@ -92,7 +91,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 				elect = nil
 			}
 			if state == Leader && (time.Now().Unix() < termstart+v.maxleadertime || v.maxleadertime == 0) {
-				out <- NewWritable(v.cmdtopic, Key, newPing(v.epoch, v.name, elect.Term))
+				out <- NewWritable(v.cmdtopic, nil, newPing(v.epoch, v.name, elect.Term))
 			}
 			if time.Now().Unix() > nextelection && state == Follower {
 				if state != Candidate {
@@ -101,7 +100,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 				state = Candidate
 				lasthearbeat = time.Now().Unix()
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
-				out <- NewWritable(v.cmdtopic, Key, newElection(v.epoch, v.name, term))
+				out <- NewWritable(v.cmdtopic, nil, newElection(v.epoch, v.name, term))
 			}
 		case event := <-in:
 			var cmdmsg *CmdMesg
@@ -154,7 +153,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 				term++
 				if !voted[data.Term] && state != Leader {
 					voted[data.Term] = true
-					out <- NewWritable(v.cmdtopic, Key, newVote(v.epoch, data.Candidate, data.Term, v.name))
+					out <- NewWritable(v.cmdtopic, nil, newVote(v.epoch, data.Candidate, data.Term, v.name))
 				}
 			case PeerState:
 				if data.Epoch != 0 {

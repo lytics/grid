@@ -32,7 +32,7 @@ type Event interface {
 	Offset() int64
 	Topic() string
 	Part() int32
-	Key() string
+	Key() []byte
 	Message() interface{}
 }
 
@@ -40,7 +40,7 @@ type event struct {
 	offset  int64
 	topic   string
 	part    int32
-	key     string
+	key     []byte
 	message interface{}
 }
 
@@ -56,7 +56,7 @@ func (e *event) Part() int32 {
 	return e.part
 }
 
-func (e *event) Key() string {
+func (e *event) Key() []byte {
 	return e.key
 }
 
@@ -70,7 +70,7 @@ func NewReadable(topic string, part int32, offset int64, message interface{}) Ev
 }
 
 // NewWritable is used to create an event suitable for writing.
-func NewWritable(topic, key string, message interface{}) Event {
+func NewWritable(topic string, key []byte, message interface{}) Event {
 	return &event{topic: topic, key: key, message: message}
 }
 
@@ -92,7 +92,7 @@ type UseOffset struct {
 }
 
 func NewUseOffset(topic string, part int32, offset int64) Event {
-	return NewWritable("", "", UseOffset{Topic: topic, Part: part, Offset: offset})
+	return NewWritable("", nil, UseOffset{Topic: topic, Part: part, Offset: offset})
 }
 
 // Ready indicates that something is ready, and is used in multiple

@@ -142,7 +142,7 @@ func TestManagerGridDeath(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				p.write(NewWritable(topic, Key, newPing(0, leader.name, 1)))
+				p.write(NewWritable(topic, nil, newPing(0, leader.name, 1)))
 			case <-abortpinger:
 				t.Log("mock leader is aborting.")
 				return
@@ -297,7 +297,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 func mockLeader(mgr *Manager, p *partition, topic string, manager_state map[string]string) {
 	out := make(chan Event, 100)
 	in := p.client(out)
-	pingmsg := NewWritable(topic, Key, newPing(0, mgr.name, 1))
+	pingmsg := NewWritable(topic, nil, newPing(0, mgr.name, 1))
 
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
@@ -320,7 +320,7 @@ func mockLeader(mgr *Manager, p *partition, topic string, manager_state map[stri
 			// Check for type of message.
 			switch data := cmdmsg.Data.(type) {
 			case PeerState:
-				pingmsg = NewWritable(topic, Key, newPing(data.Epoch, mgr.name, 1))
+				pingmsg = NewWritable(topic, nil, newPing(data.Epoch, mgr.name, 1))
 				epoch = data.Epoch
 			default:
 			}

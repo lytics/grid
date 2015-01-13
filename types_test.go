@@ -20,7 +20,7 @@ func TestWriteoutVote(t *testing.T) {
 
 	//Write out the message
 	enc := NewCmdMesgEncoder(&bufin)
-	event := NewWritable("TheMeaningOfLife", "0", newVote(0, "42-candidate", 1, "from-foobar"))
+	event := NewWritable("TheMeaningOfLife", nil, newVote(0, "42-candidate", 1, "from-foobar"))
 	err := enc.Encode(event.Message())
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -60,7 +60,7 @@ func TestCodingElection(t *testing.T) {
 
 	//Write out the message
 	enc := NewCmdMesgEncoder(&bufin)
-	event := NewWritable("TheMeaningOfLife", "0", newElection(0, "42-candidate", 1))
+	event := NewWritable("TheMeaningOfLife", nil, newElection(0, "42-candidate", 1))
 	err := enc.Encode(event.Message())
 	if err != nil {
 		t.Fatalf("%v", err)

@@ -176,7 +176,7 @@ func newAdd() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &add{name: name} }
 }
 
-func (a *add) Act(in <-chan grid.Event) <-chan grid.Event {
+func (a *add) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
 	fmt.Printf("%v: started", a.name)
 	out := make(chan grid.Event)
 	go func() {
@@ -186,7 +186,7 @@ func (a *add) Act(in <-chan grid.Event) <-chan grid.Event {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
 				key := fmt.Sprintf("%d", mesg.Data)
-				out <- grid.NewWritable("mulBy2", key, NewNumMesg(outmsg))
+				out <- grid.NewWritable("mulBy2", []byte(key), NewNumMesg(outmsg))
 			case grid.MinMaxOffset:
 				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
@@ -206,7 +206,7 @@ func newMul() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &mul{name: name} }
 }
 
-func (m *mul) Act(in <-chan grid.Event) <-chan grid.Event {
+func (m *mul) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
 	fmt.Printf("%v: started", m.name)
 	out := make(chan grid.Event)
 	go func() {
@@ -216,7 +216,7 @@ func (m *mul) Act(in <-chan grid.Event) <-chan grid.Event {
 			case *NumMesg:
 				outmsg := 2 * mesg.Data
 				key := fmt.Sprintf("%d", mesg.Data)
-				out <- grid.NewWritable("divBy2", key, NewNumMesg(outmsg))
+				out <- grid.NewWritable("divBy2", []byte(key), NewNumMesg(outmsg))
 			case grid.MinMaxOffset:
 				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
@@ -236,7 +236,7 @@ func newDiv() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &div{name: name} }
 }
 
-func (d *div) Act(in <-chan grid.Event) <-chan grid.Event {
+func (d *div) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
 	fmt.Printf("%v: started", d.name)
 	out := make(chan grid.Event)
 	go func() {
@@ -246,7 +246,7 @@ func (d *div) Act(in <-chan grid.Event) <-chan grid.Event {
 			case *NumMesg:
 				outmsg := mesg.Data / 2
 				key := fmt.Sprintf("%d", mesg.Data)
-				out <- grid.NewWritable("sub1", key, NewNumMesg(outmsg))
+				out <- grid.NewWritable("sub1", []byte(key), NewNumMesg(outmsg))
 			case grid.MinMaxOffset:
 				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
@@ -266,7 +266,7 @@ func newSub() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &sub{name: name} }
 }
 
-func (s *sub) Act(in <-chan grid.Event) <-chan grid.Event {
+func (s *sub) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
 	fmt.Printf("%v: started", s.name)
 	out := make(chan grid.Event)
 
@@ -277,7 +277,7 @@ func (s *sub) Act(in <-chan grid.Event) <-chan grid.Event {
 			case *NumMesg:
 				outmsg := mesg.Data - 1
 				key := fmt.Sprintf("%d", mesg.Data)
-				out <- grid.NewWritable("collector", key, NewNumMesg(outmsg))
+				out <- grid.NewWritable("collector", []byte(key), NewNumMesg(outmsg))
 			case grid.MinMaxOffset:
 				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
 			default:
@@ -297,7 +297,7 @@ func newCollector() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &collector{name: name} }
 }
 
-func (c *collector) Act(in <-chan grid.Event) <-chan grid.Event {
+func (c *collector) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
 	fmt.Printf("%v: started", c.name)
 	out := make(chan grid.Event)
 

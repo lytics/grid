@@ -146,7 +146,7 @@ func (g *Grid) AddEncoder(makeEncoder func(io.Writer) Encoder, topics ...string)
 	g.log.AddEncoder(makeEncoder, topics...)
 }
 
-func (g *Grid) AddPartitioner(p func(key io.Reader, parts int32) int32, topics ...string) {
+func (g *Grid) AddPartitioner(p Partitioner, topics ...string) {
 	g.log.AddPartitioner(p, topics...)
 }
 
