@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	Key          = ""
 	GridName     = "test-grid"
 	ConsumerName = "tesg-grid-console-consumer"
 )
@@ -88,7 +87,7 @@ func NewAdder() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &add{} }
 }
 
-func (*add) Act(in <-chan grid.Event) <-chan grid.Event {
+func (*add) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
 
 	out := make(chan grid.Event)
 
@@ -116,7 +115,7 @@ func (*add) Act(in <-chan grid.Event) <-chan grid.Event {
 			switch mesg := event.Message().(type) {
 			case *NumMesg:
 				outmsg := 1 + mesg.Data
-				out <- grid.NewWritable("topic2", Key, NewNumMesg(outmsg))
+				out <- grid.NewWritable("topic2", nil, NewNumMesg(outmsg))
 				log.Printf("add(): %d -> %d\n", mesg.Data, outmsg)
 			default:
 			}
@@ -132,7 +131,7 @@ func NewMultiplier() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &mul{} }
 }
 
-func (*mul) Act(in <-chan grid.Event) <-chan grid.Event {
+func (*mul) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
 
 	out := make(chan grid.Event)
 
@@ -160,7 +159,7 @@ func (*mul) Act(in <-chan grid.Event) <-chan grid.Event {
 			switch mesg := event.Message().(type) {
 			case *NumMesg:
 				outmsg := 2 * mesg.Data
-				out <- grid.NewWritable("topic3", Key, NewNumMesg(outmsg))
+				out <- grid.NewWritable("topic3", nil, NewNumMesg(outmsg))
 				log.Printf("mul(): %d -> %d\n", mesg.Data, outmsg)
 			default:
 			}
@@ -176,7 +175,7 @@ func NewReader() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &reader{} }
 }
 
-func (*reader) Act(in <-chan grid.Event) <-chan grid.Event {
+func (*reader) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
 	out := make(chan grid.Event)
 
 	go func() {
@@ -199,7 +198,7 @@ func (*reader) Act(in <-chan grid.Event) <-chan grid.Event {
 	Ready:
 		// Start things off with an initial message.
 		i := readnumber()
-		out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
+		out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))
 
 		// After requesting the offsets, the in channel will contain messages
 		// from the actual input topics, starting at the requested offsets.
@@ -212,7 +211,7 @@ func (*reader) Act(in <-chan grid.Event) <-chan grid.Event {
 			default:
 			}
 			i = readnumber()
-			out <- grid.NewWritable("topic1", strconv.Itoa(i), NewNumMesg(i))
+			out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))
 		}
 	}()
 
