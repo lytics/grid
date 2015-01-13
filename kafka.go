@@ -12,6 +12,40 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+type ClientPool struct {
+	mu       *sync.Mutex
+	clients  []*sarama.Client // the pool of clients to round robin over.
+	next     int
+	quitOnce *sync.Once
+	closed   bool
+}
+
+//Close kills the pool and all associated connections.
+func (c *ClientPool) Close() {
+	c.quitOnce.Do(func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.closed = true
+
+		for _, cl := range c.clients {
+			cl.Close()
+		}
+	})
+}
+
+func (c *ClientPool) Pick() *sarama.Client {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil
+	}
+
+	idx := c.next % len(c.clients)
+	c.next++
+	return c.clients[idx]
+}
+
 type Partitioner interface {
 	Partition(key []byte, parts int32) int32
 }
@@ -39,24 +73,37 @@ type KafkaConfig struct {
 
 type kafkalog struct {
 	conf         *KafkaConfig
-	client       *sarama.Client
 	encoders     map[string]func(io.Writer) Encoder
 	decoders     map[string]func(io.Reader) Decoder
 	partitioners map[string]Partitioner
+	clientpool   *ClientPool
 }
 
 func NewKafkaReadWriteLog(id string, conf *KafkaConfig) (ReadWriteLog, error) {
-	client, err := sarama.NewClient(id, conf.Brokers, conf.ClientConfig)
-	if err != nil {
-		return nil, err
+	const ClientCount = 15
+
+	clients := make([]*sarama.Client, ClientCount)
+	for i := 0; i < ClientCount; i++ {
+		kc, err := sarama.NewClient(fmt.Sprintf("grid-pool-client-%d", i), conf.Brokers, conf.ClientConfig)
+		if err != nil {
+			log.Fatalf("fatal: can't create kafka pool client: error %v", err)
+		}
+		clients[i] = kc
+	}
+	pool := &ClientPool{
+		mu:       &sync.Mutex{},
+		clients:  clients,
+		next:     0,
+		quitOnce: &sync.Once{},
+		closed:   false,
 	}
 
 	return &kafkalog{
 		conf:         conf,
-		client:       client,
 		encoders:     make(map[string]func(io.Writer) Encoder),
 		decoders:     make(map[string]func(io.Reader) Decoder),
 		partitioners: make(map[string]Partitioner),
+		clientpool:   pool,
 	}, nil
 }
 
@@ -97,7 +144,7 @@ func (kl *kafkalog) DecodedTopics() map[string]bool {
 }
 
 func (kl *kafkalog) Partitions(topic string) ([]int32, error) {
-	parts, err := kl.client.Partitions(topic)
+	parts, err := kl.clientpool.Pick().Partitions(topic)
 	if err != nil {
 		return nil, err
 	}
@@ -105,11 +152,11 @@ func (kl *kafkalog) Partitions(topic string) ([]int32, error) {
 }
 
 func (kl *kafkalog) Offsets(topic string, part int32) (int64, int64, error) {
-	min, err := kl.client.GetOffset(topic, part, sarama.EarliestOffset)
+	min, err := kl.clientpool.Pick().GetOffset(topic, part, sarama.EarliestOffset)
 	if err != nil {
 		return 0, 0, err
 	}
-	max, err := kl.client.GetOffset(topic, part, sarama.LatestOffsets)
+	max, err := kl.clientpool.Pick().GetOffset(topic, part, sarama.LatestOffsets)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -141,12 +188,6 @@ func cloneProducerConfig(conf *sarama.ProducerConfig) *sarama.ProducerConfig {
 
 func (kl *kafkalog) Write(topic string, in <-chan Event) {
 	go func() {
-		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.basename, topic)
-		client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
-		if err != nil {
-			log.Fatalf("fatal: topic: %v: client: %v", topic, err)
-		}
-		defer client.Close()
 		conf := cloneProducerConfig(kl.conf.ProducerConfig)
 		conf.Partitioner = kl.newPartitioner(topic)
 		if topic == kl.conf.cmdtopic {
@@ -154,7 +195,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 			conf.FlushFrequency = 50 * time.Millisecond
 		}
 
-		producer, err := sarama.NewProducer(client, conf)
+		producer, err := sarama.NewProducer(kl.clientpool.Pick(), conf)
 		if err != nil {
 			log.Fatalf("fatal: topic: %v: producer: %v", err)
 		}
@@ -202,23 +243,16 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 		go func(wg *sync.WaitGroup, part int32, offset int64, out chan<- Event) {
 			defer wg.Done()
 
-			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kl.conf.basename, topic, part)
-			client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
-			if err != nil {
-				log.Fatalf("fatal: topic: %v: client: %v", topic, err)
-			}
-
 			config := sarama.NewConsumerConfig()
 			config.OffsetValue = offset
 
-			consumer, err := sarama.NewConsumer(client, topic, part, name, config)
+			consumer, err := sarama.NewConsumer(kl.clientpool.Pick(), topic, part, fmt.Sprintf("kafka-consumer-part%d", part), config)
 			if err != nil {
 				log.Fatalf("fatal: topic: %v: consumer: %v", topic, err)
 			}
 
 			go func() {
 				defer consumer.Close()
-				defer client.Close()
 				<-exit
 			}()
 
@@ -276,33 +310,41 @@ type wrappartitioner struct {
 	p Partitioner
 }
 
-func (w *wrappartitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
+func (p *wrappartitioner) RequiresConsistency() bool {
+	return true
+}
+
+func (w *wrappartitioner) Partition(key sarama.Encoder, numPartitions int32) (int32, error) {
 	bytes, err := key.Encode()
 	if err != nil {
-		return 0
+		return 0, nil
 	}
-	return w.p.Partition(bytes, numPartitions)
+	return w.p.Partition(bytes, numPartitions), nil
 }
 
 type partitioner struct {
 }
 
-func (p *partitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
+func (p *partitioner) RequiresConsistency() bool {
+	return true
+}
+
+func (p *partitioner) Partition(key sarama.Encoder, numPartitions int32) (int32, error) {
 	bytes, err := key.Encode()
 	if err != nil {
-		return 0
+		return 0, nil
 	}
 	if len(bytes) == 0 {
-		return 0
+		return 0, nil
 	}
 	hasher := fnv.New32a()
 	_, err = hasher.Write(bytes)
 	if err != nil {
-		return 0
+		return 0, nil
 	}
 	hash := int32(hasher.Sum32())
 	if hash < 0 {
 		hash = -hash
 	}
-	return hash % numPartitions
+	return hash % numPartitions, nil
 }
