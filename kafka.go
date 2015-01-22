@@ -276,33 +276,41 @@ type wrappartitioner struct {
 	p Partitioner
 }
 
-func (w *wrappartitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
+func (p *wrappartitioner) RequiresConsistency() bool {
+	return true
+}
+
+func (w *wrappartitioner) Partition(key sarama.Encoder, nparts int32) (int32, error) {
 	bytes, err := key.Encode()
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("failed to encode key: %v", key)
 	}
-	return w.p.Partition(bytes, numPartitions)
+	return w.p.Partition(bytes, nparts), nil
 }
 
 type partitioner struct {
 }
 
-func (p *partitioner) Partition(key sarama.Encoder, numPartitions int32) int32 {
+func (p *partitioner) RequiresConsistency() bool {
+	return true
+}
+
+func (p *partitioner) Partition(key sarama.Encoder, nparts int32) (int32, error) {
 	bytes, err := key.Encode()
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("failed to encode key: %v: error: %v", key, err)
 	}
 	if len(bytes) == 0 {
-		return 0
+		return 0, nil
 	}
 	hasher := fnv.New32a()
 	_, err = hasher.Write(bytes)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("failed to hash key: %v: error:", key, err)
 	}
 	hash := int32(hasher.Sum32())
 	if hash < 0 {
 		hash = -hash
 	}
-	return hash % numPartitions
+	return hash % nparts, nil
 }
