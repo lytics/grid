@@ -144,7 +144,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.basename, topic)
 		client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
 		if err != nil {
-			log.Fatalf("fatal: topic: %v: client: %v", topic, err)
+			log.Fatalf("fatal: client: topic: %v: %v", topic, err)
 		}
 		defer client.Close()
 		conf := cloneProducerConfig(kl.conf.ProducerConfig)
@@ -156,7 +156,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 
 		producer, err := sarama.NewProducer(client, conf)
 		if err != nil {
-			log.Fatalf("fatal: topic: %v: producer: %v", err)
+			log.Fatalf("fatal: producer: topic: %v: %v", err)
 		}
 		defer producer.Close()
 
@@ -166,7 +166,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 			enc := kl.encoders[topic](&buf)
 			err := enc.Encode(event.Message())
 			if err != nil {
-				log.Printf("error: topic: %v: encode failed: %v", topic, err)
+				log.Printf("error: producer: topic: %v: encode failed: %v", topic, err)
 			} else {
 				key := []byte(event.Key())
 				val := make([]byte, buf.Len())
@@ -178,7 +178,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 					Value: sarama.ByteEncoder(val),
 				}:
 				case err := <-producer.Errors():
-					log.Fatalf("fatal: topic: %v: producer: %v", err.Err)
+					log.Fatalf("fatal: producer: topic: %v: %v", topic, err.Err)
 				}
 			}
 		}
@@ -196,24 +196,24 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 	// exited.
 	wg := new(sync.WaitGroup)
 
+	name := fmt.Sprintf("grid_reader_%s_topic_%s_parts_%s", kl.conf.basename, topic, parts)
+	client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
+	if err != nil {
+		log.Fatalf("fatal: client: topic: %v: %v", topic, err)
+	}
+
 	for i, part := range parts {
 		wg.Add(1)
 
 		go func(wg *sync.WaitGroup, part int32, offset int64, out chan<- Event) {
 			defer wg.Done()
 
-			name := fmt.Sprintf("grid_reader_%s_topic_%s_part_%d", kl.conf.basename, topic, part)
-			client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
-			if err != nil {
-				log.Fatalf("fatal: topic: %v: client: %v", topic, err)
-			}
-
 			config := sarama.NewConsumerConfig()
 			config.OffsetValue = offset
 
 			consumer, err := sarama.NewConsumer(client, topic, part, name, config)
 			if err != nil {
-				log.Fatalf("fatal: topic: %v: consumer: %v", topic, err)
+				log.Fatalf("fatal: consumer: topic: %v: %v", topic, err)
 			}
 
 			go func() {
@@ -225,7 +225,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 			var buf bytes.Buffer
 			for event := range consumer.Events() {
 				if event.Err != nil {
-					log.Printf("error: topic: %v: partition: %v: %v", topic, part, event.Err)
+					log.Printf("error: consumer: topic: %v: partition: %v: %v", topic, part, event.Err)
 					continue
 				}
 				buf.Reset()
@@ -235,8 +235,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 				err = dec.Decode(msg)
 
 				if err != nil {
-					errmsg := fmt.Errorf("topic: %v: partition: %v: offset: %v: instance-type: %T: byte buffer length: %v: %v", topic, part, event.Offset, msg, len(buf.Bytes()), err)
-					log.Printf("error: %v", errmsg)
+					errmsg := fmt.Errorf("consumer: topic: %v: partition: %v: offset: %v: instance-type: %T: byte buffer length: %v: %v", topic, part, event.Offset, msg, len(buf.Bytes()), err)
 					select {
 					case out <- NewReadable(event.Topic, event.Partition, event.Offset, errmsg):
 					case <-exit:
