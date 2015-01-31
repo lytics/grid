@@ -74,25 +74,45 @@ func NewWritable(topic string, key []byte, message interface{}) Event {
 	return &event{topic: topic, key: key, message: message}
 }
 
-// MinMaxOffset is used inform the min and max offsets for a given
+// MinMaxOffset is used to inform the min and max offsets for a given
 // topic partition pair.
 type MinMaxOffset struct {
-	Topic string
-	Part  int32
-	Min   int64
-	Max   int64
+	Min      int64
+	Max      int64
+	Part     int32
+	Topic    string
+	response chan<- *useoffset
 }
 
-// UseOffset is used to indicate which offset in the interval [min,max]
+func NewMinMaxOffset(min, max int64, part int32, topic string, response chan<- *useoffset) *MinMaxOffset {
+	return &MinMaxOffset{Min: min, Max: max, Part: part, Topic: topic, response: response}
+}
+
+// UseMin, in other words read from beginning of partition.
+func (n *MinMaxOffset) UseMin() {
+	n.response <- newUseOffset(n.Topic, n.Part, n.Min)
+}
+
+// UseMax, in other words read from end of partition.
+func (n *MinMaxOffset) UseMax() {
+	n.response <- newUseOffset(n.Topic, n.Part, n.Max)
+}
+
+// UseOffset to indicate an offset between the min and max.
+func (n *MinMaxOffset) UseOffset(offset int64) {
+	n.response <- newUseOffset(n.Topic, n.Part, offset)
+}
+
+// useoffset is used to indicate which offset in the interval [min,max]
 // of available offsets to use for a particular topic partition pair.
-type UseOffset struct {
+type useoffset struct {
 	Topic  string
 	Part   int32
 	Offset int64
 }
 
-func NewUseOffset(topic string, part int32, offset int64) Event {
-	return NewWritable("", nil, UseOffset{Topic: topic, Part: part, Offset: offset})
+func newUseOffset(topic string, part int32, offset int64) *useoffset {
+	return &useoffset{Topic: topic, Part: part, Offset: offset}
 }
 
 // Ready indicates that something is ready, and is used in multiple
@@ -134,9 +154,9 @@ func NewCmdMesgEncoder(w io.Writer) Encoder {
 type Rank int
 
 const (
-	Follower Rank = iota
-	Candidate
-	Leader
+	Follower  Rank = 0
+	Candidate      = 1
+	Leader         = 2
 )
 
 // Ping is sent only by elected leader.
@@ -261,12 +281,12 @@ func newPeerStateCmdMsg(epoch uint64, gs *PeerState) *CmdMesg {
 // from multiple topics.
 type Instance struct {
 	Id          int
-	Fname       string
+	Name        string
 	TopicSlices map[string][]int32
 }
 
 func (fi *Instance) String() string {
-	return fmt.Sprintf("Instance{i: %v, fname: %v, topic slices: %v}", fi.Id, fi.Fname, fi.TopicSlices)
+	return fmt.Sprintf("Instance{i: %v, fname: %v, topic slices: %v}", fi.Id, fi.Name, fi.TopicSlices)
 }
 
 func (fi *Instance) Copy() *Instance {
@@ -276,11 +296,11 @@ func (fi *Instance) Copy() *Instance {
 		copy(newparts, parts)
 		newtopicslices[topic] = newparts
 	}
-	return &Instance{Id: fi.Id, Fname: fi.Fname, TopicSlices: newtopicslices}
+	return &Instance{Id: fi.Id, Name: fi.Name, TopicSlices: newtopicslices}
 }
 
 func NewInstance(i int, fname string) *Instance {
-	return &Instance{Id: i, Fname: fname, TopicSlices: make(map[string][]int32)}
+	return &Instance{Id: i, Name: fname, TopicSlices: make(map[string][]int32)}
 }
 
 // PeerSched is a mapping from peernames to a slice of function instance

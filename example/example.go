@@ -87,41 +87,34 @@ func NewAdder() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &add{} }
 }
 
-func (*add) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
-
+func (*add) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event {
 	out := make(chan grid.Event)
-
 	go func() {
 		defer close(out)
-
-		// Before doing any real work, each function must read its MinMaxOffset
-		// messages and respond to each with a UseOffset message. The offset
-		// chosen can of course be retrieved from anywhere, but it must be
-		// between the min and max value.
-		for event := range in {
-			switch mesg := event.Message().(type) {
-			case grid.MinMaxOffset:
-				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
-			case grid.Ready:
-				goto Ready
-			default:
-			}
-		}
-
-	Ready:
-		// After requesting the offsets, the in channel will contain messages
-		// from the actual input topics, starting at the requested offsets.
-		for event := range in {
-			switch mesg := event.Message().(type) {
-			case *NumMesg:
-				outmsg := 1 + mesg.Data
-				out <- grid.NewWritable("topic2", nil, NewNumMesg(outmsg))
-				log.Printf("add(): %d -> %d\n", mesg.Data, outmsg)
-			default:
+		for {
+			select {
+			case event := <-state:
+				// Before doing any real work, each function must read its MinMaxOffset
+				// messages and respond to each with a UseOffset message. The offset
+				// chosen can of course be retrieved from anywhere, but it must be
+				// between the min and max value.
+				switch mesg := event.Message().(type) {
+				case grid.MinMaxOffset:
+					mesg.UseMax()
+				}
+			case event := <-in:
+				// After requesting the offsets, the in channel will contain messages
+				// from the actual input topics, starting at the requested offsets.
+				switch mesg := event.Message().(type) {
+				case *NumMesg:
+					outmsg := 1 + mesg.Data
+					out <- grid.NewWritable("topic2", nil, NewNumMesg(outmsg))
+					log.Printf("add(): %d -> %d\n", mesg.Data, outmsg)
+				default:
+				}
 			}
 		}
 	}()
-
 	return out
 }
 
@@ -131,41 +124,32 @@ func NewMultiplier() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &mul{} }
 }
 
-func (*mul) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
-
+func (*mul) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event {
 	out := make(chan grid.Event)
-
 	go func() {
 		defer close(out)
-
-		// Before doing any real work, each function must read its MinMaxOffset
-		// messages and respond to each with a UseOffset message. The offset
-		// chosen can of course be retrieved from anywhere, but it must be
-		// between the min and max value.
-		for event := range in {
-			switch mesg := event.Message().(type) {
-			case grid.MinMaxOffset:
-				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
-			case grid.Ready:
-				goto Ready
-			default:
-			}
-		}
-
-	Ready:
-		// After requesting the offsets, the in channel will contain messages
-		// from the actual input topics, starting at the requested offsets.
-		for event := range in {
-			switch mesg := event.Message().(type) {
-			case *NumMesg:
-				outmsg := 2 * mesg.Data
-				out <- grid.NewWritable("topic3", nil, NewNumMesg(outmsg))
-				log.Printf("mul(): %d -> %d\n", mesg.Data, outmsg)
-			default:
+		for {
+			select {
+			case event := <-state:
+				// Before doing any real work, each function must read its MinMaxOffset
+				// messages and respond to each with a UseOffset message. The offset
+				// chosen can of course be retrieved from anywhere, but it must be
+				// between the min and max value.
+				switch mesg := event.Message().(type) {
+				case grid.MinMaxOffset:
+					mesg.UseMax()
+				}
+			case event := <-in:
+				switch mesg := event.Message().(type) {
+				case *NumMesg:
+					outmsg := 2 * mesg.Data
+					out <- grid.NewWritable("topic3", nil, NewNumMesg(outmsg))
+					log.Printf("mul(): %d -> %d\n", mesg.Data, outmsg)
+				default:
+				}
 			}
 		}
 	}()
-
 	return out
 }
 
@@ -175,46 +159,37 @@ func NewReader() grid.NewActor {
 	return func(name string, id int) grid.Actor { return &reader{} }
 }
 
-func (*reader) Act(in <-chan grid.Event, _ <-chan grid.Event) <-chan grid.Event {
+func (*reader) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event {
 	out := make(chan grid.Event)
-
 	go func() {
 		defer close(out)
-
-		// Before doing any real work, each function must read its MinMaxOffset
-		// messages and respond to each with a UseOffset message. The offset
-		// chosen can of course be retrieved from anywhere, but it must be
-		// between the min and max value.
-		for event := range in {
-			switch mesg := event.Message().(type) {
-			case grid.MinMaxOffset:
-				out <- grid.NewUseOffset(mesg.Topic, mesg.Part, mesg.Max)
-			case grid.Ready:
-				goto Ready
-			default:
-			}
-		}
-
-	Ready:
 		// Start things off with an initial message.
 		i := readnumber()
 		out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))
-
-		// After requesting the offsets, the in channel will contain messages
-		// from the actual input topics, starting at the requested offsets.
-		for event := range in {
-			switch mesg := event.Message().(type) {
-			case *NumMesg:
-				if "topic3" == event.Topic() {
-					fmt.Printf("\nresult: %v", mesg.Data)
+		for {
+			select {
+			case event := <-state:
+				// Before doing any real work, each function must read its MinMaxOffset
+				// messages and respond to each with a UseOffset message. The offset
+				// chosen can of course be retrieved from anywhere, but it must be
+				// between the min and max value.
+				switch mesg := event.Message().(type) {
+				case grid.MinMaxOffset:
+					mesg.UseMax()
 				}
-			default:
+			case event := <-in:
+				switch mesg := event.Message().(type) {
+				case *NumMesg:
+					if "topic3" == event.Topic() {
+						fmt.Printf("\nresult: %v", mesg.Data)
+					}
+				default:
+				}
+				i = readnumber()
+				out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))
 			}
-			i = readnumber()
-			out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))
 		}
 	}()
-
 	return out
 }
 

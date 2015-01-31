@@ -121,7 +121,7 @@ func TestManagerGridDeath(t *testing.T) {
 		in := p.client(out)
 
 		mgr := NewManager(i, g)
-		mgr.tkohandler = func() {
+		mgr.falthook = func() {
 			t.Fatalf("The managers shouldn't have exited yet.")
 		}
 		mgr.peertimeout = 1 // timeout fast
@@ -155,7 +155,7 @@ func TestManagerGridDeath(t *testing.T) {
 	//Now we can replace the tko handler so we can count the nodes as they exit.
 	var deadNodes uint64 = 0
 	for _, mgr := range managers {
-		mgr.tkohandler = func() {
+		mgr.falthook = func() {
 			atomic.AddUint64(&deadNodes, 1)
 		}
 	}
@@ -218,8 +218,8 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 		mgr.parts = parts
 		manager_state[mgr.name] = "alive"
 
-		mgr.tkohandler = func() {
-			log.Printf("-- mock tkohandler: peer %v died", mgr.name)
+		mgr.falthook = func() {
+			log.Printf("-- mock falthook: peer %v died", mgr.name)
 			manager_state[mgr.name] = "dead"
 		}
 		managers = append(managers, mgr)

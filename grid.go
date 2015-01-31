@@ -150,28 +150,30 @@ func (g *Grid) AddPartitioner(p Partitioner, topics ...string) {
 	g.log.AddPartitioner(p, topics...)
 }
 
-func (g *Grid) Add(name string, n int, af NewActor, topics ...string) error {
+func (g *Grid) Add(name string, n int, build NewActor, topics ...string) error {
 	if _, exists := g.actorconfs[name]; exists {
-		return fmt.Errorf("gird: already added: %v", name)
+		return fmt.Errorf("actor: %v: already added", name)
 	}
 
-	actorconf := &actorconf{af: af, n: n, inputs: make(map[string]bool)}
+	actorconf := &actorconf{build: build, n: n, inputs: make(map[string]bool)}
 
 	for _, topic := range topics {
+		// Check that the actors intput topics all have decoders.
 		if _, found := g.log.DecodedTopics()[topic]; !found {
-			return fmt.Errorf("grid: topic: %v: no decoder found for topic", topic)
+			return fmt.Errorf("actor: %v: topic: %v: no decoder found for topic", name, topic)
 		}
 		actorconf.inputs[topic] = true
 
 		// Discover the available partitions for the topic.
 		parts, err := g.log.Partitions(topic)
 		if err != nil {
-			return fmt.Errorf("grid: topic: %v: failed getting partition data: %v", topic, err)
+			return fmt.Errorf("actor: %v: topic: %v: failed getting partition data: %v", name, topic, err)
 		}
 		g.parts[topic] = parts
 
-		if len(parts) < n {
-			return fmt.Errorf("grid: topic: %v: parallelism of function is greater than number of partitions: func: %v, parallelism: %d partitions: %d", topic, name, n, len(parts))
+		// Max parallelism is set by max partition count.
+		if len(parts) < n && topic != g.statetopic {
+			return fmt.Errorf("actor: %v: topic: %v: number of actors: %d is greater than number of partitions: %d", name, topic, n, len(parts))
 		}
 	}
 
@@ -180,169 +182,50 @@ func (g *Grid) Add(name string, n int, af NewActor, topics ...string) error {
 	return nil
 }
 
-// startinst starts an instance of a function which will process messages from its input topics
-// and possibly write messages to output topics.
+// startInstance starts one actor instance. The basic steps of doing this:
 //
-// The high level points of starting an instance are:
+//     1. Create the "in" and "state" channels.
+//     2. Build the actor and call its Act method.
+//     3. Negotiate offsets for input topics.
+//     4. Connect its output channel to the output topics.
 //
-//     1. Create the function's input channel, events read from
-//        Kafka are written to this channel.
-//
-//     2. Start the function, passing in the input topic, and
-//        getting back the function's output channel.
-//
-//     3. If a state topic is specified, first all messages
-//        from this topic need to be read and fed into the
-//        instance, that is the guarantee of the state topic,
-//        that the first events the instance gets our its
-//        state events, so that it can rebuild its state
-//        before dealing with the real input. The state topic
-//        can be considered a WAL: Write Ahead Log.
-//
-//     4. Next discover the min and max offset available in
-//        Kafka of each topic-partition that the instance
-//        specifies as an input topic, and send this min and
-//        max information to the instance.
-//
-//     5. Wait to get messages from the instance which specify
-//        which offset to use for each topic-partition.
-//
-//     6. With requested offsets in hand, connect the instance
-//        to it's actual input topics at the offsets requested.
-//
-//     7. Connect the instance to the topic writers, so that
-//        the instance can write data.
-//
-func (g *Grid) startinst(inst *Instance) {
-	fname := inst.Fname
+func (g *Grid) startInstance(inst *Instance) {
+	name := inst.Name
 	id := inst.Id
 
 	// Validate early that the instance was added to the grid.
-	if _, exists := g.actorconfs[fname]; !exists {
-		log.Fatalf("fatal: grid: does not exist: %v()", fname)
+	if _, exists := g.actorconfs[name]; !exists {
+		log.Fatalf("fatal: grid: actor: %v: never configured", name)
 	}
 
 	// Validate early that the instance has valid topics and partition subsets.
 	for topic, _ := range inst.TopicSlices {
-		if !g.actorconfs[fname].inputs[topic] {
-			log.Fatalf("fatal: grid: %v(): not set as reader of: %v", fname, topic)
+		if !g.actorconfs[name].inputs[topic] {
+			log.Fatalf("fatal: grid: actor: %v: not set as reader of: %v", name, topic)
 		}
 	}
 
-	// The in and state channel will be used by this instance to receive data, ie: its input.
-	var in chan Event
-	var state chan Event
-
-	// The out channel will be used by this instance to transmit data, ie: its output.
-	var out <-chan Event
-
-	if _, found := inst.TopicSlices[g.statetopic]; found {
-		// Pass both the in and state channels to the actor.
-		in = make(chan Event)
-		state = make(chan Event)
-	} else {
-		// Pass only the in channel to the actor, since no state topic was requested.
-		in = make(chan Event)
-	}
-
-	// Start the actor.
-	out = g.actorconfs[fname].af(fname, id).Act(in, state)
-
-	// Calculate how many partitions need offset information.
-	cnt := 0
-	useoffsets := make(map[string]map[int32]int64)
-
-	// Initialize to track which offsets for each topic and partition
-	// the instance will want to use.
-	for topic, parts := range inst.TopicSlices {
-		cnt += len(parts)
-		useoffsets[topic] = make(map[int32]int64)
-	}
-
-	wg := new(sync.WaitGroup)
-	wg.Add(2)
-
-	// For each topic-partition the instance is setup to read from,
-	// offer it the available min and max.
-	go func() {
-		defer wg.Done()
-		for topic, parts := range inst.TopicSlices {
-			for _, part := range parts {
-				min, max, err := g.log.Offsets(topic, part)
-				if err != nil {
-					log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: partition: %v: failed getting offset: %v", fname, id, topic, part, err)
-				}
-				in <- NewReadable(g.gridname, 0, 0, MinMaxOffset{Topic: topic, Part: part, Min: min, Max: max})
-			}
-		}
-	}()
-
-	// At the same time expect that the instance will respond with a use-offset
-	// for each min-max topic-partition pair sent to it.
-	go func() {
-		defer wg.Done()
-
-		// Check if this is a source.
-		if 0 == len(inst.TopicSlices) {
-			log.Printf("grid: %v: instance: %v: is a source and has no input topics", fname, id)
-			return
-		}
-
-		for event := range out {
-			switch msg := event.Message().(type) {
-			case UseOffset:
-				useoffsets[msg.Topic][msg.Part] = msg.Offset
-				cnt--
-			default:
-			}
-			if cnt == 0 {
-				in <- NewReadable(g.gridname, 0, 0, Ready(true))
-				return
-			}
-		}
-	}()
-
-	wg.Wait()
+	// The in and state channel will be used by this instance to receive data.
+	in := make(chan Event)
+	state := make(chan Event)
+	// Start the actor, and receive its out channel.
+	out := g.actorconfs[name].build(name, id).Act(in, state)
 
 	// Start the true topic reading. The messages on the input channels are
 	// mux'ed and put onto a single merged input channel.
 	for topic, parts := range inst.TopicSlices {
-		offsets := make([]int64, len(parts))
-		for i, part := range parts {
-			if offset, found := useoffsets[topic][part]; !found {
-				log.Fatalf("fatal: grid: %v: instance: %v: failed to find offset for topic: %v: partition: %v", fname, id, topic, part)
-			} else {
-				offsets[i] = offset
-			}
-		}
-
-		log.Printf("grid: starting reader for: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", fname, id, topic, parts, offsets)
-
-		if topic == g.statetopic {
-			go func(topic string, parts []int32, offsets []int64) {
-				for event := range g.log.Read(topic, parts, offsets, g.exit) {
-					state <- event
-				}
-			}(topic, parts, offsets)
-		} else {
-			go func(topic string, parts []int32, offsets []int64) {
-				for event := range g.log.Read(topic, parts, offsets, g.exit) {
-					in <- event
-				}
-			}(topic, parts, offsets)
-		}
+		go g.negotiateReadOffsets(id, name, topic, parts, in)
 	}
 
 	// Create a mapping of all output topics defined which the instance
-	// may write to before we finish connecting the instance to its
-	// output channel.
+	// may write to before connecting the instance to its out channel.
 	outs := make(map[string]chan Event)
 	for topic, _ := range g.log.EncodedTopics() {
 		outs[topic] = make(chan Event, 1024)
 	}
 
 	// Start the true topic writing. The messages on the output channel are
-	// de-mux'ed and put on topic specific output channels.
+	// de-mux'ed and put on topic-specific output channels.
 	for topic, _ := range g.log.EncodedTopics() {
 		g.log.Write(topic, outs[topic])
 		go func() {
@@ -350,17 +233,66 @@ func (g *Grid) startinst(inst *Instance) {
 				if topicout, found := outs[event.Topic()]; found {
 					topicout <- event
 				} else {
-					log.Fatalf("fatal: grid: %v: instance: %v: no encoder found for topic: %v", fname, id, event.Topic())
+					// If this is ever logged its a bug on Grid's part.
+					log.Fatalf("fatal: grid: actor: %v: instance: %v: no encoder found for topic: %v", name, id, event.Topic())
 				}
 			}
 		}()
 	}
 }
 
-// actorconf is a actorconf of actors in the grid. The name
-// is a bit jokey though, ie: "grid actorconf"
+// negotiateReadOffsets sends min max offset information for its topic
+// to its actor. When the actor has responded with all the needed
+// offset choices, reading of those topic parts is started.
+func (g *Grid) negotiateReadOffsets(id int, name, topic string, parts []int32, state chan<- Event) {
+
+	response := make(chan *useoffset)
+	defer close(response)
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	needed := make(map[int32]int64)
+	for {
+		select {
+		case <-ticker.C:
+			for _, part := range parts {
+				min, max, err := g.log.Offsets(topic, part)
+				if err != nil {
+					log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: partition: %v: failed getting offset: %v", name, id, topic, part, err)
+				}
+				state <- NewReadable(g.gridname, 0, 0, NewMinMaxOffset(min, max, part, topic, response))
+			}
+		case use := <-response:
+			needed[use.Part] = use.Offset
+			if len(needed) == len(parts) {
+				offsets := make([]int64, 0, len(parts))
+				for i, part := range parts {
+					offsets[i] = needed[part]
+				}
+				log.Printf("grid: starting reader for: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", name, id, topic, parts, offsets)
+				if topic == g.statetopic {
+					go func(topic string, parts []int32, offsets []int64) {
+						for event := range g.log.Read(topic, parts, offsets, g.exit) {
+							state <- event
+						}
+					}(topic, parts, offsets)
+				} else {
+					go func(topic string, parts []int32, offsets []int64) {
+						for event := range g.log.Read(topic, parts, offsets, g.exit) {
+							state <- event
+						}
+					}(topic, parts, offsets)
+				}
+				return
+			}
+		}
+	}
+}
+
+// actorconf is a configuration for a set actors in the grid.
 type actorconf struct {
 	n      int
-	af     NewActor
+	build  NewActor
 	inputs map[string]bool
 }

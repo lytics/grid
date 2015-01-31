@@ -15,17 +15,17 @@ type Manager struct {
 	peertimeout int64
 	state       *PeerState
 	epoch       uint64
-	tkohandler  func()    // Test hook.
+	falthook    func()    // Test hook.
 	exithook    chan bool // Test hook.
 	*Grid
 }
 
 func NewManager(id int, g *Grid) *Manager {
 	name := buildPeerName(id)
-	tkohandler := func() {
+	falthook := func() {
 		log.Fatalf("grid: manager %v: exiting due to one or more peers going unhealthy, the grid needs to be restarted.", name)
 	}
-	return &Manager{name, PeerTimeout, newPeerState(), 0, tkohandler, make(chan bool), g}
+	return &Manager{name, PeerTimeout, newPeerState(), 0, falthook, make(chan bool), g}
 }
 
 func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
@@ -67,7 +67,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				if now.Unix()-peer.LastPongTs > m.peertimeout && stateclosed {
 					// Update peers that have timed out. This should only happen if the peer became unhealthy.
 					log.Printf("grid: manager %v: Peer[%v] transitioned from Health[Active -> Inactive]", m.name, peer.Name)
-					m.tkohandler()
+					m.falthook()
 					return
 				} else if len(m.state.Peers) >= m.npeers && !stateclosed {
 					if rank != Leader {
@@ -141,7 +141,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 				}
 				m.state = &data
 				for _, instance := range m.state.Sched[m.name] {
-					go m.startinst(instance)
+					go m.startInstance(instance)
 				}
 
 				stateclosed = true
