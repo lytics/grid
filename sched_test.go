@@ -73,7 +73,7 @@ func TestPeerSched(t *testing.T) {
 		for _, inst := range instances {
 			for topic, _ := range topics {
 				for _, part := range inst.TopicSlices[topic] {
-					delete(expected_parts[inst.Fname][topic], part)
+					delete(expected_parts[inst.Name][topic], part)
 				}
 			}
 		}
@@ -86,8 +86,8 @@ func TestPeerSched(t *testing.T) {
 		}
 		for _, inst := range instances {
 			for topic, _ := range topics {
-				if 0 != len(expected_parts[inst.Fname][topic]) {
-					t.Fatalf("some partitions were not scheduled for reading: %v %v %v: %v", name, inst.Fname, topic, partsstr(expected_parts[inst.Fname][topic]))
+				if 0 != len(expected_parts[inst.Name][topic]) {
+					t.Fatalf("some partitions were not scheduled for reading: %v %v %v: %v", name, inst.Name, topic, partsstr(expected_parts[inst.Name][topic]))
 				}
 			}
 		}

@@ -99,8 +99,10 @@ func (*add) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 				// chosen can of course be retrieved from anywhere, but it must be
 				// between the min and max value.
 				switch mesg := event.Message().(type) {
-				case grid.MinMaxOffset:
+				case *grid.MinMaxOffset:
 					mesg.UseMax()
+				default:
+					log.Printf("uknonw: %T :: %v", mesg, mesg)
 				}
 			case event := <-in:
 				// After requesting the offsets, the in channel will contain messages
@@ -110,7 +112,6 @@ func (*add) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 					outmsg := 1 + mesg.Data
 					out <- grid.NewWritable("topic2", nil, NewNumMesg(outmsg))
 					log.Printf("add(): %d -> %d\n", mesg.Data, outmsg)
-				default:
 				}
 			}
 		}
@@ -136,7 +137,7 @@ func (*mul) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 				// chosen can of course be retrieved from anywhere, but it must be
 				// between the min and max value.
 				switch mesg := event.Message().(type) {
-				case grid.MinMaxOffset:
+				case *grid.MinMaxOffset:
 					mesg.UseMax()
 				}
 			case event := <-in:
@@ -145,7 +146,6 @@ func (*mul) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 					outmsg := 2 * mesg.Data
 					out <- grid.NewWritable("topic3", nil, NewNumMesg(outmsg))
 					log.Printf("mul(): %d -> %d\n", mesg.Data, outmsg)
-				default:
 				}
 			}
 		}
@@ -174,7 +174,7 @@ func (*reader) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Ev
 				// chosen can of course be retrieved from anywhere, but it must be
 				// between the min and max value.
 				switch mesg := event.Message().(type) {
-				case grid.MinMaxOffset:
+				case *grid.MinMaxOffset:
 					mesg.UseMax()
 				}
 			case event := <-in:
@@ -183,7 +183,6 @@ func (*reader) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Ev
 					if "topic3" == event.Topic() {
 						fmt.Printf("\nresult: %v", mesg.Data)
 					}
-				default:
 				}
 				i = readnumber()
 				out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))

@@ -49,7 +49,7 @@ func TestManagerBasic(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	actorconfs := make(map[string]*actorconf)
-	actorconfs["f1"] = &actorconf{af: newNilActor(), n: 2, inputs: topics}
+	actorconfs["f1"] = &actorconf{build: newNilActor(), n: 2, inputs: topics}
 
 	createManager := func(id int) *Manager {
 		out := make(chan Event)
@@ -114,7 +114,7 @@ func TestManagerGridDeath(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	actorconfs := make(map[string]*actorconf)
-	actorconfs["f1"] = &actorconf{af: newNilActor(), n: 2, inputs: topics}
+	actorconfs["f1"] = &actorconf{build: newNilActor(), n: 2, inputs: topics}
 
 	for i := 0; i < managercnt; i++ {
 		out := make(chan Event)
@@ -202,7 +202,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	actorconfs := make(map[string]*actorconf)
-	actorconfs["f1"] = &actorconf{af: newNilActor(), n: 2, inputs: topics}
+	actorconfs["f1"] = &actorconf{build: newNilActor(), n: 2, inputs: topics}
 
 	createManager := func(id int, peertimeout int64) {
 		out := make(chan Event)

@@ -214,7 +214,7 @@ func (g *Grid) startInstance(inst *Instance) {
 	// Start the true topic reading. The messages on the input channels are
 	// mux'ed and put onto a single merged input channel.
 	for topic, parts := range inst.TopicSlices {
-		go g.negotiateReadOffsets(id, name, topic, parts, in)
+		go g.negotiateReadOffsets(id, name, topic, parts, in, state)
 	}
 
 	// Create a mapping of all output topics defined which the instance
@@ -244,48 +244,43 @@ func (g *Grid) startInstance(inst *Instance) {
 // negotiateReadOffsets sends min max offset information for its topic
 // to its actor. When the actor has responded with all the needed
 // offset choices, reading of those topic parts is started.
-func (g *Grid) negotiateReadOffsets(id int, name, topic string, parts []int32, state chan<- Event) {
-
+func (g *Grid) negotiateReadOffsets(id int, name, topic string, parts []int32, in, state chan<- Event) {
 	response := make(chan *useoffset)
 	defer close(response)
 
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	go func() {
+		for _, part := range parts {
+			min, max, err := g.log.Offsets(topic, part)
+			if err != nil {
+				log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: partition: %v: failed getting offset: %v", name, id, topic, part, err)
+			}
+			state <- NewReadable(g.statetopic, 0, 0, NewMinMaxOffset(min, max, part, topic, response))
+		}
+	}()
 
-	needed := make(map[int32]int64)
-	for {
-		select {
-		case <-ticker.C:
-			for _, part := range parts {
-				min, max, err := g.log.Offsets(topic, part)
-				if err != nil {
-					log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: partition: %v: failed getting offset: %v", name, id, topic, part, err)
-				}
-				state <- NewReadable(g.gridname, 0, 0, NewMinMaxOffset(min, max, part, topic, response))
+	chosen := make(map[int32]int64)
+	for use := range response {
+		chosen[use.Part] = use.Offset
+		if len(chosen) == len(parts) {
+			offsets := make([]int64, len(parts))
+			for i, part := range parts {
+				offsets[i] = chosen[part]
 			}
-		case use := <-response:
-			needed[use.Part] = use.Offset
-			if len(needed) == len(parts) {
-				offsets := make([]int64, 0, len(parts))
-				for i, part := range parts {
-					offsets[i] = needed[part]
-				}
-				log.Printf("grid: starting reader for: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", name, id, topic, parts, offsets)
-				if topic == g.statetopic {
-					go func(topic string, parts []int32, offsets []int64) {
-						for event := range g.log.Read(topic, parts, offsets, g.exit) {
-							state <- event
-						}
-					}(topic, parts, offsets)
-				} else {
-					go func(topic string, parts []int32, offsets []int64) {
-						for event := range g.log.Read(topic, parts, offsets, g.exit) {
-							state <- event
-						}
-					}(topic, parts, offsets)
-				}
-				return
+			log.Printf("grid: starting reader for: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", name, id, topic, parts, offsets)
+			if topic == g.statetopic {
+				go func(topic string, parts []int32, offsets []int64) {
+					for event := range g.log.Read(topic, parts, offsets, g.exit) {
+						state <- event
+					}
+				}(topic, parts, offsets)
+			} else {
+				go func(topic string, parts []int32, offsets []int64) {
+					for event := range g.log.Read(topic, parts, offsets, g.exit) {
+						in <- event
+					}
+				}(topic, parts, offsets)
 			}
+			return
 		}
 	}
 }
