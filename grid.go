@@ -102,6 +102,7 @@ func (g *Grid) Start() error {
 	_, max, err := g.log.Offsets(g.cmdtopic, 0)
 	if err != nil {
 		log.Fatalf("fatal: grid: topic: %v: failed to get offset for partition: %v: %v", g.cmdtopic, 0, err)
+		log.Fatalf("fatal: grid: topic: %v: this topic must be available for the grid to function", g.cmdtopic)
 	}
 
 	// Read needs to know topic, partitions, offsets, and
@@ -150,6 +151,9 @@ func (g *Grid) AddPartitioner(p Partitioner, topics ...string) {
 	g.log.AddPartitioner(p, topics...)
 }
 
+// Add configures a set of actors, named the given name, with n instances set to run
+// and reading from the given list of topics, where build is a function used to
+// create each instance.
 func (g *Grid) Add(name string, n int, build NewActor, topics ...string) error {
 	if _, exists := g.actorconfs[name]; exists {
 		return fmt.Errorf("actor: %v: already added", name)
@@ -195,13 +199,13 @@ func (g *Grid) startInstance(inst *Instance) {
 
 	// Validate early that the instance was added to the grid.
 	if _, exists := g.actorconfs[name]; !exists {
-		log.Fatalf("fatal: grid: actor: %v: never configured", name)
+		log.Fatalf("fatal: grid: %v-%d: never configured", name, id)
 	}
 
-	// Validate early that the instance has valid topics and partition subsets.
+	// Validate early that the instance has topics and partition subsets.
 	for topic, _ := range inst.TopicSlices {
 		if !g.actorconfs[name].inputs[topic] {
-			log.Fatalf("fatal: grid: actor: %v: not set as reader of: %v", name, topic)
+			log.Fatalf("fatal: grid: %v-%d: not set as reader of: %v", name, id, topic)
 		}
 	}
 
@@ -219,25 +223,18 @@ func (g *Grid) startInstance(inst *Instance) {
 
 	// Create a mapping of all output topics defined which the instance
 	// may write to before connecting the instance to its out channel.
-	outs := make(map[string]chan Event)
+	// Each actore instance has its own map, this way no lock/unlock is
+	// needed per message send.
+	topics := make(map[string]chan Event)
 	for topic, _ := range g.log.EncodedTopics() {
-		outs[topic] = make(chan Event, 1024)
+		topics[topic] = make(chan Event, 1024)
 	}
 
 	// Start the true topic writing. The messages on the output channel are
 	// de-mux'ed and put on topic-specific output channels.
 	for topic, _ := range g.log.EncodedTopics() {
-		g.log.Write(topic, outs[topic])
-		go func() {
-			for event := range out {
-				if topicout, found := outs[event.Topic()]; found {
-					topicout <- event
-				} else {
-					// If this is ever logged its a bug on Grid's part.
-					log.Fatalf("fatal: grid: actor: %v: instance: %v: no encoder found for topic: %v", name, id, event.Topic())
-				}
-			}
-		}()
+		g.log.Write(topic, topics[topic])
+		go writer(out, topics)
 	}
 }
 
@@ -248,16 +245,23 @@ func (g *Grid) negotiateReadOffsets(id int, name, topic string, parts []int32, i
 	response := make(chan *useoffset)
 	defer close(response)
 
+	// Send the current min and max available offset for
+	// any given partition for this topic. The actor
+	// will need to take this into consideration when
+	// choosing the offset to start reading at.
 	go func() {
 		for _, part := range parts {
 			min, max, err := g.log.Offsets(topic, part)
 			if err != nil {
-				log.Fatalf("fatal: grid: %v: instance: %v: topic: %v: partition: %v: failed getting offset: %v", name, id, topic, part, err)
+				log.Fatalf("fatal: grid: %v-%d: topic: %v: partition: %v: failed getting offset: %v", name, id, topic, part, err)
 			}
 			state <- NewReadable(g.statetopic, 0, 0, NewMinMaxOffset(min, max, part, topic, response))
 		}
 	}()
 
+	// Record the offsets chosen thus far for this topic.
+	// Once a choice has been made for every partition
+	// start the reading.
 	chosen := make(map[int32]int64)
 	for use := range response {
 		chosen[use.Part] = use.Offset
@@ -266,22 +270,40 @@ func (g *Grid) negotiateReadOffsets(id int, name, topic string, parts []int32, i
 			for i, part := range parts {
 				offsets[i] = chosen[part]
 			}
-			log.Printf("grid: starting reader for: %v: instance: %v: topic: %v: partitions: %v: offsets: %v", name, id, topic, parts, offsets)
+
+			log.Printf("grid: %v-%d: topic: %v: partitions: %v: offsets: %v: starting reader", name, id, topic, parts, offsets)
+
+			events := g.log.Read(topic, parts, offsets, g.exit)
 			if topic == g.statetopic {
-				go func(topic string, parts []int32, offsets []int64) {
-					for event := range g.log.Read(topic, parts, offsets, g.exit) {
-						state <- event
-					}
-				}(topic, parts, offsets)
+				go reader(state, events)
 			} else {
-				go func(topic string, parts []int32, offsets []int64) {
-					for event := range g.log.Read(topic, parts, offsets, g.exit) {
-						in <- event
-					}
-				}(topic, parts, offsets)
+				go reader(in, events)
 			}
 			return
 		}
+	}
+}
+
+// writer de-multiplexes events on the actor's out channel, and
+// places them on topic specific out channels.
+func writer(out <-chan Event, topics map[string]chan Event) {
+	for event := range out {
+		if topic, found := topics[event.Topic()]; found {
+			topic <- event
+		} else {
+			// The uesr called a topic that was never configured.
+			log.Fatalf("fatal: grid: no encoder found for topic: %v", event.Topic())
+		}
+	}
+}
+
+// reader, which there could be many of, one per topic the actor is
+// reading, multiplexes the read events onto the actor's in channel
+// or state channel. The writable channel 'actor' represents one of
+// those two.
+func reader(actor chan<- Event, events <-chan Event) {
+	for event := range events {
+		actor <- event
 	}
 }
 
