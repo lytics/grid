@@ -115,9 +115,8 @@ func newUseOffset(topic string, part int32, offset int64) *useoffset {
 	return &useoffset{Topic: topic, Part: part, Offset: offset}
 }
 
-// Ready indicates that something is ready, and is used in multiple
-// scenarios.
-type Ready bool
+// DoneSendingOffsets indicates that no more offset information will be sent.
+type DoneSendingOffsets bool
 
 // CmdMesg is an envelope for more specific messages on the command topic.
 type CmdMesg struct {
