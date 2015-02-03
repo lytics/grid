@@ -49,7 +49,7 @@ func TestManagerBasic(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	actorconfs := make(map[string]*actorconf)
-	actorconfs["f1"] = &actorconf{af: newNilActor(), n: 2, inputs: topics}
+	actorconfs["f1"] = &actorconf{build: newNilActor(), n: 2, inputs: topics}
 
 	createManager := func(id int) *Manager {
 		out := make(chan Event)
@@ -114,14 +114,14 @@ func TestManagerGridDeath(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	actorconfs := make(map[string]*actorconf)
-	actorconfs["f1"] = &actorconf{af: newNilActor(), n: 2, inputs: topics}
+	actorconfs["f1"] = &actorconf{build: newNilActor(), n: 2, inputs: topics}
 
 	for i := 0; i < managercnt; i++ {
 		out := make(chan Event)
 		in := p.client(out)
 
 		mgr := NewManager(i, g)
-		mgr.tkohandler = func() {
+		mgr.falthook = func() {
 			t.Fatalf("The managers shouldn't have exited yet.")
 		}
 		mgr.peertimeout = 1 // timeout fast
@@ -155,7 +155,7 @@ func TestManagerGridDeath(t *testing.T) {
 	//Now we can replace the tko handler so we can count the nodes as they exit.
 	var deadNodes uint64 = 0
 	for _, mgr := range managers {
-		mgr.tkohandler = func() {
+		mgr.falthook = func() {
 			atomic.AddUint64(&deadNodes, 1)
 		}
 	}
@@ -202,7 +202,7 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 	parts["topic2"] = []int32{0, 1, 2, 3, 4, 5, 6, 7}
 
 	actorconfs := make(map[string]*actorconf)
-	actorconfs["f1"] = &actorconf{af: newNilActor(), n: 2, inputs: topics}
+	actorconfs["f1"] = &actorconf{build: newNilActor(), n: 2, inputs: topics}
 
 	createManager := func(id int, peertimeout int64) {
 		out := make(chan Event)
@@ -218,8 +218,8 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 		mgr.parts = parts
 		manager_state[mgr.name] = "alive"
 
-		mgr.tkohandler = func() {
-			log.Printf("-- mock tkohandler: peer %v died", mgr.name)
+		mgr.falthook = func() {
+			log.Printf("-- mock falthook: peer %v died", mgr.name)
 			manager_state[mgr.name] = "dead"
 		}
 		managers = append(managers, mgr)
