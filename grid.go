@@ -60,6 +60,11 @@ func NewWithKafkaConfig(gridname string, npeers int, kconfig *KafkaConfig) (*Gri
 		return nil, err
 	}
 
+	return NewWithReadWriteLog(gridname, npeers, rwlog)
+}
+
+func NewWithReadWriteLog(gridname string, npeers int, rwlog ReadWriteLog) (*Grid, error) {
+	cmdtopic := gridname + "-cmd"
 	g := &Grid{
 		log:        rwlog,
 		gridname:   gridname,

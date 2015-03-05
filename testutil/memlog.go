@@ -131,7 +131,12 @@ func (m *memlog) Offsets(topic string, part int32) (int64, int64, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	max, err := m.topics[topic].latest(topic, part)
+	tval, found := m.topics[topic]
+	if !found {
+		tval = newTopic(topic, nparts, 1000000)
+		m.topics[topic] = tval
+	}
+	max, err := tval.latest(topic, part)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -184,7 +189,7 @@ func (m *memlog) Read(topic string, parts []int32, offsets []int64, exit <-chan 
 
 	t, found := m.topics[topic]
 	if !found {
-		t = newTopic(topic, 4, 1000000)
+		t = newTopic(topic, nparts, 1000000)
 		m.topics[topic] = t
 	}
 
