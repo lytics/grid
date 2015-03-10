@@ -102,12 +102,12 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
 				out <- NewWritable(v.cmdtopic, nil, newElection(v.epoch, v.name, term))
 			}
-		case event := <-in:
-			var cmdmsg *CmdMesg
-
-			if event == nil {
-				continue
+		case event, open := <-in:
+			if !open {
+				return
 			}
+
+			var cmdmsg *CmdMesg
 
 			switch msg := event.Message().(type) {
 			case *CmdMesg:

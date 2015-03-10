@@ -83,12 +83,12 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 					out <- NewWritable(m.cmdtopic, nil, newPeerStateCmdMsg(m.epoch, m.state.Copy()))
 				}
 			}
-		case event := <-in:
-			var cmdmsg *CmdMesg
-
-			if event == nil {
-				continue
+		case event, open := <-in:
+			if !open {
+				return
 			}
+
+			var cmdmsg *CmdMesg
 
 			// Extract command message.
 			switch msg := event.Message().(type) {
