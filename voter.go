@@ -105,6 +105,10 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 		case event := <-in:
 			var cmdmsg *CmdMesg
 
+			if event == nil {
+				continue
+			}
+
 			switch msg := event.Message().(type) {
 			case *CmdMesg:
 				cmdmsg = msg

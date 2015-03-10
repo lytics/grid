@@ -86,6 +86,10 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 		case event := <-in:
 			var cmdmsg *CmdMesg
 
+			if event == nil {
+				continue
+			}
+
 			// Extract command message.
 			switch msg := event.Message().(type) {
 			case *CmdMesg:
