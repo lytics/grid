@@ -20,16 +20,22 @@ type memlog struct {
 	encoders     map[string]func(io.Writer) grid.Encoder // By topic.
 	decoders     map[string]func(io.Reader) grid.Decoder // By topic.
 	partitioners map[string]grid.Partitioner             // By topic.
+	writewatch   func(grid.Event)
 }
 
-func NewMemLog() grid.ReadWriteLog {
+func NewMemLogWithWatch(f func(grid.Event)) grid.ReadWriteLog {
 	return &memlog{
 		lock:         new(sync.Mutex),
 		topics:       make(map[string]*topic),
 		encoders:     make(map[string]func(io.Writer) grid.Encoder),
 		decoders:     make(map[string]func(io.Reader) grid.Decoder),
 		partitioners: make(map[string]grid.Partitioner),
+		writewatch:   f,
 	}
+}
+
+func NewMemLog() grid.ReadWriteLog {
+	return NewMemLogWithWatch(nil)
 }
 
 func (m *memlog) PrintTopic(topic string) error {
@@ -167,6 +173,9 @@ func (m *memlog) Write(topic string, in <-chan grid.Event) {
 
 	go func() {
 		for event := range in {
+			if m.writewatch != nil {
+				m.writewatch(event)
+			}
 			var buf bytes.Buffer
 			enc := e(&buf)
 			err := enc.Encode(event.Message())
