@@ -11,21 +11,21 @@ import (
 )
 
 type Manager struct {
-	name        string
-	peertimeout int64
-	state       *PeerState
-	epoch       uint64
-	falthook    func()    // Test hook.
-	exithook    chan bool // Test hook.
+	name     string
+	state    *PeerState
+	epoch    uint64
+	falthook func()    // Test hook.
+	exithook chan bool // Test hook.
+	opts     *CoordOptions
 	*Grid
 }
 
-func NewManager(id int, g *Grid) *Manager {
+func NewManager(id int, opts *CoordOptions, g *Grid) *Manager {
 	name := buildPeerName(id)
 	falthook := func() {
 		log.Fatalf("grid: manager %v: exiting due to one or more peers going unhealthy, the grid needs to be restarted.", name)
 	}
-	return &Manager{name, PeerTimeout, newPeerState(), 0, falthook, make(chan bool), g}
+	return &Manager{name, newPeerState(), 0, falthook, make(chan bool), opts, g}
 }
 
 func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
@@ -39,7 +39,7 @@ func (m *Manager) startStateMachine(in <-chan Event) <-chan Event {
 
 func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 	log.Printf("grid: manager %v: starting: number of peers: %v", m.name, m.npeers)
-	ticker := time.NewTicker(TickMillis * time.Millisecond)
+	ticker := time.NewTicker(m.opts.TickDuration())
 	defer ticker.Stop()
 
 	lasthearbeat := time.Now().Unix()
@@ -57,14 +57,14 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 		case <-m.exit:
 			return
 		case now := <-ticker.C:
-			if now.Unix()-lasthearbeat > HeartTimeout {
+			if now.Unix()-lasthearbeat > m.opts.HeartTimeout {
 				rank = Follower
 			}
 
 			m.state.Term = term
 
 			for _, peer := range m.state.Peers {
-				if now.Unix()-peer.LastPongTs > m.peertimeout && stateclosed {
+				if now.Unix()-peer.LastPongTs > m.opts.PeerTimeout && stateclosed {
 					// Update peers that have timed out. This should only happen if the peer became unhealthy.
 					log.Printf("grid: manager %v: Peer[%v] transitioned from Health[Active -> Inactive]", m.name, peer.Name)
 					m.falthook()

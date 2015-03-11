@@ -25,6 +25,7 @@ type Grid struct {
 	registry   metrics.Registry
 	// Test hook, normaly should be 0.
 	maxleadertime int64
+	coordopts     *CoordOptions
 }
 
 func DefaultKafkaConfig() *KafkaConfig {
@@ -75,6 +76,7 @@ func NewWithReadWriteLog(gridname string, npeers int, rwlog ReadWriteLog) (*Grid
 		actorconfs: make(map[string]*actorconf),
 		wg:         new(sync.WaitGroup),
 		exit:       make(chan bool),
+		coordopts:  NewCoordOptions(),
 	}
 
 	g.wg.Add(1)
@@ -85,13 +87,17 @@ func NewWithReadWriteLog(gridname string, npeers int, rwlog ReadWriteLog) (*Grid
 	return g, nil
 }
 
+func (g *Grid) SetCoordOptions(v *CoordOptions) {
+	g.coordopts = v
+}
+
 func (g *Grid) Start() error {
 	if g.registry == nil {
 		g.registry = metrics.DefaultRegistry
 	}
 
-	voter := NewVoter(0, g)
-	manager := NewManager(0, g)
+	voter := NewVoter(0, g.coordopts, g)
+	manager := NewManager(0, g.coordopts, g)
 
 	// Why are these both read-only channels?
 	// Because:
