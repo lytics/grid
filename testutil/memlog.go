@@ -321,6 +321,9 @@ func newPartitioner() grid.Partitioner {
 }
 
 func (p *partitioner) Partition(key []byte, nparts int32) int32 {
+	if key == nil || len(key) == 0 {
+		return 0
+	}
 	hash := fnv.New64()
 	hash.Write(key)
 	part := hash.Sum64() % uint64(nparts)
