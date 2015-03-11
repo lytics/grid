@@ -54,9 +54,10 @@ func TestManagerBasic(t *testing.T) {
 	createManager := func(id int) *Manager {
 		out := make(chan Event)
 		in := p.client(out)
+		opts := NewCoordOptions()
+		opts.PeerTimeout = 5000 // We don't want the peers timing out for this test
 
-		mgr := NewManager(id, g)
-		mgr.peertimeout = 5000 // We don't want the peers timing out for this test
+		mgr := NewManager(id, opts, g)
 		go mgr.stateMachine(in, out)
 
 		mgr.actorconfs = actorconfs
@@ -116,15 +117,16 @@ func TestManagerGridDeath(t *testing.T) {
 	actorconfs := make(map[string]*actorconf)
 	actorconfs["f1"] = &actorconf{build: newNilActor(), n: 2, inputs: topics}
 
+	c := NewCoordOptions()
+	c.PeerTimeout = 1 // timeout fast
 	for i := 0; i < managercnt; i++ {
 		out := make(chan Event)
 		in := p.client(out)
 
-		mgr := NewManager(i, g)
+		mgr := NewManager(i, c, g)
 		mgr.falthook = func() {
 			t.Fatalf("The managers shouldn't have exited yet.")
 		}
-		mgr.peertimeout = 1 // timeout fast
 		go mgr.stateMachine(in, out)
 
 		mgr.actorconfs = actorconfs
@@ -137,7 +139,7 @@ func TestManagerGridDeath(t *testing.T) {
 
 	leader := managers[0]
 	go func() {
-		ticker := time.NewTicker(TickMillis * time.Millisecond)
+		ticker := time.NewTicker(c.TickDuration())
 		defer ticker.Stop()
 		for {
 			select {
@@ -209,8 +211,9 @@ func TestManagerRollingRestartOfGrid(t *testing.T) {
 		exit := make(chan bool)
 		in := p.client(out)
 
-		mgr := NewManager(id, g)
-		mgr.peertimeout = peertimeout
+		c := NewCoordOptions()
+		c.PeerTimeout = peertimeout
+		mgr := NewManager(id, c, g)
 		mgr.exithook = exit
 		go mgr.stateMachine(in, out)
 

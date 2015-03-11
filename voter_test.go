@@ -28,7 +28,7 @@ func TestElectionOf1(t *testing.T) {
 		out := make(chan Event)
 		in := p.client(out)
 
-		v := NewVoter(i, g)
+		v := NewVoter(i, NewCoordOptions(), g)
 		go v.stateMachine(in, out)
 	}
 	time.Sleep(45 * time.Second)
@@ -60,7 +60,7 @@ func TestElectionOf3(t *testing.T) {
 		out := make(chan Event)
 		in := p.client(out)
 
-		v := NewVoter(i, g)
+		v := NewVoter(i, NewCoordOptions(), g)
 		go v.stateMachine(in, out)
 	}
 

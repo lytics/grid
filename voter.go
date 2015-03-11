@@ -6,23 +6,15 @@ import (
 	"time"
 )
 
-const (
-	Skew         = 20
-	TickMillis   = 500
-	HeartTimeout = 6
-	ElectTimeout = 20
-	PeerTimeout  = 2 * (ElectTimeout + Skew)
-	UnsetEpoch   = 0
-)
-
 type Voter struct {
 	name  string
 	epoch uint64
+	opts  *CoordOptions
 	*Grid
 }
 
-func NewVoter(id int, g *Grid) *Voter {
-	return &Voter{buildPeerName(id), 0, g}
+func NewVoter(id int, opts *CoordOptions, g *Grid) *Voter {
+	return &Voter{buildPeerName(id), 0, opts, g}
 }
 
 func (v *Voter) startStateMachine(in <-chan Event) <-chan Event {
@@ -65,7 +57,7 @@ func (v *Voter) startStateMachine(in <-chan Event) <-chan Event {
 //     multiple voters in a single process running the test.
 //
 func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
-	ticker := time.NewTicker(TickMillis * time.Millisecond)
+	ticker := time.NewTicker(v.opts.TickDuration())
 	defer ticker.Stop()
 
 	voted := make(map[uint32]bool)
@@ -73,7 +65,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 	state := Follower
 
 	lasthearbeat := time.Now().Unix()
-	nextelection := time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
+	nextelection := time.Now().Unix() + v.opts.ElectTimeout + rng.Int63n(v.opts.Skew)
 
 	var termstart int64
 	var elect *Election
@@ -83,7 +75,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 		case <-v.exit:
 			return
 		case now := <-ticker.C:
-			if now.Unix()-lasthearbeat > HeartTimeout {
+			if now.Unix()-lasthearbeat > v.opts.HeartTimeout {
 				if state != Follower {
 					log.Printf("grid: voter %v: transition: %v => %v", v.name, state, Follower)
 				}
@@ -99,7 +91,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 				}
 				state = Candidate
 				lasthearbeat = time.Now().Unix()
-				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
+				nextelection = time.Now().Unix() + v.opts.ElectTimeout + rng.Int63n(v.opts.Skew)
 				out <- NewWritable(v.cmdtopic, nil, newElection(v.epoch, v.name, term))
 			}
 		case event, open := <-in:
@@ -124,7 +116,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 			switch data := cmdmsg.Data.(type) {
 			case Ping:
 				lasthearbeat = time.Now().Unix()
-				nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
+				nextelection = time.Now().Unix() + v.opts.ElectTimeout + rng.Int63n(v.opts.Skew)
 				if v.name != data.Leader {
 					state = Follower
 				}
@@ -147,7 +139,7 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 				}
 				if elect.Votes >= v.quorum {
 					lasthearbeat = time.Now().Unix()
-					nextelection = time.Now().Unix() + ElectTimeout + rng.Int63n(Skew)
+					nextelection = time.Now().Unix() + v.opts.ElectTimeout + rng.Int63n(v.opts.Skew)
 				}
 			case Election:
 				if elect != nil {
