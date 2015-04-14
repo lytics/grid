@@ -29,20 +29,16 @@ type Grid struct {
 }
 
 func DefaultKafkaConfig() *KafkaConfig {
-	brokers := []string{"localhost:10092"}
+	brokers := []string{"localhost:9092"}
 
-	pconfig := sarama.NewProducerConfig()
-	pconfig.FlushMsgCount = 10000
-	pconfig.FlushFrequency = 1 * time.Second
-	cconfig := sarama.NewConsumerConfig()
-	cconfig.DefaultFetchSize = 512000
-	cconfig.OffsetMethod = sarama.OffsetMethodNewest
+	config := sarama.NewConfig()
+	config.Producer.Flush.Messages = 10000
+	config.Producer.Flush.Frequency = 200 * time.Millisecond
+	config.Consumer.Fetch.Default = 1024 * 1024
 
 	return &KafkaConfig{
-		Brokers:        brokers,
-		ClientConfig:   sarama.NewClientConfig(),
-		ProducerConfig: pconfig,
-		ConsumerConfig: cconfig,
+		Brokers: brokers,
+		Config:  config,
 	}
 }
 

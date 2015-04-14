@@ -29,24 +29,22 @@ type ReadWriteLog interface {
 }
 
 type KafkaConfig struct {
-	Brokers        []string
-	ClientConfig   *sarama.ClientConfig
-	ProducerConfig *sarama.ProducerConfig
-	ConsumerConfig *sarama.ConsumerConfig
-	cmdtopic       string
-	basename       string
+	Brokers  []string
+	Config   *sarama.Config
+	cmdtopic string
+	basename string
 }
 
 type kafkalog struct {
 	conf         *KafkaConfig
-	client       *sarama.Client
+	client       sarama.Client
 	encoders     map[string]func(io.Writer) Encoder
 	decoders     map[string]func(io.Reader) Decoder
 	partitioners map[string]Partitioner
 }
 
 func NewKafkaReadWriteLog(id string, conf *KafkaConfig) (ReadWriteLog, error) {
-	client, err := sarama.NewClient(id, conf.Brokers, conf.ClientConfig)
+	client, err := sarama.NewClient(conf.Brokers, conf.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -105,11 +103,11 @@ func (kl *kafkalog) Partitions(topic string) ([]int32, error) {
 }
 
 func (kl *kafkalog) Offsets(topic string, part int32) (int64, int64, error) {
-	min, err := kl.client.GetOffset(topic, part, sarama.EarliestOffset)
+	min, err := kl.client.GetOffset(topic, part, sarama.OffsetOldest)
 	if err != nil {
 		return 0, 0, err
 	}
-	max, err := kl.client.GetOffset(topic, part, sarama.LatestOffsets)
+	max, err := kl.client.GetOffset(topic, part, sarama.OffsetNewest)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -125,36 +123,62 @@ func (kl *kafkalog) AddPartitioner(p Partitioner, topics ...string) {
 	}
 }
 
-func cloneProducerConfig(conf *sarama.ProducerConfig) *sarama.ProducerConfig {
-	return &sarama.ProducerConfig{
-		RequiredAcks:      conf.RequiredAcks,      // The level of acknowledgment reliability needed from the broker, defaults to WaitForLocal.
-		Timeout:           conf.Timeout,           // The maximum duration the broker will wait the receipt of the number of RequiredAcks.
-		Compression:       conf.Compression,       // The type of compression to use on messages, defaults to no compression.
-		FlushMsgCount:     conf.FlushMsgCount,     // The number of messages needed to trigger a flush.
-		FlushFrequency:    conf.FlushFrequency,    // If this amount of time elapses without a flush, one will be queued.
-		FlushByteCount:    conf.FlushByteCount,    // If this many bytes of messages are accumulated, a flush will be triggered.
-		AckSuccesses:      conf.AckSuccesses,      // If enabled, successfully delivered messages will be returned on the Successes channel.
-		MaxMessageBytes:   conf.MaxMessageBytes,   // The maximum permitted size of a message, defaults to 1000000.
-		ChannelBufferSize: conf.ChannelBufferSize, // The size of the buffers of the channels between the different goroutines, defaults to 0.
-	}
+func cloneConfig(conf *sarama.Config) *sarama.Config {
+	conf2 := sarama.NewConfig()
+
+	conf2.Net.MaxOpenRequests = conf.Net.MaxOpenRequests
+	conf2.Net.DialTimeout = conf.Net.DialTimeout
+	conf2.Net.ReadTimeout = conf.Net.ReadTimeout
+	conf2.Net.WriteTimeout = conf.Net.WriteTimeout
+	conf2.Net.KeepAlive = conf.Net.KeepAlive
+
+	conf2.Metadata.Retry.Max = conf.Metadata.Retry.Max
+	conf2.Metadata.Retry.Backoff = conf.Metadata.Retry.Backoff
+	conf2.Metadata.RefreshFrequency = conf.Metadata.RefreshFrequency
+
+	conf2.Producer.MaxMessageBytes = conf.Producer.MaxMessageBytes
+	conf2.Producer.RequiredAcks = conf.Producer.RequiredAcks
+	conf2.Producer.Timeout = conf.Producer.Timeout
+	conf2.Producer.Compression = conf.Producer.Compression
+	conf2.Producer.Partitioner = conf.Producer.Partitioner
+
+	conf2.Producer.Return.Successes = conf.Producer.Return.Successes
+	conf2.Producer.Return.Errors = conf.Producer.Return.Errors
+	conf2.Producer.Flush.Bytes = conf.Producer.Flush.Bytes
+	conf2.Producer.Flush.Messages = conf.Producer.Flush.Messages
+	conf2.Producer.Flush.Frequency = conf.Producer.Flush.Frequency
+	conf2.Producer.Flush.MaxMessages = conf.Producer.Flush.MaxMessages
+	conf2.Producer.Retry.Max = conf.Producer.Retry.Max
+	conf2.Producer.Retry.Backoff = conf.Producer.Retry.Backoff
+
+	conf2.Consumer.Retry.Backoff = conf.Consumer.Retry.Backoff
+	conf2.Consumer.Fetch.Min = conf.Consumer.Fetch.Min
+	conf2.Consumer.Fetch.Default = conf.Consumer.Fetch.Default
+	conf2.Consumer.Fetch.Max = conf.Consumer.Fetch.Max
+	conf2.Consumer.MaxWaitTime = conf.Consumer.MaxWaitTime
+	conf2.Consumer.Return.Errors = conf.Consumer.Return.Errors
+
+	conf2.ClientID = conf.ClientID
+	conf2.ChannelBufferSize = conf.ChannelBufferSize
+
+	return conf2
 }
 
 func (kl *kafkalog) Write(topic string, in <-chan Event) {
 	go func() {
-		name := fmt.Sprintf("grid_writer_%s_topic_%s", kl.conf.basename, topic)
-		client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
+		client, err := sarama.NewClient(kl.conf.Brokers, kl.conf.Config)
 		if err != nil {
 			log.Fatalf("fatal: client: topic: %v: %v", topic, err)
 		}
 		defer client.Close()
-		conf := cloneProducerConfig(kl.conf.ProducerConfig)
-		conf.Partitioner = kl.newPartitioner(topic)
+		conf := cloneConfig(kl.conf.Config)
+		conf.Producer.Partitioner = kl.newPartitioner(topic)
 		if topic == kl.conf.cmdtopic {
-			conf.FlushMsgCount = 2
-			conf.FlushFrequency = 50 * time.Millisecond
+			conf.Producer.Flush.Messages = 2
+			conf.Producer.Flush.Frequency = 50 * time.Millisecond
 		}
 
-		producer, err := sarama.NewProducer(client, conf)
+		producer, err := sarama.NewAsyncProducerFromClient(client)
 		if err != nil {
 			log.Fatalf("fatal: producer: topic: %v: %v", err)
 		}
@@ -172,7 +196,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 				val := make([]byte, buf.Len())
 				buf.Read(val)
 				select {
-				case producer.Input() <- &sarama.MessageToSend{
+				case producer.Input() <- &sarama.ProducerMessage{
 					Topic: topic,
 					Key:   sarama.ByteEncoder(key),
 					Value: sarama.ByteEncoder(val),
@@ -196,8 +220,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 	// exited.
 	wg := new(sync.WaitGroup)
 
-	name := fmt.Sprintf("grid_reader_%s_topic_%s_parts_%s", kl.conf.basename, topic, parts)
-	client, err := sarama.NewClient(name, kl.conf.Brokers, kl.conf.ClientConfig)
+	client, err := sarama.NewClient(kl.conf.Brokers, kl.conf.Config)
 	if err != nil {
 		log.Fatalf("fatal: client: topic: %v: %v", topic, err)
 	}
@@ -208,10 +231,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 		go func(wg *sync.WaitGroup, part int32, offset int64, out chan<- Event) {
 			defer wg.Done()
 
-			config := sarama.NewConsumerConfig()
-			config.OffsetValue = offset
-
-			consumer, err := sarama.NewConsumer(client, topic, part, name, config)
+			consumer, err := sarama.NewConsumerFromClient(client)
 			if err != nil {
 				log.Fatalf("fatal: consumer: topic: %v: %v", topic, err)
 			}
@@ -223,27 +243,38 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 			}()
 
 			var buf bytes.Buffer
-			for event := range consumer.Events() {
-				if event.Err != nil {
-					log.Printf("error: consumer: topic: %v: partition: %v: %v", topic, part, event.Err)
-					continue
-				}
-				buf.Reset()
-				dec := kl.decoders[topic](&buf)
-				buf.Write(event.Value)
-				msg := dec.New()
-				err = dec.Decode(msg)
-
-				if err != nil {
-					errmsg := fmt.Errorf("consumer: topic: %v: partition: %v: offset: %v: instance-type: %T: byte buffer length: %v: %v", topic, part, event.Offset, msg, len(buf.Bytes()), err)
-					select {
-					case out <- NewReadable(event.Topic, event.Partition, event.Offset, errmsg):
-					case <-exit:
+			events, err := consumer.ConsumePartition(topic, part, offset)
+			if err != nil {
+				log.Fatalf("fatal: consumer: topic: %v: %v", topic, err)
+			}
+			for {
+				select {
+				case event, ok := <-events.Errors():
+					if !ok {
+						return
 					}
-				} else {
-					select {
-					case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
-					case <-exit:
+					log.Printf("error: consumer: topic: %v: partition: %v: %v", topic, part, event.Err)
+				case event, ok := <-events.Messages():
+					if !ok {
+						return
+					}
+					buf.Reset()
+					dec := kl.decoders[topic](&buf)
+					buf.Write(event.Value)
+					msg := dec.New()
+					err = dec.Decode(msg)
+
+					if err != nil {
+						errmsg := fmt.Errorf("consumer: topic: %v: partition: %v: offset: %v: instance-type: %T: byte buffer length: %v: %v", topic, part, event.Offset, msg, len(buf.Bytes()), err)
+						select {
+						case out <- NewReadable(event.Topic, event.Partition, event.Offset, errmsg):
+						case <-exit:
+						}
+					} else {
+						select {
+						case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
+						case <-exit:
+						}
 					}
 				}
 			}
@@ -263,11 +294,11 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 	return out
 }
 
-func (kl *kafkalog) newPartitioner(topic string) func() sarama.Partitioner {
+func (kl *kafkalog) newPartitioner(topic string) sarama.PartitionerConstructor {
 	if p, found := kl.partitioners[topic]; found {
-		return func() sarama.Partitioner { return &wrappartitioner{p: p} }
+		return func(topic string) sarama.Partitioner { return &wrappartitioner{p: p} }
 	} else {
-		return func() sarama.Partitioner { return &partitioner{} }
+		return func(topic string) sarama.Partitioner { return &partitioner{} }
 	}
 }
 
@@ -279,10 +310,10 @@ func (p *wrappartitioner) RequiresConsistency() bool {
 	return true
 }
 
-func (w *wrappartitioner) Partition(key sarama.Encoder, nparts int32) (int32, error) {
-	bytes, err := key.Encode()
+func (w *wrappartitioner) Partition(msg *sarama.ProducerMessage, nparts int32) (int32, error) {
+	bytes, err := msg.Key.Encode()
 	if err != nil {
-		return 0, fmt.Errorf("failed to encode key: %v", key)
+		return 0, fmt.Errorf("failed to encode key: %v", msg.Key)
 	}
 	return w.p.Partition(bytes, nparts), nil
 }
@@ -294,10 +325,10 @@ func (p *partitioner) RequiresConsistency() bool {
 	return true
 }
 
-func (p *partitioner) Partition(key sarama.Encoder, nparts int32) (int32, error) {
-	bytes, err := key.Encode()
+func (p *partitioner) Partition(msg *sarama.ProducerMessage, nparts int32) (int32, error) {
+	bytes, err := msg.Key.Encode()
 	if err != nil {
-		return 0, fmt.Errorf("failed to encode key: %v: error: %v", key, err)
+		return 0, fmt.Errorf("failed to encode key: %v: error: %v", msg.Key, err)
 	}
 	if len(bytes) == 0 {
 		return 0, nil
@@ -305,7 +336,7 @@ func (p *partitioner) Partition(key sarama.Encoder, nparts int32) (int32, error)
 	hasher := fnv.New32a()
 	_, err = hasher.Write(bytes)
 	if err != nil {
-		return 0, fmt.Errorf("failed to hash key: %v: error:", key, err)
+		return 0, fmt.Errorf("failed to hash key: %v: error:", msg.Key, err)
 	}
 	hash := int32(hasher.Sum32())
 	if hash < 0 {
