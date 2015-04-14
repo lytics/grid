@@ -27,16 +27,10 @@ func TestWriter(t *testing.T) {
 		return
 	}
 
-	pconfig := sarama.NewProducerConfig()
-	cconfig := sarama.NewConsumerConfig()
-	cconfig.OffsetMethod = sarama.OffsetMethodNewest
-
 	config := &KafkaConfig{
-		Brokers:        []string{"localhost:10092"},
-		ClientConfig:   sarama.NewClientConfig(),
-		ProducerConfig: pconfig,
-		ConsumerConfig: cconfig,
-		basename:       ClientName,
+		Brokers:  []string{"localhost:9092"},
+		Config:   sarama.NewConfig(),
+		basename: ClientName,
 	}
 
 	rwlog, err := NewKafkaReadWriteLog(ClientName, config)
@@ -58,16 +52,10 @@ func TestReadWriter(t *testing.T) {
 		return
 	}
 
-	pconfig := sarama.NewProducerConfig()
-	cconfig := sarama.NewConsumerConfig()
-	cconfig.OffsetMethod = sarama.OffsetMethodNewest
-
 	config := &KafkaConfig{
-		Brokers:        []string{"localhost:10092"},
-		ClientConfig:   sarama.NewClientConfig(),
-		ProducerConfig: pconfig,
-		ConsumerConfig: cconfig,
-		basename:       ClientName,
+		Brokers:  []string{"localhost:9092"},
+		Config:   sarama.NewConfig(),
+		basename: ClientName,
 	}
 
 	rwlog, err := NewKafkaReadWriteLog(ClientName, config)
@@ -116,7 +104,7 @@ func TestReadWriter(t *testing.T) {
 	// writing before the reader can start reading, which will
 	// cause the reader to miss messages and the test will
 	// fail.
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	for i := 0; i < expcnt; i++ {
 		in <- NewWritable(TopicName, nil, newTestMesg(i))
