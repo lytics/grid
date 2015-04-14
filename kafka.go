@@ -249,11 +249,11 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 			}
 			for {
 				select {
-				case event, ok := <-events.Errors():
+				case err, ok := <-events.Errors():
 					if !ok {
 						return
 					}
-					log.Printf("error: consumer: topic: %v: partition: %v: %v", topic, part, event.Err)
+					log.Printf("error: consumer: topic: %v: partition: %v: %v", topic, part, err.Err)
 				case event, ok := <-events.Messages():
 					if !ok {
 						return
