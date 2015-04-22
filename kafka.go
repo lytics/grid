@@ -23,7 +23,7 @@ func NewSpecificPartitioner() Partitioner {
 	return &specificpartitioner{}
 }
 
-func NewSpecificPartKey(p int) []byte {
+func NewSpecificPartKey(p int32) []byte {
 	b := make([]byte, 4)
 	n := binary.PutVarint(b, int64(p))
 	if n <= 0 {
