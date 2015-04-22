@@ -29,7 +29,7 @@ type Grid struct {
 }
 
 func DefaultKafkaConfig() *KafkaConfig {
-	brokers := []string{"localhost:9092"}
+	brokers := []string{"localhost:10092"}
 
 	config := sarama.NewConfig()
 	config.Producer.Flush.Messages = 10000
@@ -284,6 +284,7 @@ func (g *Grid) negotiateReadOffsets(id int, name, topic string, parts []int32, i
 			if topic == g.statetopic {
 				go reader(state, events)
 			} else {
+				state <- NewReadable(g.statetopic, 0, 0, NewTopicReady(topic))
 				go reader(in, events)
 			}
 			return
