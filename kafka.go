@@ -2,6 +2,7 @@ package grid
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -14,6 +15,29 @@ import (
 
 type Partitioner interface {
 	Partition(key []byte, parts int32) int32
+}
+
+type specificpartitioner struct{}
+
+func NewSpecificPartitioner() Partitioner {
+	return &specificpartitioner{}
+}
+
+func NewSpecificPartKey(p int) []byte {
+	b := make([]byte, 4)
+	n := binary.PutVarint(b, int64(p))
+	if n <= 0 {
+		panic("failed to create specific partition key")
+	}
+	return b
+}
+
+func (s *specificpartitioner) Partition(key []byte, parts int32) int32 {
+	num, n := binary.Varint(key)
+	if n <= 0 {
+		return 0
+	}
+	return int32(num)
 }
 
 type ReadWriteLog interface {
