@@ -74,6 +74,17 @@ func NewWritable(topic string, key []byte, message interface{}) Event {
 	return &event{topic: topic, key: key, message: message}
 }
 
+// TopicReady is used to inform the actor that a topic
+// has received all its use offset information and is
+// now start to be read and fed into the actor.
+type TopicReady struct {
+	Name string
+}
+
+func NewTopicReady(name string) *TopicReady {
+	return &TopicReady{Name: name}
+}
+
 // MinMaxOffset is used to inform the min and max offsets for a given
 // topic partition pair.
 type MinMaxOffset struct {

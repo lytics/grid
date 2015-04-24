@@ -284,6 +284,7 @@ func (g *Grid) negotiateReadOffsets(id int, name, topic string, parts []int32, i
 			if topic == g.statetopic {
 				go reader(state, events)
 			} else {
+				state <- NewReadable(g.statetopic, 0, 0, NewTopicReady(topic))
 				go reader(in, events)
 			}
 			return
