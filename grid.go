@@ -29,7 +29,7 @@ type Grid struct {
 }
 
 func DefaultKafkaConfig() *KafkaConfig {
-	brokers := []string{"localhost:10092"}
+	brokers := []string{"localhost:9092"}
 
 	config := sarama.NewConfig()
 	config.Producer.Flush.Messages = 10000
