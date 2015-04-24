@@ -186,7 +186,7 @@ func (m *memlog) Write(topic string, in <-chan grid.Event) {
 					panic(fmt.Sprintf("topic: %v: partition: %v: error writing: %v", topic, part, err))
 				}
 			} else {
-				panic(fmt.Sprintf("topic: %v: failed to encode: %v", t.name, event.Message()))
+				panic(fmt.Sprintf("topic: %v: failed to encode: %v", t.name, err))
 			}
 		}
 	}()
