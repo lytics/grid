@@ -109,7 +109,6 @@ func (v *Voter) stateMachine(in <-chan Event, out chan<- Event) {
 			}
 
 			if cmdmsg.Epoch != v.epoch {
-				log.Printf("warning: grid: voter %v: command message epoch mismatch %v != %v", v.name, cmdmsg.Epoch, v.epoch)
 				continue
 			}
 

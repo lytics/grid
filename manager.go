@@ -100,7 +100,6 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 			}
 
 			if cmdmsg.Epoch != m.epoch {
-				log.Printf("warning: grid: manager %v: command message epoch mismatch %v != %v, msg: %v", m.name, cmdmsg.Epoch, m.epoch, cmdmsg.Data)
 				continue
 			}
 
