@@ -101,7 +101,6 @@ func (*add) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
-		log.Printf("startring: '%v' actor", "add")
 		for {
 			select {
 			case event := <-state:
@@ -138,7 +137,6 @@ func (*mul) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
-		log.Printf("startring: '%v' actor", "mul")
 		for {
 			select {
 			case event := <-state:
@@ -173,7 +171,6 @@ func (*reader) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Ev
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
-		log.Printf("startring: '%v' actor", "reader")
 		// Start things off with an initial message.
 		go func() {
 			for {
