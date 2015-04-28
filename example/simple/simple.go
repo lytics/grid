@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lytics/grid"
 )
@@ -43,7 +44,7 @@ func NewNumMesgEncoder(w io.Writer) grid.Encoder {
 }
 
 var peercnt = flag.Int("peers", 1, "the expected number of peers that will take part in the grid")
-var kafka = flag.String("kafka", "localhost:10092", "listof kafka brokers, for example: localhost:10092,localhost:10093")
+var kafka = flag.String("kafka", "localhost:9092", "list of kafka brokers, for example: localhost:9092,localhost:9092")
 
 // Runs the example; it can be started in a few different ways:
 //
@@ -72,9 +73,18 @@ func main() {
 	g.AddEncoder(NewNumMesgEncoder, "topic1", "topic2", "topic3")
 
 	// Set processing layers.
-	g.Add("add", 2, NewAdder(), "topic1")
-	g.Add("mul", 2, NewMultiplier(), "topic2")
-	g.Add("readline", 1, NewReader(), "topic3")
+	err = g.Add("add", 1, NewAdder(), "topic1")
+	if err != nil {
+		log.Fatalf("failed to start grid: %v", err)
+	}
+	err = g.Add("mul", 1, NewMultiplier(), "topic2")
+	if err != nil {
+		log.Fatalf("failed to start grid: %v", err)
+	}
+	err = g.Add("readline", 1, NewReader(), "topic3")
+	if err != nil {
+		log.Fatalf("failed to start grid: %v", err)
+	}
 
 	// Start and wait for exit.
 	g.Start()
@@ -91,6 +101,7 @@ func (*add) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
+		log.Printf("startring: '%v' actor", "add")
 		for {
 			select {
 			case event := <-state:
@@ -101,8 +112,6 @@ func (*add) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 				switch mesg := event.Message().(type) {
 				case *grid.MinMaxOffset:
 					mesg.UseMax()
-				default:
-					log.Printf("uknonw: %T :: %v", mesg, mesg)
 				}
 			case event := <-in:
 				// After requesting the offsets, the in channel will contain messages
@@ -129,6 +138,7 @@ func (*mul) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Event
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
+		log.Printf("startring: '%v' actor", "mul")
 		for {
 			select {
 			case event := <-state:
@@ -163,9 +173,15 @@ func (*reader) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Ev
 	out := make(chan grid.Event)
 	go func() {
 		defer close(out)
+		log.Printf("startring: '%v' actor", "reader")
 		// Start things off with an initial message.
-		i := readnumber()
-		out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))
+		go func() {
+			for {
+				time.Sleep(5 * time.Second)
+				i := readnumber()
+				out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))
+			}
+		}()
 		for {
 			select {
 			case event := <-state:
@@ -184,8 +200,6 @@ func (*reader) Act(in <-chan grid.Event, state <-chan grid.Event) <-chan grid.Ev
 						fmt.Printf("\nresult: %v", mesg.Data)
 					}
 				}
-				i = readnumber()
-				out <- grid.NewWritable("topic1", []byte(strconv.Itoa(i)), NewNumMesg(i))
 			}
 		}
 	}()
