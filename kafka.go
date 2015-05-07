@@ -29,6 +29,7 @@ func NewSpecificPartKey(p int32) []byte {
 	if n <= 0 {
 		panic("failed to create specific partition key")
 	}
+	log.Printf("making for partition: %v", p)
 	return b
 }
 
@@ -37,6 +38,7 @@ func (s *specificpartitioner) Partition(key []byte, parts int32) int32 {
 	if n <= 0 {
 		return 0
 	}
+	log.Printf("sending to partition: %v", num)
 	return int32(num)
 }
 
