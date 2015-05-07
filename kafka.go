@@ -24,12 +24,12 @@ func NewSpecificPartitioner() Partitioner {
 }
 
 func NewSpecificPartKey(p int32) []byte {
-	b := make([]byte, 4)
+	b := make([]byte, 14)
 	n := binary.PutVarint(b, int64(p))
 	if n <= 0 {
 		panic("failed to create specific partition key")
 	}
-	return b
+	return b[:n]
 }
 
 func (s *specificpartitioner) Partition(key []byte, parts int32) int32 {
