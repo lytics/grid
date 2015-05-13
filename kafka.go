@@ -24,7 +24,7 @@ func NewSpecificPartitioner() Partitioner {
 }
 
 func NewSpecificPartKey(p int32) []byte {
-	b := make([]byte, 14)
+	b := make([]byte, binary.MaxVarintLen64)
 	n := binary.PutVarint(b, int64(p))
 	if n <= 0 {
 		panic("failed to create specific partition key")
