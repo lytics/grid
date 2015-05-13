@@ -120,6 +120,33 @@ func TestReadWriter(t *testing.T) {
 	}
 }
 
+func TestSpecificPartitioner(t *testing.T) {
+	p := NewSpecificPartitioner()
+
+	k0 := NewSpecificPartKey(0)
+	k1 := NewSpecificPartKey(1)
+	k14 := NewSpecificPartKey(14)
+	k15 := NewSpecificPartKey(15)
+
+	p0 := p.Partition(k0, 16)
+	p1 := p.Partition(k1, 16)
+	p14 := p.Partition(k14, 16)
+	p15 := p.Partition(k15, 16)
+
+	if 0 != p0 {
+		t.Fatalf("wanted partition number: %v not-equal to actual partition number: %v", 0, p0)
+	}
+	if 1 != p1 {
+		t.Fatalf("wanted partition number: %v not-equal to actual partition number: %v", 1, p1)
+	}
+	if 14 != p14 {
+		t.Fatalf("wanted partition number: %v not-equal to actual partition number: %v", 14, p14)
+	}
+	if 15 != p15 {
+		t.Fatalf("wanted partition number: %v not-equal to actual partition number: %v", 15, p15)
+	}
+}
+
 type TestMesg struct {
 	Data int
 }

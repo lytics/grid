@@ -24,12 +24,12 @@ func NewSpecificPartitioner() Partitioner {
 }
 
 func NewSpecificPartKey(p int32) []byte {
-	b := make([]byte, 4)
+	b := make([]byte, 14)
 	n := binary.PutVarint(b, int64(p))
 	if n <= 0 {
 		panic("failed to create specific partition key")
 	}
-	return b
+	return b[:n]
 }
 
 func (s *specificpartitioner) Partition(key []byte, parts int32) int32 {
@@ -190,17 +190,18 @@ func cloneConfig(conf *sarama.Config) *sarama.Config {
 
 func (kl *kafkalog) Write(topic string, in <-chan Event) {
 	go func() {
-		client, err := sarama.NewClient(kl.conf.Brokers, kl.conf.Config)
-		if err != nil {
-			log.Fatalf("fatal: client: topic: %v: %v", topic, err)
-		}
-		defer client.Close()
 		conf := cloneConfig(kl.conf.Config)
 		conf.Producer.Partitioner = kl.newPartitioner(topic)
 		if topic == kl.conf.cmdtopic {
 			conf.Producer.Flush.Messages = 2
 			conf.Producer.Flush.Frequency = 50 * time.Millisecond
 		}
+
+		client, err := sarama.NewClient(kl.conf.Brokers, conf)
+		if err != nil {
+			log.Fatalf("fatal: client: topic: %v: %v", topic, err)
+		}
+		defer client.Close()
 
 		producer, err := sarama.NewAsyncProducerFromClient(client)
 		if err != nil {
