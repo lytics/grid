@@ -211,6 +211,9 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 
 		var buf bytes.Buffer
 		for event := range in {
+			if event == nil {
+				continue
+			}
 			buf.Reset()
 			enc := kl.encoders[topic](&buf)
 			err := enc.Encode(event.Message())
