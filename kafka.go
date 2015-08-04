@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -230,7 +231,11 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 					Value: sarama.ByteEncoder(val),
 				}:
 				case err := <-producer.Errors():
-					log.Fatalf("fatal: producer: topic: %v: %v", topic, err.Err)
+					if strings.Contains(err.Error(), "Message was too large") {
+						log.Printf("error: producer: topic: %v: %T :: %v", topic, err.Err, err.Error)
+					} else {
+						log.Fatalf("fatal: producer: topic: %v: %T :: %v", topic, err.Err, err.Error)
+					}
 				}
 			}
 		}
