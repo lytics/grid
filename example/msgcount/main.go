@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coreos/go-etcd/etcd"
 	"github.com/lytics/grid"
 )
 
@@ -52,6 +53,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: failed to start grid: %v", err)
 	}
+
+	log.Printf("waiting 20 seconds before starting actors")
+	time.Sleep(20 * time.Second)
 
 	for i := 0; i < *readers; i++ {
 		name := NewName("reader", i)
@@ -94,6 +98,8 @@ func NewName(role string, part int) string {
 }
 
 type maker struct {
+	rprefix   string
+	cprefix   string
 	nmessages int
 	ncounters int
 	nreaders  int
@@ -107,6 +113,8 @@ func newActorMaker(nmessages, ncounters, nreaders int) (*maker, error) {
 		return nil, fmt.Errorf("to many counter actors requested: %v", ncounters)
 	}
 	return &maker{
+		rprefix:   fmt.Sprintf("%v.%v", GridName, "reader"),
+		cprefix:   fmt.Sprintf("%v.%v", GridName, "counter"),
 		nmessages: nmessages,
 		ncounters: ncounters,
 		nreaders:  nreaders,
@@ -114,15 +122,10 @@ func newActorMaker(nmessages, ncounters, nreaders int) (*maker, error) {
 }
 
 func (m *maker) MakeActor(id string) (grid.Actor, error) {
-	rprefix := fmt.Sprintf("%v.%v", GridName, "reader")
-	cprefix := fmt.Sprintf("%v.%v", GridName, "counter")
-
 	switch {
-	case strings.Index(id, rprefix) >= 0:
-		log.Printf("making new reader actor: %v", id)
+	case strings.Index(id, m.rprefix) >= 0:
 		return NewReaderActor(id, m.nmessages, m.ncounters), nil
-	case strings.Index(id, cprefix) >= 0:
-		log.Printf("making new counter actor: %v", id)
+	case strings.Index(id, m.cprefix) >= 0:
 		return NewCounterActor(id, m.nmessages, m.ncounters), nil
 	default:
 		return nil, fmt.Errorf("name does not map to any type of actor: %v", id)
@@ -147,6 +150,22 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	c := grid.NewConn(a.id, g.Nats())
 	n := 0
 	start := time.Now()
+
+	stateexit := make(chan bool)
+	stateinfo := make(chan *etcd.Response)
+	go g.Etcd().Watch(GridName, 0, true, stateinfo, stateexit)
+	defer close(stateexit)
+
+	condchan, condexit := ConditionActorRunning(g.Etcd(), GridName, "counter", a.ncounters)
+	defer close(condexit)
+
+	select {
+	case <-condchan:
+		log.Printf("%v: condition is now true", a.id)
+	case <-exit:
+		return true
+	}
+
 	for {
 		select {
 		case <-exit:
@@ -235,4 +254,39 @@ func ByModuloInt(role string, key int, n int) string {
 
 func ByNumber(role string, part int) string {
 	return fmt.Sprintf("%s.%s.%d", GridName, role, part)
+}
+
+func ConditionActorRunning(etcd *etcd.Client, gridname, substring string, expected int) (<-chan bool, chan<- bool) {
+	done := make(chan bool)
+	exit := make(chan bool)
+	go func() {
+		defer close(done)
+		watchpath := fmt.Sprintf("/%v/tasks/", gridname)
+		for {
+			select {
+			case <-exit:
+				return
+			default:
+				time.Sleep(2 * time.Second)
+				cnt := 0
+				res, err := etcd.Get(watchpath, false, false)
+				if err != nil {
+					log.Printf("error: watching: %v, error: %v", watchpath, err)
+					continue
+				}
+				if res.Node == nil {
+					continue
+				}
+				for _, n := range res.Node.Nodes {
+					if strings.Contains(n.Key, substring) {
+						cnt++
+					}
+				}
+				if cnt == expected {
+					return
+				}
+			}
+		}
+	}()
+	return done, exit
 }
