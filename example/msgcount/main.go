@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -16,10 +17,7 @@ import (
 )
 
 const (
-	SendCount  = 5 * 1000 * 1000
-	NrReaders  = 3
-	NrCounters = 2
-	GridName   = "msgcount"
+	GridName = "msgcount"
 )
 
 func init() {
@@ -27,17 +25,35 @@ func init() {
 	gob.Register(DoneMsg{})
 }
 
+var (
+	etcdconnect = flag.String("etcd", "http://127.0.0.1:2379", "comma separated list of etcd urls to servers")
+	natsconnect = flag.String("nats", "nats://127.0.0.1:4222", "comma separated list of nats urls to servers")
+	readers     = flag.Int("readers", 3, "number of readers")
+	counters    = flag.Int("counters", 2, "number of counters")
+	messages    = flag.Int("messages", 5000000, "number of messages for each reader to send")
+)
+
 func main() {
 	runtime.GOMAXPROCS(4)
 
-	g := grid.New(GridName, []string{"http://127.0.0.1:2379"}, []string{"nats://localhost:4222"}, &maker{})
+	flag.Parse()
+
+	etcdservers := strings.Split(*etcdconnect, ",")
+	natsservers := strings.Split(*natsconnect, ",")
+
+	m, err := newActorMaker(*messages, *counters, *readers)
+	if err != nil {
+		log.Fatalf("error: failed to make actor maker: %v", err)
+	}
+
+	g := grid.New(GridName, etcdservers, natsservers, m)
 
 	exit, err := g.Start()
 	if err != nil {
 		log.Fatalf("error: failed to start grid: %v", err)
 	}
 
-	for i := 0; i < NrReaders; i++ {
+	for i := 0; i < *readers; i++ {
 		name := NewName("reader", i)
 		err := g.StartActor(name)
 		if err != nil {
@@ -45,7 +61,7 @@ func main() {
 		}
 	}
 
-	for i := 0; i < NrCounters; i++ {
+	for i := 0; i < *counters; i++ {
 		name := NewName("counter", i)
 		err := g.StartActor(name)
 		if err != nil {
@@ -77,7 +93,25 @@ func NewName(role string, part int) string {
 	return fmt.Sprintf("%v.%v", role, part)
 }
 
-type maker struct{}
+type maker struct {
+	nmessages int
+	ncounters int
+	nreaders  int
+}
+
+func newActorMaker(nmessages, ncounters, nreaders int) (*maker, error) {
+	if nreaders > 100 {
+		return nil, fmt.Errorf("to many reader actors requested: %v", nreaders)
+	}
+	if ncounters > 100 {
+		return nil, fmt.Errorf("to many counter actors requested: %v", ncounters)
+	}
+	return &maker{
+		nmessages: nmessages,
+		ncounters: ncounters,
+		nreaders:  nreaders,
+	}, nil
+}
 
 func (m *maker) MakeActor(id string) (grid.Actor, error) {
 	rprefix := fmt.Sprintf("%v.%v", GridName, "reader")
@@ -86,21 +120,23 @@ func (m *maker) MakeActor(id string) (grid.Actor, error) {
 	switch {
 	case strings.Index(id, rprefix) >= 0:
 		log.Printf("making new reader actor: %v", id)
-		return NewReaderActor(id), nil
+		return NewReaderActor(id, m.nmessages, m.ncounters), nil
 	case strings.Index(id, cprefix) >= 0:
 		log.Printf("making new counter actor: %v", id)
-		return NewCounterActor(id), nil
+		return NewCounterActor(id, m.nmessages, m.ncounters), nil
 	default:
 		return nil, fmt.Errorf("name does not map to any type of actor: %v", id)
 	}
 }
 
-func NewReaderActor(id string) grid.Actor {
-	return &ReaderActor{id: id}
+func NewReaderActor(id string, nmessages, ncounters int) grid.Actor {
+	return &ReaderActor{id: id, nmessages: nmessages, ncounters: ncounters}
 }
 
 type ReaderActor struct {
-	id string
+	id        string
+	ncounters int
+	nmessages int
 }
 
 func (a *ReaderActor) ID() string {
@@ -116,8 +152,8 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 		case <-exit:
 			return true
 		default:
-			if n < SendCount {
-				err := c.Send(ByModuloInt("counter", n, NrCounters), &CntMsg{From: a.id, Number: n})
+			if n < a.nmessages {
+				err := c.Send(ByModuloInt("counter", n, a.ncounters), &CntMsg{From: a.id, Number: n})
 				if err != nil {
 					log.Fatalf("%v: error: %v", a.id, err)
 				}
@@ -126,7 +162,7 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 					log.Printf("%v: sent: %v, rate: %.2f/sec", a.id, n, float64(n)/time.Now().Sub(start).Seconds())
 				}
 			} else {
-				for i := 0; i < NrCounters; i++ {
+				for i := 0; i < a.ncounters; i++ {
 					err := c.Send(ByNumber("counter", i), &DoneMsg{From: a.id})
 					if err != nil {
 						log.Fatalf("%v: error: %v", a.id, err)
@@ -139,19 +175,21 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 }
 
-func NewCounterActor(id string) grid.Actor {
+func NewCounterActor(id string, nmessages, ncounters int) grid.Actor {
 	parts := strings.Split(id, ".")
 	nr, err := strconv.Atoi(parts[2])
 	if err != nil {
 		log.Printf("%v: fatal: %v", id, err)
 		return nil
 	}
-	return &CounterActor{id: id, nr: nr}
+	return &CounterActor{id: id, nr: nr, nmessages: nmessages, ncounters: ncounters}
 }
 
 type CounterActor struct {
-	id string
-	nr int
+	id        string
+	nr        int
+	nmessages int
+	ncounters int
 }
 
 func (a *CounterActor) ID() string {
@@ -164,7 +202,7 @@ func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
 	for {
 		select {
 		case <-exit:
-			return false
+			return true
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case CntMsg:
@@ -177,8 +215,8 @@ func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
 			case DoneMsg:
 				bucket := counts[m.From]
 				missing := 0
-				for i := 0; i < SendCount; i++ {
-					if i%NrCounters == a.nr {
+				for i := 0; i < a.nmessages; i++ {
+					if i%a.ncounters == a.nr {
 						if !bucket[i] {
 							missing++
 						}
