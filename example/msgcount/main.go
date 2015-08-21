@@ -1,50 +1,56 @@
 package main
 
 import (
-	"bytes"
 	"encoding/gob"
 	"fmt"
-	"hash/fnv"
 	"log"
-	"math/rand"
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/lytics/grid2"
+	"github.com/lytics/grid"
 )
 
 const (
-	SendCount  = 10 * 1000 * 1000
-	NrReaders  = 20
-	NrCounters = 10
+	SendCount  = 5 * 1000 * 1000
+	NrReaders  = 3
+	NrCounters = 2
+	GridName   = "msgcount"
 )
 
 func init() {
 	gob.Register(CntMsg{})
+	gob.Register(DoneMsg{})
 }
 
 func main() {
 	runtime.GOMAXPROCS(4)
 
-	g := grid2.New("linkgrid", []string{"http://127.0.0.1:2379"}, []string{"nats://localhost:4222"})
-	g.RegisterActor("reader", NrReaders, NewReaderActor)
-	g.RegisterActor("counter", NrCounters, NewCounterActor)
+	g := grid.New(GridName, []string{"http://127.0.0.1:2379"}, []string{"nats://localhost:4222"}, &maker{})
 
 	exit, err := g.Start()
 	if err != nil {
 		log.Fatalf("error: failed to start grid: %v", err)
 	}
 
-	f, err := g.NewFlow("aid-12", "reader", "counter")
-	if err != nil {
-		log.Fatalf("failed to create flow: %v", err)
+	for i := 0; i < NrReaders; i++ {
+		name := NewName("reader", i)
+		err := g.StartActor(name)
+		if err != nil {
+			log.Fatalf("error: failed to start: %v", name)
+		}
 	}
-	err = f.Start()
-	if err != nil {
-		log.Fatalf("failed to start flow: %T :: %v", err, err)
+
+	for i := 0; i < NrCounters; i++ {
+		name := NewName("counter", i)
+		err := g.StartActor(name)
+		if err != nil {
+			log.Fatalf("error: failed to start: %v", name)
+		}
 	}
 
 	sig := make(chan os.Signal, 1)
@@ -58,429 +64,137 @@ func main() {
 	}
 }
 
+type DoneMsg struct {
+	From string
+}
+
 type CntMsg struct {
 	From   string
 	Number int
 }
 
-func NewReaderActor(id, state string) grid2.Actor {
-	return &ReaderActor{id: id, state: state}
+func NewName(role string, part int) string {
+	return fmt.Sprintf("%v.%v", role, part)
+}
+
+type maker struct{}
+
+func (m *maker) MakeActor(id string) (grid.Actor, error) {
+	rprefix := fmt.Sprintf("%v.%v", GridName, "reader")
+	cprefix := fmt.Sprintf("%v.%v", GridName, "counter")
+
+	switch {
+	case strings.Index(id, rprefix) >= 0:
+		log.Printf("making new reader actor: %v", id)
+		return NewReaderActor(id), nil
+	case strings.Index(id, cprefix) >= 0:
+		log.Printf("making new counter actor: %v", id)
+		return NewCounterActor(id), nil
+	default:
+		return nil, fmt.Errorf("name does not map to any type of actor: %v", id)
+	}
+}
+
+func NewReaderActor(id string) grid.Actor {
+	return &ReaderActor{id: id}
 }
 
 type ReaderActor struct {
-	id    string
-	state string
+	id string
 }
 
 func (a *ReaderActor) ID() string {
 	return a.id
 }
 
-func (a *ReaderActor) Act(c grid2.Conn, exit <-chan bool) bool {
-	log.Printf("%v: running", a.id)
-
-	counts := make(map[int]int)
-	tx := 0
+func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
+	c := grid.NewConn(a.id, g.Nats())
+	n := 0
+	start := time.Now()
 	for {
 		select {
 		case <-exit:
-			return false
+			return true
 		default:
-			if tx < SendCount {
-				n, err := c.SendByHashedInt("counter", tx, &CntMsg{From: a.id, Number: tx})
+			if n < SendCount {
+				err := c.Send(ByModuloInt("counter", n, NrCounters), &CntMsg{From: a.id, Number: n})
 				if err != nil {
-					log.Printf("%v: error: %v", a.id, err)
-					continue
+					log.Fatalf("%v: error: %v", a.id, err)
 				}
-				tx++
-				counts[n]++
+				n++
+				if n%100000 == 0 {
+					log.Printf("%v: sent: %v, rate: %.2f/sec", a.id, n, float64(n)/time.Now().Sub(start).Seconds())
+				}
 			} else {
-				var buf bytes.Buffer
-				total := 0
-				for n, c := range counts {
-					buf.WriteString(fmt.Sprintf("   to: counter-%v, sent: %v\n", n, c))
-					total += c
+				for i := 0; i < NrCounters; i++ {
+					err := c.Send(ByNumber("counter", i), &DoneMsg{From: a.id})
+					if err != nil {
+						log.Fatalf("%v: error: %v", a.id, err)
+					}
 				}
-				log.Printf("%v: total: %v, counts:\n%v", a.id, total, buf.String())
-				return false
+				log.Printf("%v: finished", a.id)
+				return true
 			}
 		}
 	}
 }
 
-func NewCounterActor(id, state string) grid2.Actor {
-	return &CounterActor{id: id, state: state}
+func NewCounterActor(id string) grid.Actor {
+	parts := strings.Split(id, ".")
+	nr, err := strconv.Atoi(parts[2])
+	if err != nil {
+		log.Printf("%v: fatal: %v", id, err)
+		return nil
+	}
+	return &CounterActor{id: id, nr: nr}
 }
 
 type CounterActor struct {
-	id    string
-	state string
+	id string
+	nr int
 }
 
 func (a *CounterActor) ID() string {
 	return a.id
 }
 
-func (a *CounterActor) Act(c grid2.Conn, exit <-chan bool) bool {
-	log.Printf("%v: running", a.id)
-
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	counts := make(map[string]int)
-
-	ts := time.Now()
-	rx := 0
-	input := c.Receive()
+func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
+	c := grid.NewConn(a.id, g.Nats())
+	counts := make(map[string]map[int]bool)
 	for {
 		select {
 		case <-exit:
 			return false
-		case <-ticker.C:
-			var buf bytes.Buffer
-			for n, c := range counts {
-				buf.WriteString(fmt.Sprintf("    from: %v, rx: %v\n", n, c))
-			}
-			log.Printf("%v: data rate: %.2f/sec, counts:\n%v", a.id, float64(rx)/time.Now().Sub(ts).Seconds(), buf.String())
-		case m := <-input:
+		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case CntMsg:
-				counts[m.From]++
-				rx++
-			default:
-				log.Printf("%v: unknown message type received: %T", a.id, m)
+				bucket, ok := counts[m.From]
+				if !ok {
+					bucket = make(map[int]bool)
+					counts[m.From] = bucket
+				}
+				bucket[m.Number] = true
+			case DoneMsg:
+				bucket := counts[m.From]
+				missing := 0
+				for i := 0; i < SendCount; i++ {
+					if i%NrCounters == a.nr {
+						if !bucket[i] {
+							missing++
+						}
+					}
+				}
+				log.Printf("%v: from actor: %v, missing: %v", a.id, m.From, missing)
 			}
 		}
 	}
 }
 
-type StringGen struct {
-	dice  *rand.Rand
-	words []string
+func ByModuloInt(role string, key int, n int) string {
+	part := key % n
+	return fmt.Sprintf("%s.%s.%d", GridName, role, part)
 }
 
-func NewStringGen(seed []byte, words []string) *StringGen {
-	h := fnv.New64()
-	h.Write(seed)
-	return &StringGen{dice: rand.New(rand.NewSource(time.Now().Unix() + int64(h.Sum64()))), words: words}
-}
-
-func (sg *StringGen) Another() string {
-	return sg.words[sg.dice.Intn(len(sg.words))]
-}
-
-var story = []string{
-	"1km",
-	"2014",
-	"600",
-	"a",
-	"about",
-	"According",
-	"accounts",
-	"after",
-	"aftermath",
-	"against",
-	"all",
-	"Almost",
-	"also",
-	"amount",
-	"an",
-	"and",
-	"And",
-	"answer",
-	"apparently",
-	"appear",
-	"appeared",
-	"are",
-	"around",
-	"arrived",
-	"as",
-	"As",
-	"asked",
-	"at",
-	"attempts",
-	"attention",
-	"audit",
-	"away",
-	"barely",
-	"be",
-	"been",
-	"before",
-	"began",
-	"behalf",
-	"behaviour",
-	"between",
-	"block",
-	"Both",
-	"buildings",
-	"bureau",
-	"business",
-	"busy",
-	"But",
-	"buy",
-	"by",
-	"Caijing",
-	"came",
-	"censors",
-	"charge",
-	"chat",
-	"chemicals",
-	"China",
-	"China’s",
-	"Chinese",
-	"city",
-	"close",
-	"commentary",
-	"common",
-	"communist",
-	"company",
-	"completel",
-	"concerned",
-	"conference",
-	"conferences",
-	"confirmed—it",
-	"“contract",
-	"contract",
-	"contrast",
-	"control",
-	"cut",
-	"cyanide",
-	"Daily",
-	"damaged",
-	"dangerous",
-	"day",
-	"days",
-	"debate",
-	"demanding",
-	"demonstrations",
-	"deserved",
-	"did",
-	"died",
-	"disaster",
-	"distance",
-	"distrust",
-	"dozens",
-	"drew",
-	"early",
-	"ease",
-	"embarrassment",
-	"environmental",
-	"example",
-	"exploded",
-	"explosions",
-	"explosions—and",
-	"failed",
-	"failures",
-	"fallen",
-	"fate",
-	"fifth",
-	"fighting",
-	"fire",
-	"firefighters—firemen",
-	"firemen",
-	"firemen”:",
-	"fires",
-	"first",
-	"for",
-	"former",
-	"foul",
-	"from",
-	"fuels",
-	"got",
-	"government",
-	"gratitude",
-	"greater",
-	"had",
-	"handle",
-	"has",
-	"have",
-	"he",
-	"He",
-	"head",
-	"held",
-	"highest",
-	"hired",
-	"holding",
-	"how",
-	"idea",
-	"If",
-	"ill",
-	"ill-trained",
-	"in",
-	"In",
-	"independent",
-	"industrial",
-	"inexperienced",
-	"influence",
-	"information",
-	"informed",
-	"International",
-	"internet",
-	"is",
-	"it",
-	"just",
-	"keep",
-	"kept",
-	"killed",
-	"know",
-	"knows",
-	"Lastly",
-	"later",
-	"law",
-	"led",
-	"legally",
-	"Li",
-	"Liang",
-	"link",
-	"little",
-	"local",
-	"Local",
-	"Logistics",
-	"made",
-	"magazine",
-	"main",
-	"managed",
-	"many",
-	"matters",
-	"media",
-	"mentioned",
-	"metres",
-	"millions",
-	"minimum",
-	"Moreover",
-	"mostly",
-	"Mr",
-	"narrative",
-	"nature",
-	"nearest",
-	"neither",
-	"nevertheless",
-	"no",
-	"nor",
-	"not",
-	"occasionally",
-	"of",
-	"off",
-	"offered",
-	"official",
-	"officially",
-	"officials",
-	"on",
-	"one",
-	"One",
-	"ones",
-	"online",
-	"Online",
-	"only",
-	"operation",
-	"or",
-	"out",
-	"over",
-	"owner",
-	"owners",
-	"part",
-	"party",
-	"pass",
-	"People's",
-	"permission",
-	"permitted",
-	"pictures",
-	"platforms",
-	"pointed",
-	"port",
-	"possible",
-	"press",
-	"prevention",
-	"provided",
-	"public",
-	"public-security",
-	"quantity",
-	"question-and-answer",
-	"questions",
-	"raised",
-	"ranking",
-	"recorded",
-	"relationships",
-	"repeated",
-	"required",
-	"residential",
-	"residents",
-	"respect",
-	"revealed",
-	"rooms",
-	"Ruihai",
-	"Ruihai's",
-	"rulers",
-	"running",
-	"safe",
-	"safety",
-	"said",
-	"says",
-	"security",
-	"seemed",
-	"September",
-	"series",
-	"session",
-	"shares",
-	"shown",
-	"shows",
-	"Shu",
-	"Shushan",
-	"site",
-	"six",
-	"so-called",
-	"social",
-	"Social",
-	"sodium",
-	"son",
-	"soon",
-	"sophisticated",
-	"spend",
-	"spread",
-	"square",
-	"state",
-	"stored",
-	"substances",
-	"such",
-	"Taijin",
-	"televised",
-	"than",
-	"that",
-	"the",
-	"The",
-	"their",
-	"them—were",
-	"there",
-	"these",
-	"they",
-	"They",
-	"third",
-	"those",
-	"Those",
-	"Tianjin",
-	"times",
-	"to",
-	"too",
-	"traffic",
-	"true—and",
-	"two",
-	"unknown",
-	"until",
-	"up",
-	"users",
-	"v",
-	"warehouse",
-	"was",
-	"week",
-	"weekend",
-	"were",
-	"When",
-	"whereas",
-	"which",
-	"who",
-	"workers",
-	"world",
-	"would",
-	"young",
-	"Zheng",
+func ByNumber(role string, part int) string {
+	return fmt.Sprintf("%s.%s.%d", GridName, role, part)
 }

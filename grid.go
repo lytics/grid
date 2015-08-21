@@ -19,37 +19,44 @@ const (
 type Grid interface {
 	Start() (<-chan bool, error)
 	Stop()
-	NewFlow(name string, roles ...string) (Flow, error)
-	RegisterActor(role string, n int, f NewActor)
+	StartActor(name string) error
+	Nats() *nats.EncodedConn
+	Etcd() *etcd.Client
 }
 
 type grid struct {
-	name        string
-	etcdconnect []string
-	natsconnect []string
-	mu          *sync.Mutex
-	started     bool
-	stopped     bool
-	exit        chan bool
-	actorcnt    map[string]int
-	actornew    map[string]NewActor
-	client      metafora.Client
-	consumer    *metafora.Consumer
-	natsec      *nats.EncodedConn
+	name         string
+	etcdconnect  []string
+	natsconnect  []string
+	mu           *sync.Mutex
+	started      bool
+	stopped      bool
+	exit         chan bool
+	etcdclient   *etcd.Client
+	metaclient   metafora.Client
+	metaconsumer *metafora.Consumer
+	natsconn     *nats.EncodedConn
+	maker        ActorMaker
 }
 
-func New(name string, etcdconnect []string, natsconnect []string) Grid {
+func New(name string, etcdconnect []string, natsconnect []string, m ActorMaker) Grid {
 	return &grid{
 		name:        name,
 		etcdconnect: etcdconnect,
 		natsconnect: natsconnect,
 		mu:          new(sync.Mutex),
-		started:     false,
 		stopped:     true,
 		exit:        make(chan bool),
-		actorcnt:    make(map[string]int),
-		actornew:    make(map[string]NewActor),
+		maker:       m,
 	}
+}
+
+func (g *grid) Nats() *nats.EncodedConn {
+	return g.natsconn
+}
+
+func (g *grid) Etcd() *etcd.Client {
+	return g.etcdclient
 }
 
 func (g *grid) Start() (<-chan bool, error) {
@@ -66,40 +73,38 @@ func (g *grid) Start() (<-chan bool, error) {
 	}
 
 	ec.NewTask = func(id, value string) metafora.Task {
-		receiver, err := newActorTaskFromString(id)
+		receiver := newActorNameFromString(id)
+		a, err := g.maker.MakeActor(receiver.ID())
 		if err != nil {
-			log.Printf("error: %v", err)
+			log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
 			return nil
 		}
-		if f, ok := g.actornew[receiver.Role]; ok {
-			return newConn(g, receiver, f(id, value))
-		} else {
-			log.Printf("error: failed to schedule actor: %v: nothing registered for role: %v", id, receiver.Role)
-			return nil
-		}
+		return newHandler(g, a)
 	}
 
 	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdconnect)), m_etcd.NewFairBalancer("balancer", g.name, g.etcdconnect))
 	if err != nil {
 		return nil, err
 	}
-	g.consumer = c
-	g.client = m_etcd.NewClient(g.name, g.etcdconnect)
+	g.metaconsumer = c
+	g.metaclient = m_etcd.NewClient(g.name, g.etcdconnect)
 
 	go func() {
 		defer close(g.exit)
-		g.consumer.Run()
+		g.metaconsumer.Run()
 	}()
 
 	natsnc, err := nats.Connect(strings.Join(g.natsconnect, ","))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to nats: %v, maybe user: %v", err, nats.DefaultURL)
 	}
-	natsec, err := nats.NewEncodedConn(natsnc, nats.GOB_ENCODER)
+	natsconn, err := nats.NewEncodedConn(natsnc, nats.GOB_ENCODER)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encoded connection: %v", err)
 	}
-	g.natsec = natsec
+	g.natsconn = natsconn
+
+	g.etcdclient = etcd.NewClient(g.etcdconnect)
 
 	return g.exit, nil
 }
@@ -109,33 +114,36 @@ func (g *grid) Stop() {
 	defer g.mu.Unlock()
 
 	if !g.stopped {
-		g.consumer.Shutdown()
+		g.metaconsumer.Shutdown()
 		g.stopped = true
 	}
 }
 
-func (g *grid) NewFlow(name string, roles ...string) (Flow, error) {
-	f := newFlow(name, g)
-	for _, role := range roles {
-		n, ok := g.actorcnt[role]
-		if !ok {
-			return nil, fmt.Errorf("role not defined: %v", role)
-		}
-		f.conf[role] = n
+func handler(c *etcd.Client) metafora.HandlerFunc {
+	return func(t metafora.Task) metafora.Handler {
+		return t.(*actorhandler)
 	}
-	return f, nil
 }
 
-func (g *grid) RegisterActor(role string, n int, f NewActor) {
+func (g *grid) StartActor(name string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	g.actorcnt[role] = n
-	g.actornew[role] = f
-}
-
-func handler(c *etcd.Client) metafora.HandlerFunc {
-	return func(t metafora.Task) metafora.Handler {
-		return t.(*conn)
+	err := g.metaclient.SubmitTask(NewActorName(g.name, name))
+	if err != nil {
+		switch err := err.(type) {
+		case *etcd.EtcdError:
+			// If the error code is 105, this means the task is
+			// already in etcd, which could be possible after
+			// a crash or after the actor exits but returns
+			// true to be kept as an entry for metafora to
+			// schedule again.
+			if err.ErrorCode != 105 {
+				return err
+			}
+		default:
+			return err
+		}
 	}
+	return nil
 }
