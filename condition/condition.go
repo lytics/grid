@@ -9,7 +9,7 @@ import (
 	"github.com/coreos/go-etcd/etcd"
 )
 
-func ActorRunning(etcd *etcd.Client, gridname, substring string, expected int) (<-chan bool, chan<- bool) {
+func ActorRunning(etcd *etcd.Client, gridname, pattern string, expected int) (<-chan bool, chan<- bool) {
 	done := make(chan bool)
 	exit := make(chan bool)
 	go func() {
@@ -31,7 +31,7 @@ func ActorRunning(etcd *etcd.Client, gridname, substring string, expected int) (
 					continue
 				}
 				for _, n := range res.Node.Nodes {
-					if strings.Contains(n.Key, substring) {
+					if strings.Contains(n.Key, pattern) {
 						cnt++
 					}
 				}

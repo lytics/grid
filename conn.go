@@ -8,6 +8,10 @@ import (
 	"github.com/nats-io/nats"
 )
 
+const (
+	BuffSize = 8000
+)
+
 type Conn interface {
 	ReceiveC() <-chan interface{}
 	Send(receiver string, m interface{}) error

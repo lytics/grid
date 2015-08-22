@@ -12,10 +12,6 @@ import (
 	"github.com/nats-io/nats"
 )
 
-const (
-	BuffSize = 8000
-)
-
 type Grid interface {
 	Start() (<-chan bool, error)
 	Stop()
@@ -26,8 +22,8 @@ type Grid interface {
 
 type grid struct {
 	name         string
-	etcdconnect  []string
-	natsconnect  []string
+	etcdservers  []string
+	natsservers  []string
 	mu           *sync.Mutex
 	started      bool
 	stopped      bool
@@ -39,11 +35,11 @@ type grid struct {
 	maker        ActorMaker
 }
 
-func New(name string, etcdconnect []string, natsconnect []string, m ActorMaker) Grid {
+func New(name string, etcdservers []string, natsservers []string, m ActorMaker) Grid {
 	return &grid{
 		name:        name,
-		etcdconnect: etcdconnect,
-		natsconnect: natsconnect,
+		etcdservers: etcdservers,
+		natsservers: natsservers,
 		mu:          new(sync.Mutex),
 		stopped:     true,
 		exit:        make(chan bool),
@@ -51,27 +47,37 @@ func New(name string, etcdconnect []string, natsconnect []string, m ActorMaker) 
 	}
 }
 
+// Nats connection usable by any actor running
+// in the grid.
 func (g *grid) Nats() *nats.EncodedConn {
 	return g.natsconn
 }
 
+// Etcd connection usable by any actor running
+// in the grid.
 func (g *grid) Etcd() *etcd.Client {
 	return g.etcdclient
 }
 
+// Start the grid. Actors that were stopped from a previous exit
+// of the grid but returned a "done" status of false will start
+// to be scheduled. New actors can be scheduled with StartActor.
 func (g *grid) Start() (<-chan bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	// Start only once.
 	if g.started {
 		return g.exit, nil
 	}
 
-	ec, err := m_etcd.NewEtcdCoordinator("coordinator", g.name, g.etcdconnect)
+	// Create the metafora etcd coordinator.
+	ec, err := m_etcd.NewEtcdCoordinator("coordinator", g.name, g.etcdservers)
 	if err != nil {
 		return nil, err
 	}
 
+	// Define the metafora new task function.
 	ec.NewTask = func(id, value string) metafora.Task {
 		receiver := newActorNameFromString(id)
 		a, err := g.maker.MakeActor(receiver.ID())
@@ -82,33 +88,44 @@ func (g *grid) Start() (<-chan bool, error) {
 		return newHandler(g, a)
 	}
 
-	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdconnect)), m_etcd.NewFairBalancer("balancer", g.name, g.etcdconnect))
+	// Create the metafora consumer.
+	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), m_etcd.NewFairBalancer("balancer", g.name, g.etcdservers))
 	if err != nil {
 		return nil, err
 	}
 	g.metaconsumer = c
-	g.metaclient = m_etcd.NewClient(g.name, g.etcdconnect)
+	g.metaclient = m_etcd.NewClient(g.name, g.etcdservers)
 
+	// Close the exit channel when metafora thinks
+	// an exit is needed.
 	go func() {
 		defer close(g.exit)
 		g.metaconsumer.Run()
 	}()
 
-	natsnc, err := nats.Connect(strings.Join(g.natsconnect, ","))
+	// Create a nats connection, un-encoded.
+	natsnc, err := nats.Connect(strings.Join(g.natsservers, ","))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to nats: %v, maybe user: %v", err, nats.DefaultURL)
 	}
+	// Create a nats connection, with encoding.
 	natsconn, err := nats.NewEncodedConn(natsnc, nats.GOB_ENCODER)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encoded connection: %v", err)
 	}
 	g.natsconn = natsconn
 
-	g.etcdclient = etcd.NewClient(g.etcdconnect)
+	// Create an etcd client, this is the "raw" etcd
+	// client.
+	g.etcdclient = etcd.NewClient(g.etcdservers)
 
 	return g.exit, nil
 }
 
+// Stop the grid. Asks all actors to exit. Actors that return
+// a "done" status of false will remain scheduled, and will
+// start once the grid is started again without a need to
+// call StartActor.
 func (g *grid) Stop() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -119,12 +136,8 @@ func (g *grid) Stop() {
 	}
 }
 
-func handler(c *etcd.Client) metafora.HandlerFunc {
-	return func(t metafora.Task) metafora.Handler {
-		return t.(*actorhandler)
-	}
-}
-
+// StartActor starts one actor of the given name, if the
+// actor is already running no error is returned.
 func (g *grid) StartActor(name string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -146,4 +159,11 @@ func (g *grid) StartActor(name string) error {
 		}
 	}
 	return nil
+}
+
+// The handler implements both metafora.Task, and metafora.Handler.
+func handler(c *etcd.Client) metafora.HandlerFunc {
+	return func(t metafora.Task) metafora.Handler {
+		return t.(*actorhandler)
+	}
 }
