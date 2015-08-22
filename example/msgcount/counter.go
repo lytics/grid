@@ -2,27 +2,17 @@ package main
 
 import (
 	"log"
-	"strconv"
-	"strings"
 
 	"github.com/lytics/grid"
 )
 
-func NewCounterActor(id string, nmessages, ncounters int) grid.Actor {
-	parts := strings.Split(id, ".")
-	nr, err := strconv.Atoi(parts[2])
-	if err != nil {
-		log.Printf("%v: fatal: %v", id, err)
-		return nil
-	}
-	return &CounterActor{id: id, nr: nr, nmessages: nmessages, ncounters: ncounters}
+func NewCounterActor(id string, conf *Conf) grid.Actor {
+	return &CounterActor{id: id, conf: conf}
 }
 
 type CounterActor struct {
-	id        string
-	nr        int
-	nmessages int
-	ncounters int
+	id   string
+	conf *Conf
 }
 
 func (a *CounterActor) ID() string {
@@ -30,6 +20,10 @@ func (a *CounterActor) ID() string {
 }
 
 func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
+	nr, err := NrFromName(a.id)
+	if err != nil {
+		log.Printf("error: %v: failed to find my number: %v", a.id, err)
+	}
 	c := grid.NewConn(a.id, g.Nats())
 	counts := make(map[string]map[int]bool)
 	for {
@@ -48,8 +42,8 @@ func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
 			case DoneMsg:
 				bucket := counts[m.From]
 				missing := 0
-				for i := 0; i < a.nmessages; i++ {
-					if i%a.ncounters == a.nr {
+				for i := 0; i < a.conf.NrMessages; i++ {
+					if i%a.conf.NrCounters == nr {
 						if !bucket[i] {
 							missing++
 						}

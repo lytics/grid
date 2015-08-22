@@ -8,6 +8,8 @@ func init() {
 }
 
 type Conf struct {
+	GridName   string
+	NrMessages int
 	NrReaders  int
 	NrCounters int
 }

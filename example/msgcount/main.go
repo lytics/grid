@@ -7,15 +7,12 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/lytics/grid"
-)
-
-const (
-	GridName = "msgcount"
 )
 
 var (
@@ -34,12 +31,19 @@ func main() {
 	etcdservers := strings.Split(*etcdconnect, ",")
 	natsservers := strings.Split(*natsconnect, ",")
 
-	m, err := newActorMaker(*messages, *counters, *readers)
+	conf := &Conf{
+		GridName:   "msgcount",
+		NrMessages: *messages,
+		NrReaders:  *readers,
+		NrCounters: *counters,
+	}
+
+	m, err := newActorMaker(conf)
 	if err != nil {
 		log.Fatalf("error: failed to make actor maker: %v", err)
 	}
 
-	g := grid.New(GridName, etcdservers, natsservers, m)
+	g := grid.New(conf.GridName, etcdservers, natsservers, m)
 
 	exit, err := g.Start()
 	if err != nil {
@@ -49,7 +53,7 @@ func main() {
 	log.Printf("waiting 20 seconds before starting actors")
 	time.Sleep(20 * time.Second)
 
-	for i := 0; i < *readers; i++ {
+	for i := 0; i < conf.NrReaders; i++ {
 		name := NewName("reader", i)
 		err := g.StartActor(name)
 		if err != nil {
@@ -57,7 +61,7 @@ func main() {
 		}
 	}
 
-	for i := 0; i < *counters; i++ {
+	for i := 0; i < conf.NrCounters; i++ {
 		name := NewName("counter", i)
 		err := g.StartActor(name)
 		if err != nil {
@@ -80,11 +84,11 @@ func NewName(role string, part int) string {
 	return fmt.Sprintf("%v.%v", role, part)
 }
 
-func ByModuloInt(role string, key int, n int) string {
-	part := key % n
-	return fmt.Sprintf("%s.%s.%d", GridName, role, part)
-}
-
-func ByNumber(role string, part int) string {
-	return fmt.Sprintf("%s.%s.%d", GridName, role, part)
+func NrFromName(id string) (int, error) {
+	parts := strings.Split(id, ".")
+	nr, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return -1, err
+	}
+	return nr, nil
 }

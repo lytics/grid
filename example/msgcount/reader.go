@@ -1,21 +1,21 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
-	"github.com/coreos/go-etcd/etcd"
 	"github.com/lytics/grid"
+	"github.com/lytics/grid/condition"
 )
 
-func NewReaderActor(id string, nmessages, ncounters int) grid.Actor {
-	return &ReaderActor{id: id, nmessages: nmessages, ncounters: ncounters}
+func NewReaderActor(id string, conf *Conf) grid.Actor {
+	return &ReaderActor{id: id, conf: conf}
 }
 
 type ReaderActor struct {
-	id        string
-	ncounters int
-	nmessages int
+	id   string
+	conf *Conf
 }
 
 func (a *ReaderActor) ID() string {
@@ -27,12 +27,7 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	n := 0
 	start := time.Now()
 
-	stateexit := make(chan bool)
-	stateinfo := make(chan *etcd.Response)
-	go g.Etcd().Watch(GridName, 0, true, stateinfo, stateexit)
-	defer close(stateexit)
-
-	condchan, condexit := ConditionActorRunning(g.Etcd(), GridName, "counter", a.ncounters)
+	condchan, condexit := condition.ActorRunning(g.Etcd(), a.conf.GridName, "counter", a.conf.NrCounters)
 	defer close(condexit)
 
 	select {
@@ -47,8 +42,8 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 		case <-exit:
 			return true
 		default:
-			if n < a.nmessages {
-				err := c.Send(ByModuloInt("counter", n, a.ncounters), &CntMsg{From: a.id, Number: n})
+			if n < a.conf.NrMessages {
+				err := c.Send(a.ByModulo("counter", n), &CntMsg{From: a.id, Number: n})
 				if err != nil {
 					log.Fatalf("%v: error: %v", a.id, err)
 				}
@@ -57,8 +52,8 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 					log.Printf("%v: sent: %v, rate: %.2f/sec", a.id, n, float64(n)/time.Now().Sub(start).Seconds())
 				}
 			} else {
-				for i := 0; i < a.ncounters; i++ {
-					err := c.Send(ByNumber("counter", i), &DoneMsg{From: a.id})
+				for i := 0; i < a.conf.NrCounters; i++ {
+					err := c.Send(a.ByNumber("counter", i), &DoneMsg{From: a.id})
 					if err != nil {
 						log.Fatalf("%v: error: %v", a.id, err)
 					}
@@ -68,4 +63,13 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 			}
 		}
 	}
+}
+
+func (a *ReaderActor) ByModulo(role string, key int) string {
+	part := key % a.conf.NrCounters
+	return fmt.Sprintf("%s.%s.%d", a.conf.GridName, role, part)
+}
+
+func (a *ReaderActor) ByNumber(role string, part int) string {
+	return fmt.Sprintf("%s.%s.%d", a.conf.GridName, role, part)
 }
