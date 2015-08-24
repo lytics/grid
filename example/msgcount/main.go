@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -82,13 +81,4 @@ func main() {
 
 func NewName(role string, part int) string {
 	return fmt.Sprintf("%v.%v", role, part)
-}
-
-func NrFromName(id string) (int, error) {
-	parts := strings.Split(id, ".")
-	nr, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return -1, err
-	}
-	return nr, nil
 }

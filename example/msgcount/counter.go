@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+	"strconv"
+	"strings"
 
 	"github.com/lytics/grid"
 )
@@ -20,7 +22,7 @@ func (a *CounterActor) ID() string {
 }
 
 func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
-	nr, err := NrFromName(a.id)
+	nr, err := a.NumberFromName()
 	if err != nil {
 		log.Printf("error: %v: failed to find my number: %v", a.id, err)
 	}
@@ -53,4 +55,13 @@ func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
 			}
 		}
 	}
+}
+
+func (a *CounterActor) NumberFromName() (int, error) {
+	parts := strings.Split(a.id, ".")
+	nr, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return -1, err
+	}
+	return nr, nil
 }
