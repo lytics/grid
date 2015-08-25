@@ -9,20 +9,20 @@ import (
 	"github.com/lytics/grid/condition"
 )
 
-func NewReaderActor(id string, conf *Conf) grid.Actor {
-	return &ReaderActor{id: id, conf: conf}
+func NewSenderActor(id string, conf *Conf) grid.Actor {
+	return &SenderActor{id: id, conf: conf}
 }
 
-type ReaderActor struct {
+type SenderActor struct {
 	id   string
 	conf *Conf
 }
 
-func (a *ReaderActor) ID() string {
+func (a *SenderActor) ID() string {
 	return a.id
 }
 
-func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
+func (a *SenderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	c := grid.NewConn(a.id, g.Nats())
 	n := 0
 
@@ -58,15 +58,15 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 }
 
-func (a *ReaderActor) ByModulo(role string, key int) string {
+func (a *SenderActor) ByModulo(role string, key int) string {
 	part := key % a.conf.NrCounters
 	return fmt.Sprintf("%s.%s.%d", a.conf.GridName, role, part)
 }
 
-func (a *ReaderActor) ByNumber(role string, part int) string {
+func (a *SenderActor) ByNumber(role string, part int) string {
 	return fmt.Sprintf("%s.%s.%d", a.conf.GridName, role, part)
 }
 
-func (a *ReaderActor) StatePath() string {
+func (a *SenderActor) StatePath() string {
 	return fmt.Sprintf("/%v/state/%v", a.conf.GridName, a.id)
 }
