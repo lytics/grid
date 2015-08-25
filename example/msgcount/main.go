@@ -9,9 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/lytics/grid"
+	"github.com/lytics/grid/condition"
 )
 
 var (
@@ -20,6 +20,7 @@ var (
 	readers     = flag.Int("readers", 3, "number of readers")
 	counters    = flag.Int("counters", 2, "number of counters")
 	messages    = flag.Int("messages", 5000000, "number of messages for each reader to send")
+	nodes       = flag.Int("nodes", 1, "number of nodes in the grid")
 )
 
 func main() {
@@ -49,8 +50,13 @@ func main() {
 		log.Fatalf("error: failed to start grid: %v", err)
 	}
 
-	log.Printf("waiting 20 seconds before starting actors")
-	time.Sleep(20 * time.Second)
+	select {
+	case <-condition.NodeJoin(g.Etcd(), exit, conf.GridName, "grid", *nodes):
+		log.Printf("Starting actors")
+	case <-exit:
+		log.Printf("Shutting down, grid exited")
+		return
+	}
 
 	for i := 0; i < conf.NrReaders; i++ {
 		name := NewName("reader", i)

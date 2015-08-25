@@ -23,22 +23,24 @@ func newDataSet() []interface{} {
 }
 
 type conn struct {
-	ec       *nats.EncodedConn
-	name     string
-	exit     chan bool
-	intput   chan interface{}
-	outputs  map[string]chan interface{}
-	stoponce *sync.Once
+	ec        *nats.EncodedConn
+	name      string
+	exit      chan bool
+	intput    chan interface{}
+	outputs   map[string]chan interface{}
+	stoponce  *sync.Once
+	published chan bool
 }
 
 func NewConn(name string, ec *nats.EncodedConn) Conn {
 	c := &conn{
-		ec:       ec,
-		name:     name,
-		exit:     make(chan bool),
-		intput:   make(chan interface{}),
-		outputs:  make(map[string]chan interface{}),
-		stoponce: new(sync.Once),
+		ec:        ec,
+		name:      name,
+		exit:      make(chan bool),
+		intput:    make(chan interface{}),
+		outputs:   make(map[string]chan interface{}),
+		stoponce:  new(sync.Once),
+		published: make(chan bool),
 	}
 	log.Printf("%v: connected", name)
 	go func() {
@@ -105,6 +107,10 @@ func (c *conn) Send(receiver string, m interface{}) error {
 			if err != nil {
 				log.Printf("to: %v, actor: %v, failed to send: %v", m.Reply, receiver, err)
 			}
+			select {
+			case c.published <- true:
+			default:
+			}
 		})
 		if err != nil {
 			return err
@@ -116,6 +122,23 @@ func (c *conn) Send(receiver string, m interface{}) error {
 	}
 	out <- m
 	return nil
+}
+
+// Flush blocks till all queues of this connection are empty.
+func (c *conn) Flush() {
+	done := true
+	for {
+		for _, c := range c.outputs {
+			if len(c) > 0 {
+				done = false
+				break
+			}
+		}
+		if done {
+			break
+		}
+		<-c.published
+	}
 }
 
 // func (c *conn) SendByHashedInt(role string, key int, m interface{}) (int, error) {

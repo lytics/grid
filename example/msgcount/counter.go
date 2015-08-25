@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lytics/grid"
+	"github.com/lytics/grid/condition"
 )
 
 func NewCounterActor(id string, conf *Conf) grid.Actor {
@@ -28,10 +29,23 @@ func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 	c := grid.NewConn(a.id, g.Nats())
 	counts := make(map[string]map[int]bool)
+
+	readerexit := condition.ActorJoinExit(g.Etcd(), exit, a.conf.GridName, "reader", a.conf.NrReaders)
 	for {
 		select {
 		case <-exit:
 			return true
+		case r := <-readerexit:
+			bucket := counts[r]
+			missing := 0
+			for i := 0; i < a.conf.NrMessages; i++ {
+				if i%a.conf.NrCounters == nr {
+					if !bucket[i] {
+						missing++
+					}
+				}
+			}
+			log.Printf("%v: from actor: %v, missing: %v", a.id, r, missing)
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case CntMsg:
@@ -41,17 +55,6 @@ func (a *CounterActor) Act(g grid.Grid, exit <-chan bool) bool {
 					counts[m.From] = bucket
 				}
 				bucket[m.Number] = true
-			case DoneMsg:
-				bucket := counts[m.From]
-				missing := 0
-				for i := 0; i < a.conf.NrMessages; i++ {
-					if i%a.conf.NrCounters == nr {
-						if !bucket[i] {
-							missing++
-						}
-					}
-				}
-				log.Printf("%v: from actor: %v, missing: %v", a.id, m.From, missing)
 			}
 		}
 	}

@@ -25,18 +25,17 @@ func (a *ReaderActor) ID() string {
 func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	c := grid.NewConn(a.id, g.Nats())
 	n := 0
-	start := time.Now()
 
-	condchan, condexit := condition.ActorRunning(g.Etcd(), a.conf.GridName, "counter", a.conf.NrCounters)
-	defer close(condexit)
-
+	countersready := condition.ActorJoin(g.Etcd(), exit, a.conf.GridName, "counter", a.conf.NrCounters)
 	select {
-	case <-condchan:
-		log.Printf("%v: condition is now true", a.id)
+	case <-countersready:
+		log.Printf("%v: counters are now running", a.id)
 	case <-exit:
 		return true
 	}
 
+	start := time.Now()
+	g.Etcd().Delete(a.StatePath(), false)
 	for {
 		select {
 		case <-exit:
@@ -52,13 +51,7 @@ func (a *ReaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 					log.Printf("%v: sent: %v, rate: %.2f/sec", a.id, n, float64(n)/time.Now().Sub(start).Seconds())
 				}
 			} else {
-				for i := 0; i < a.conf.NrCounters; i++ {
-					err := c.Send(a.ByNumber("counter", i), &DoneMsg{From: a.id})
-					if err != nil {
-						log.Fatalf("%v: error: %v", a.id, err)
-					}
-				}
-				log.Printf("%v: finished", a.id)
+				g.Etcd().Set(a.StatePath(), "done", 100)
 				return true
 			}
 		}
@@ -72,4 +65,8 @@ func (a *ReaderActor) ByModulo(role string, key int) string {
 
 func (a *ReaderActor) ByNumber(role string, part int) string {
 	return fmt.Sprintf("%s.%s.%d", a.conf.GridName, role, part)
+}
+
+func (a *ReaderActor) StatePath() string {
+	return fmt.Sprintf("/%v/state/%v", a.conf.GridName, a.id)
 }

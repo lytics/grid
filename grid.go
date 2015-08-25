@@ -3,7 +3,7 @@ package grid
 import (
 	"fmt"
 	"log"
-	"strings"
+	"os"
 	"sync"
 
 	"github.com/coreos/go-etcd/etcd"
@@ -71,8 +71,14 @@ func (g *grid) Start() (<-chan bool, error) {
 		return g.exit, nil
 	}
 
+	// Use the hostname as the node identifier.
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
 	// Create the metafora etcd coordinator.
-	ec, err := m_etcd.NewEtcdCoordinator("coordinator", g.name, g.etcdservers)
+	ec, _ := m_etcd.NewEtcdCoordinator(hostname, g.name, g.etcdservers)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +95,7 @@ func (g *grid) Start() (<-chan bool, error) {
 	}
 
 	// Create the metafora consumer.
-	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), m_etcd.NewFairBalancer("balancer", g.name, g.etcdservers))
+	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), m_etcd.NewFairBalancer(hostname, g.name, g.etcdservers))
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +110,9 @@ func (g *grid) Start() (<-chan bool, error) {
 	}()
 
 	// Create a nats connection, un-encoded.
-	natsnc, err := nats.Connect(strings.Join(g.natsservers, ","))
+	natsop := nats.DefaultOptions
+	natsop.Servers = g.natsservers
+	natsnc, err := natsop.Connect()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to nats: %v, maybe user: %v", err, nats.DefaultURL)
 	}
