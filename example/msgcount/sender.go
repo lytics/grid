@@ -22,7 +22,6 @@ func (a *SenderActor) ID() string {
 func (a *SenderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	c := grid.NewConn(a.id, g.Nats())
 	r := ring.New("counter", a.conf.NrCounters, g)
-	r.Join(a.id)
 	n := 0
 	for {
 		select {
