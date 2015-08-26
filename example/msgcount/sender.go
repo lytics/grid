@@ -21,7 +21,8 @@ func (a *SenderActor) ID() string {
 
 func (a *SenderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	c := grid.NewConn(a.id, g.Nats())
-	r := ring.New("counter", a.conf.NrCounters, c, g)
+	r := ring.New("counter", a.conf.NrCounters, g)
+	r.Join(a.id)
 	n := 0
 	for {
 		select {
@@ -29,7 +30,7 @@ func (a *SenderActor) Act(g grid.Grid, exit <-chan bool) bool {
 			return true
 		default:
 			if n < a.conf.NrMessages {
-				r.RouteByModulo(n, &CntMsg{From: a.id, Number: n})
+				c.Send(r.RouteByModuloInt(n), &CntMsg{From: a.id, Number: n})
 			} else {
 				c.Send("leader", &DoneMsg{From: a.id})
 				return true
