@@ -15,6 +15,7 @@ import (
 type Grid interface {
 	Start() (<-chan bool, error)
 	Stop()
+	Name() string
 	StartActor(name string) error
 	Nats() *nats.EncodedConn
 	Etcd() *etcd.Client
@@ -57,6 +58,10 @@ func (g *grid) Nats() *nats.EncodedConn {
 // in the grid.
 func (g *grid) Etcd() *etcd.Client {
 	return g.etcdclient
+}
+
+func (g *grid) Name() string {
+	return g.name
 }
 
 // Start the grid. Actors that were stopped from a previous exit

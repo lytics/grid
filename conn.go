@@ -124,8 +124,8 @@ func (c *conn) Send(receiver string, m interface{}) error {
 	return nil
 }
 
-// Flush blocks till all queues of this connection are empty.
-func (c *conn) Flush() {
+// WaitEmpty blocks till all queues of this connection are empty.
+func (c *conn) WaitEmpty() {
 	done := true
 	for {
 		for _, c := range c.outputs {
