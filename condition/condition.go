@@ -2,129 +2,131 @@ package condition
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-etcd/etcd"
-	mapset "github.com/deckarep/golang-set"
 )
 
-func ActorJoinExit(etcd *etcd.Client, exit <-chan bool, gridname, pattern string, expected int) <-chan string {
-	name := make(chan string)
+type Join interface {
+	Join() error
+	Exit() error
+	Alive() error
+}
+
+type JoinWatch interface {
+	WatchJoin() <-chan bool
+	WatchExit() <-chan bool
+	WatchError() <-chan error
+}
+
+func NewJoin(e *etcd.Client, ttl time.Duration, path ...string) Join {
+	realttl := 1 * time.Second
+	if ttl.Seconds() > realttl.Seconds() {
+		realttl = ttl
+	}
+	return &join{
+		e:   e,
+		key: strings.Join(path, "/"),
+		ttl: uint64(realttl.Seconds()),
+	}
+}
+
+type join struct {
+	e   *etcd.Client
+	key string
+	ttl uint64
+}
+
+func (j *join) Alive() error {
+	_, err := j.e.Update(j.key, "", j.ttl)
+	return err
+}
+
+func (j *join) Join() error {
+	_, err := j.e.Create(j.key, "", j.ttl)
+	return err
+}
+
+func (j *join) Exit() error {
+	_, err := j.e.Delete(j.key, false)
+	return err
+}
+
+func NewJoinWatch(e *etcd.Client, exit <-chan bool, path ...string) JoinWatch {
+	key := strings.Join(path, "/")
+	joinc := make(chan bool, 1)
+	exitc := make(chan bool, 1)
+	errorc := make(chan error, 1)
 	go func() {
-		defer close(name)
-		members := mapset.NewSet()
-		watchpath := fmt.Sprintf("/%v/tasks/", gridname)
-		for {
+		res, err := e.Get(key, false, false)
+		if err != nil {
+			errorc <- err
+			return
+		}
+
+		if res.Node != nil {
 			select {
-			case <-exit:
-				return
+			case joinc <- true:
 			default:
-				time.Sleep(2 * time.Second)
-				res, err := etcd.Get(watchpath, false, false)
-				if err != nil {
-					log.Printf("error: watching: %v, error: %v", watchpath, err)
-					continue
-				}
-				if res.Node == nil {
-					continue
-				}
-				for _, n := range res.Node.Nodes {
-					if strings.Contains(n.Key, pattern) {
-						a, err := actorNameFromKey(n.Key)
-						if err != nil {
-							log.Printf("error: %v", err)
-						}
-						members.Add(a)
-					}
-				}
-				if members.Cardinality() == expected {
-					goto POLL
-				}
 			}
 		}
-	POLL:
+
+		watchexit := make(chan bool)
+		go func() {
+			<-exit
+			close(watchexit)
+		}()
+
+		watch := make(chan *etcd.Response)
+		go e.Watch(key, res.EtcdIndex, false, watch, watchexit)
 		for {
 			select {
 			case <-exit:
 				return
-			default:
-				time.Sleep(2 * time.Second)
-				res, err := etcd.Get(watchpath, false, false)
-				if err != nil {
-					log.Printf("error: watching: %v, error: %v", watchpath, err)
-					continue
-				}
-				if res.Node == nil {
-					continue
-				}
-				current := mapset.NewSet()
-				for _, n := range res.Node.Nodes {
-					if strings.Contains(n.Key, pattern) {
-						a, err := actorNameFromKey(n.Key)
-						if err != nil {
-							log.Printf("error: %v", err)
-						}
-						current.Add(a)
+			case res, open := <-watch:
+				if !open {
+					select {
+					case errorc <- fmt.Errorf("join watch closed unexpectedly"):
+					default:
 					}
-				}
-				for n := range members.Difference(current).Iter() {
-					name <- n.(string)
-					members.Remove(n)
-				}
-			}
-		}
-	}()
-	return name
-}
-
-func ActorJoin(etcd *etcd.Client, exit <-chan bool, gridname, pattern string, expected int) <-chan bool {
-	return pathCount(etcd, exit, gridname, "tasks", pattern, expected)
-}
-
-func NodeJoin(etcd *etcd.Client, exit <-chan bool, gridname, pattern string, expected int) <-chan bool {
-	return pathCount(etcd, exit, gridname, "nodes", pattern, expected)
-}
-
-func pathCount(etcd *etcd.Client, exit <-chan bool, gridname, dir, pattern string, expected int) <-chan bool {
-	done := make(chan bool)
-	go func() {
-		defer close(done)
-		watchpath := fmt.Sprintf("/%v/%v/", gridname, dir)
-		for {
-			select {
-			case <-exit:
-				return
-			default:
-				time.Sleep(2 * time.Second)
-				cnt := 0
-				res, err := etcd.Get(watchpath, false, false)
-				if err != nil {
-					log.Printf("error: watching: %v, error: %v", watchpath, err)
-					continue
-				}
-				if res.Node == nil {
-					continue
-				}
-				for _, n := range res.Node.Nodes {
-					if strings.Contains(n.Key, pattern) {
-						cnt++
-					}
-				}
-				if cnt == expected {
 					return
 				}
+				if res.Node != nil {
+					select {
+					case joinc <- true:
+					default:
+					}
+				} else {
+					select {
+					case exitc <- true:
+					default:
+					}
+				}
 			}
 		}
 	}()
-	return done
+	return &joinwatch{
+		joinc:  joinc,
+		exitc:  exitc,
+		errorc: errorc,
+	}
 }
 
-func actorNameFromKey(id string) (string, error) {
-	parts := strings.Split(id, "/")
-	if len(parts) != 4 {
-		return "", fmt.Errorf("unknonw key format: %v", id)
-	}
-	return parts[3], nil
+type joinwatch struct {
+	joinc  chan bool
+	exitc  chan bool
+	errorc chan error
+}
+
+func (w *joinwatch) WatchJoin() <-chan bool {
+	return w.joinc
+}
+
+func (w *joinwatch) WatchExit() <-chan bool {
+	return w.exitc
+}
+
+func (w *joinwatch) WatchError() <-chan error {
+	return w.errorc
 }

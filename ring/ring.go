@@ -9,7 +9,11 @@ import (
 
 type Ring interface {
 	Names() []string
-	RouteByModulo(n int, m interface{})
+	ByInt(key int) string
+	ByUint32(key uint32) string
+	ByUint64(key uint64) string
+	ByHashedBytes(key []byte) string
+	ByHashedString(key string) string
 }
 
 type ring struct {
@@ -18,8 +22,8 @@ type ring struct {
 	nparts int
 }
 
-func New(name string, parts int, g grid.Grid) Ring {
-	return &ring{name: name, parts: parts, g: g}
+func New(name string, nparts int, g grid.Grid) Ring {
+	return &ring{name: name, nparts: nparts, g: g}
 }
 
 // Names returns the list of actor names in this ring. They
@@ -72,5 +76,5 @@ func (r *ring) ByHashedString(key string) string {
 }
 
 func (r *ring) actorName(part int) string {
-	fmt.Sprintf("%s.%s.ring.%d.%d", r.g.Name, r.name, r.nparts, part)
+	return fmt.Sprintf("%s.%s.ring.%d.%d", r.g.Name, r.name, r.nparts, part)
 }

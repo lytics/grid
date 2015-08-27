@@ -11,16 +11,17 @@ import (
 	"syscall"
 
 	"github.com/lytics/grid"
-	"github.com/lytics/grid/condition"
+	"github.com/lytics/grid/ring"
 )
 
 var (
 	etcdconnect = flag.String("etcd", "http://127.0.0.1:2379", "comma separated list of etcd urls to servers")
 	natsconnect = flag.String("nats", "nats://127.0.0.1:4222", "comma separated list of nats urls to servers")
-	readers     = flag.Int("readers", 3, "number of readers")
-	counters    = flag.Int("counters", 2, "number of counters")
-	messages    = flag.Int("messages", 5000000, "number of messages for each reader to send")
+	producers   = flag.Int("producers", 3, "number of producers")
+	consumers   = flag.Int("consumers", 2, "number of consumers")
 	nodes       = flag.Int("nodes", 1, "number of nodes in the grid")
+	minsize     = flag.Int("minsize", 1000, "minimum message size, actual size will be in the range [min,2*min]")
+	mincount    = flag.Int("mincount", 100000, "minimum message count, actual count will be in the range [min,2*min]")
 )
 
 func main() {
@@ -32,10 +33,11 @@ func main() {
 	natsservers := strings.Split(*natsconnect, ",")
 
 	conf := &Conf{
-		GridName:   "msgcount",
-		NrMessages: *messages,
-		NrReaders:  *readers,
-		NrCounters: *counters,
+		GridName:    "msgcount",
+		MinSize:     *minsize,
+		MinCount:    *mincount,
+		NrProducers: *producers,
+		NrConsumers: *consumers,
 	}
 
 	m, err := newActorMaker(conf)
@@ -50,24 +52,16 @@ func main() {
 		log.Fatalf("error: failed to start grid: %v", err)
 	}
 
-	select {
-	case <-condition.NodeJoin(g.Etcd(), exit, conf.GridName, "grid", *nodes):
-		log.Printf("Starting actors")
-	case <-exit:
-		log.Printf("Shutting down, grid exited")
-		return
-	}
-
-	for i := 0; i < conf.NrReaders; i++ {
-		name := NewName("reader", i)
+	rp := ring.New("producer", conf.NrProducers, g)
+	for _, name := range rp.Names() {
 		err := g.StartActor(name)
 		if err != nil {
 			log.Fatalf("error: failed to start: %v", name)
 		}
 	}
 
-	for i := 0; i < conf.NrCounters; i++ {
-		name := NewName("counter", i)
+	rc := ring.New("consumer", conf.NrConsumers, g)
+	for _, name := range rc.Names() {
 		err := g.StartActor(name)
 		if err != nil {
 			log.Fatalf("error: failed to start: %v", name)
