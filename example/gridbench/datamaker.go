@@ -13,23 +13,38 @@ func NewDataMaker(minsize, mincount int) *datamaker {
 	dice := rand.New(rand.NewSource(s))
 	size := minsize + dice.Intn(minsize)
 	count := mincount + dice.Intn(mincount)
+
+	data := make([]string, 1000)
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	makedata := func(n int) string {
+		b := make([]rune, n)
+		for i := range b {
+			b[i] = letters[dice.Intn(len(letters))]
+		}
+		return string(b)
+	}
+	for i := 0; i < 1000; i++ {
+		data[i] = makedata(dice.Intn(size))
+	}
+
 	return &datamaker{
-		size:    size,
-		count:   count,
-		dice:    dice,
-		done:    make(chan bool),
-		output:  make(chan string),
-		letters: []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+		size:   size,
+		count:  count,
+		data:   data,
+		dice:   dice,
+		done:   make(chan bool),
+		output: make(chan string),
 	}
 }
 
 type datamaker struct {
-	size    int
-	count   int
-	dice    *rand.Rand
-	done    chan bool
-	output  chan string
-	letters []rune
+	size   int
+	count  int
+	data   []string
+	dice   *rand.Rand
+	done   chan bool
+	output chan string
 }
 
 func (d *datamaker) Next() <-chan string {
@@ -42,28 +57,21 @@ func (d *datamaker) Done() <-chan bool {
 
 func (d *datamaker) Start(exit <-chan bool) {
 	defer close(d.output)
-	makedata := func(n int) string {
-		b := make([]rune, n)
-		for i := range b {
-			b[i] = d.letters[d.dice.Intn(len(d.letters))]
-		}
-		return string(b)
-	}
 	sent := 0
 	for {
 		select {
 		case <-exit:
 			return
 		default:
+			if sent >= d.count {
+				close(d.done)
+				return
+			}
 			select {
 			case <-exit:
 				return
-			case d.output <- makedata(d.dice.Intn(d.size)):
+			case d.output <- d.data[d.dice.Intn(1000)]:
 				sent++
-				if sent >= d.count {
-					close(d.done)
-					return
-				}
 			}
 		}
 	}

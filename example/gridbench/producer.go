@@ -46,6 +46,7 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	for {
 		select {
 		case <-exit:
+			j.Exit()
 			return true
 		case <-ticker.C:
 			err := j.Alive()
