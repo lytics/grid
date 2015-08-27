@@ -9,8 +9,10 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/lytics/grid"
+	"github.com/lytics/grid/condition"
 	"github.com/lytics/grid/ring"
 )
 
@@ -33,11 +35,16 @@ func main() {
 	natsservers := strings.Split(*natsconnect, ",")
 
 	conf := &Conf{
-		GridName:    "msgcount",
+		GridName:    "gridbench",
 		MinSize:     *minsize,
 		MinCount:    *mincount,
 		NrProducers: *producers,
 		NrConsumers: *consumers,
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatalf("error: failed to discover hostname: %v", err)
 	}
 
 	m, err := newActorMaker(conf)
@@ -47,9 +54,25 @@ func main() {
 
 	g := grid.New(conf.GridName, etcdservers, natsservers, m)
 
+	j := condition.NewJoin(g.Etcd(), 10*time.Second, g.Name(), "hosts", hostname)
+	err = j.Join()
+	if err != nil {
+		log.Fatalf("error: failed to regester: %v", err)
+	}
+
 	exit, err := g.Start()
 	if err != nil {
 		log.Fatalf("error: failed to start grid: %v", err)
+	}
+
+	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "hosts")
+	select {
+	case <-exit:
+		log.Printf("Shutting down, grid exited")
+		return
+	case <-w.WatchError():
+		log.Fatalf("error: failed to watch other hosts join: %v", err)
+	case <-w.WatchUntil(*nodes):
 	}
 
 	rp := ring.New("producer", conf.NrProducers, g)
