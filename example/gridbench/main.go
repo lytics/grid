@@ -54,16 +54,31 @@ func main() {
 
 	g := grid.New(conf.GridName, etcdservers, natsservers, m)
 
-	j := condition.NewJoin(g.Etcd(), 10*time.Second, g.Name(), "hosts", hostname)
-	err = j.Join()
-	if err != nil {
-		log.Fatalf("error: failed to regester: %v", err)
-	}
-
 	exit, err := g.Start()
 	if err != nil {
 		log.Fatalf("error: failed to start grid: %v", err)
 	}
+
+	j := condition.NewJoin(g.Etcd(), 30*time.Second, g.Name(), "hosts", hostname)
+	err = j.Join()
+	if err != nil {
+		log.Fatalf("error: failed to regester: %v", err)
+	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-exit:
+				return
+			case <-ticker.C:
+				err := j.Alive()
+				if err != nil {
+					log.Fatalf("error: failed to report liveness: %v", err)
+				}
+			}
+		}
+	}()
 
 	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "hosts")
 	select {
