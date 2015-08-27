@@ -1,6 +1,7 @@
 package ring
 
 import (
+	"encoding/binary"
 	"fmt"
 	"hash/fnv"
 
@@ -71,6 +72,48 @@ func (r *ring) ByHashedBytes(key []byte) string {
 func (r *ring) ByHashedString(key string) string {
 	h := fnv.New64()
 	h.Write([]byte(key))
+	part := h.Sum64() % uint64(r.nparts)
+	return r.actorName(int(part))
+}
+
+// ByHashedInt selects an actor name by using:
+//     hash(key) % number of actors
+func (r *ring) ByHashedInt(key int) string {
+	b := make([]byte, binary.MaxVarintLen64)
+	len := binary.PutVarint(b, int64(key))
+	if len == 0 {
+		panic(fmt.Sprintf("failed to binary encode key: %v", key))
+	}
+	h := fnv.New64()
+	h.Write(b)
+	part := h.Sum64() % uint64(r.nparts)
+	return r.actorName(int(part))
+}
+
+// ByHashedUint32 selects an actor name by using:
+//     hash(key) % number of actors
+func (r *ring) ByHashedUint32(key uint32) string {
+	b := make([]byte, binary.MaxVarintLen64)
+	len := binary.PutUvarint(b, uint64(key))
+	if len == 0 {
+		panic(fmt.Sprintf("failed to binary encode key: %v", key))
+	}
+	h := fnv.New64()
+	h.Write(b)
+	part := h.Sum64() % uint64(r.nparts)
+	return r.actorName(int(part))
+}
+
+// ByHashedUint64 selects an actor name by using:
+//     hash(key) % number of actors
+func (r *ring) ByHashedUint64(key uint64) string {
+	b := make([]byte, binary.MaxVarintLen64)
+	len := binary.PutUvarint(b, key)
+	if len == 0 {
+		panic(fmt.Sprintf("failed to binary encode key: %v", key))
+	}
+	h := fnv.New64()
+	h.Write(b)
 	part := h.Sum64() % uint64(r.nparts)
 	return r.actorName(int(part))
 }
