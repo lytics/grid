@@ -1,7 +1,7 @@
 package main
 
 import (
-	"math/rand"
+	"log"
 	"time"
 
 	"github.com/lytics/grid"
@@ -27,88 +27,46 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	r := ring.New("consumer", a.conf.NrConsumers, g)
 
 	// Make some random length string data.
-	dm := NewDataMaker(a.conf.MinSize, a.conf.MinCount)
-	go dm.Start(exit)
+	data := NewDataMaker(a.conf.MinSize, a.conf.MinCount)
+	go data.Start(exit)
 
-	// Watch the leader. If leader exits, then exist also.
-	j := condition.NewJoinWatch(g.Etcd(), exit, g.Name(), "leader")
+	// Consumers will track when all producers exit,
+	// and send their final results then.
+	j := condition.NewJoin(g.Etcd(), 30*time.Second, g.Name(), "producers", a.id)
+	err := j.Join()
+	if err != nil {
+		log.Fatalf("%v: failed to register: %v", a.id, err)
+	}
 
-	// Number of messages sent.
+	// Report liveness every 15 seconds.
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
 	n := 0
 	for {
 		select {
 		case <-exit:
 			return true
-		case <-j.WatchExit():
-			return true
-		case <-j.WatchError():
-			return true
-		case d := <-dm.Data():
+		case <-ticker.C:
+			err := j.Alive()
+			if err != nil {
+				log.Fatalf("%v: failed to report liveness: %v", a.id, err)
+			}
+		case <-data.Done():
+			c.Send("leader", &ResultMsg{Producer: a.id, Count: n, From: a.id})
+			for {
+				select {
+				case <-exit:
+					return true
+				case <-c.Published():
+					if c.Size() == 0 {
+						return true
+					}
+				}
+			}
+		case d := <-data.Next():
+			c.Send(r.ByInt(n), &DataMsg{Producer: a.id, Data: d})
 			n++
-			c.Send(r.ByInt(n), &DataMsg{From: a.id, Data: d})
-		case m := <-c.ReceiveC():
-			switch m.(type) {
-			case SendResultMsg:
-				// There is a cycle in communication
-				// between leader and us, don't
-				// block on the send.
-				go c.Send("leader", &ResultMsg{Producer: a.id, Count: n})
-			}
-		}
-	}
-}
-
-func NewDataMaker(minsize, mincount int) *datamaker {
-	s := int64(0)
-	for i := 0; i < 10000; i++ {
-		s += time.Now().UnixNano()
-	}
-	dice := rand.New(rand.NewSource(s))
-	size := minsize + dice.Intn(minsize)
-	count := mincount + dice.Intn(mincount)
-	return &datamaker{
-		size:    size,
-		count:   count,
-		dice:    dice,
-		output:  make(chan string),
-		letters: []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
-	}
-}
-
-type datamaker struct {
-	size    int
-	count   int
-	dice    *rand.Rand
-	output  chan string
-	letters []rune
-}
-
-func (d *datamaker) Data() <-chan string {
-	return d.output
-}
-
-func (d *datamaker) Start(exit <-chan bool) {
-	makedata := func(n int) string {
-		b := make([]rune, n)
-		for i := range b {
-			b[i] = d.letters[d.dice.Intn(len(d.letters))]
-		}
-		return string(b)
-	}
-	sent := 0
-	for {
-		select {
-		case <-exit:
-			return
-		default:
-			if sent >= d.count {
-				return
-			}
-			select {
-			case <-exit:
-				return
-			case d.output <- makedata(d.dice.Intn(d.size)):
-			}
 		}
 	}
 }

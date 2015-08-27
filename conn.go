@@ -15,7 +15,9 @@ const (
 type Conn interface {
 	ReceiveC() <-chan interface{}
 	Send(receiver string, m interface{}) error
+	Published() <-chan bool
 	Stop()
+	Size() int
 }
 
 func newDataSet() []interface{} {
@@ -124,19 +126,17 @@ func (c *conn) Send(receiver string, m interface{}) error {
 	return nil
 }
 
-// WaitEmpty blocks till all queues of this connection are empty.
-func (c *conn) WaitEmpty() {
-	done := true
-	for {
-		for _, c := range c.outputs {
-			if len(c) > 0 {
-				done = false
-				break
-			}
-		}
-		if done {
-			break
-		}
-		<-c.published
+// Published sends a true every time messages drained from
+// output queues of this Conn.
+func (c *conn) Published() <-chan bool {
+	return c.published
+}
+
+// Size of all output queues of this Conn summed up.
+func (c *conn) Size() int {
+	size := 0
+	for _, c := range c.outputs {
+		size += len(c)
 	}
+	return size
 }

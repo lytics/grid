@@ -5,7 +5,6 @@ import "encoding/gob"
 func init() {
 	gob.Register(ResultMsg{})
 	gob.Register(DataMsg{})
-	gob.Register(DoneMsg{})
 }
 
 type Conf struct {
@@ -16,20 +15,13 @@ type Conf struct {
 	NrConsumers int
 }
 
-type DoneMsg struct {
-	From string
-}
-
 type DataMsg struct {
-	From string
-	Data string
+	Producer string
+	Data     string
 }
 
 type ResultMsg struct {
 	Producer string
+	From     string
 	Count    int
-}
-
-type SendResultMsg struct {
-	Producer string
 }

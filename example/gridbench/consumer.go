@@ -21,26 +21,34 @@ func (a *ConsumerActor) ID() string {
 func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	c := grid.NewConn(a.id, g.Nats())
 
-	j := condition.NewJoinWatch(g.Etcd(), exit, g.Name(), "leader")
+	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "producers")
+	<-w.WatchUntil(a.conf.NrProducers)
 
 	counts := make(map[string]int)
 	for {
 		select {
 		case <-exit:
 			return true
-		case <-j.WatchExit():
+		case <-w.WatchError():
 			return true
-		case <-j.WatchError():
-			return true
+		case <-w.WatchUntil(0):
+			for p, n := range counts {
+				c.Send("leader", &ResultMsg{Producer: p, Count: n, From: a.id})
+			}
+			for {
+				select {
+				case <-exit:
+					return true
+				case <-c.Published():
+					if c.Size() == 0 {
+						return true
+					}
+				}
+			}
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case DataMsg:
-				counts[m.From]++
-			case SendResultMsg:
-				// There is a cycle in communication
-				// between leader and us, don't
-				// block on the send.
-				go c.Send("leader", &ResultMsg{Producer: m.Producer, Count: counts[m.Producer]})
+				counts[m.Producer]++
 			}
 		}
 	}

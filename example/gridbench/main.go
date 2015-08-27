@@ -65,11 +65,12 @@ func main() {
 		log.Fatalf("error: failed to regester: %v", err)
 	}
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-exit:
+				j.Exit()
 				return
 			case <-ticker.C:
 				err := j.Alive()

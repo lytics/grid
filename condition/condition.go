@@ -197,12 +197,16 @@ func NewCountWatch(e *etcd.Client, exit <-chan bool, path ...string) CountWatch 
 }
 
 type countwatch struct {
-	exit   <-chan bool
-	countc chan int
-	errorc chan error
+	exit       <-chan bool
+	countc     chan int
+	errorc     chan error
+	untilcache map[int]<-chan bool
 }
 
 func (w *countwatch) WatchUntil(count int) <-chan bool {
+	if done, ok := w.untilcache[count]; ok {
+		return done
+	}
 	done := make(chan bool)
 	go func() {
 		for {
@@ -217,6 +221,7 @@ func (w *countwatch) WatchUntil(count int) <-chan bool {
 			}
 		}
 	}()
+	w.untilcache[count] = done
 	return done
 }
 
