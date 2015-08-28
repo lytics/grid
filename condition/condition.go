@@ -142,40 +142,19 @@ func NewCountWatch(e *etcd.Client, exit <-chan bool, path ...string) CountWatch 
 	countc := make(chan int, 1)
 	errorc := make(chan error, 1)
 	go func() {
-		res, err := e.Get(key, false, false)
-		if err != nil {
-			errorc <- err
-			return
-		}
-
-		if res.Node != nil && res.Node.Dir {
-			select {
-			case countc <- len(res.Node.Nodes):
-			default:
-			}
-		}
-
-		watchexit := make(chan bool)
-		go func() {
-			<-exit
-			close(watchexit)
-		}()
-
-		watch := make(chan *etcd.Response)
-		go e.Watch(key, res.EtcdIndex, true, watch, watchexit)
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-exit:
 				return
-			case res, open := <-watch:
-				if !open {
-					select {
-					case errorc <- fmt.Errorf("count watch closed unexpectedly"):
-					default:
-					}
+			case <-ticker.C:
+				res, err := e.Get(key, false, false)
+				if err != nil {
+					errorc <- err
 					return
 				}
-				if res.Node != nil {
+				if res.Node != nil && res.Node.Dir {
 					select {
 					case countc <- len(res.Node.Nodes):
 					default:

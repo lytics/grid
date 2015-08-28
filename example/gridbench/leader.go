@@ -29,8 +29,9 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 
 	log.Printf("%v: all consumers joined", a.id)
 
-	pcounts := make(map[string]int)
 	ccounts := make(map[string]int)
+	pcounts := make(map[string]int)
+	pdurations := make(map[string]float64)
 	for {
 		select {
 		case <-exit:
@@ -40,7 +41,7 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 			return true
 		case <-w.WatchUntil(0):
 			for p, n := range pcounts {
-				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v", a.id, p, n, ccounts[p], n-ccounts[p])
+				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v, rate: %2.f m/s", a.id, p, n, ccounts[p], n-ccounts[p], float64(n)/pdurations[p])
 			}
 			return true
 		case m := <-c.ReceiveC():
@@ -48,6 +49,7 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 			case ResultMsg:
 				if strings.Contains(m.From, "producer") {
 					pcounts[m.Producer] = m.Count
+					pdurations[m.Producer] = m.Duration
 				}
 				if strings.Contains(m.From, "consumer") {
 					ccounts[m.Producer] += m.Count

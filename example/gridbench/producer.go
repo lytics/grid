@@ -23,9 +23,6 @@ func (a *ProducerActor) ID() string {
 }
 
 func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
-	c := grid.NewConn(a.id, g.Nats())
-	r := ring.New("consumer", a.conf.NrConsumers, g)
-
 	// Make some random length string data.
 	data := NewDataMaker(a.conf.MinSize, a.conf.MinCount)
 	go data.Start(exit)
@@ -43,31 +40,54 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
+	c := grid.NewConn(a.id, g.Nats())
+	r := ring.New("consumer", a.conf.NrConsumers, g)
 	n := 0
-	for {
-		select {
-		case <-exit:
-			return true
-		case <-ticker.C:
-			err := j.Alive()
-			if err != nil {
-				log.Fatalf("%v: failed to report liveness: %v", a.id, err)
-			}
-		case <-data.Done():
-			c.Send("leader", &ResultMsg{Producer: a.id, Count: n, From: a.id})
-			for {
-				select {
-				case <-exit:
+	start := time.Now()
+
+	// Final state is to wait for data to be consumed.
+	finalizing := func() bool {
+		c.Send("leader", &ResultMsg{Producer: a.id, Count: n, From: a.id, Duration: time.Now().Sub(start).Seconds()})
+		for {
+			select {
+			case <-exit:
+				return true
+			case <-ticker.C:
+				err := j.Alive()
+				if err != nil {
+					log.Fatalf("%v: failed to report liveness: %v", a.id, err)
+				}
+			case <-c.Published():
+				if c.Size() == 0 {
+					log.Printf("%v: everthing sent, exiting...", a.id)
 					return true
-				case <-c.Published():
-					if c.Size() == 0 {
-						return true
-					}
 				}
 			}
-		case d := <-data.Next():
-			c.Send(r.ByInt(n), &DataMsg{Producer: a.id, Data: d})
-			n++
 		}
 	}
+
+	// Initial state is producing data.
+	producing := func() bool {
+		for {
+			select {
+			case <-exit:
+				return true
+			case <-ticker.C:
+				err := j.Alive()
+				if err != nil {
+					log.Fatalf("%v: failed to report liveness: %v", a.id, err)
+				}
+			case <-data.Done():
+				return finalizing()
+			case d := <-data.Next():
+				if n == 1 {
+					start = time.Now()
+				}
+				c.Send(r.ByInt(n), &DataMsg{Producer: a.id, Data: d})
+				n++
+			}
+		}
+	}
+
+	return producing()
 }

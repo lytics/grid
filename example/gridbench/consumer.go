@@ -22,7 +22,16 @@ func (a *ConsumerActor) ID() string {
 }
 
 func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
-	c := grid.NewConn(a.id, g.Nats())
+	// Report liveness every 15 seconds.
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	// Watch the producers. First wait for them to all join.
+	// Then report final results when all the producers
+	// have exited.
+	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "producers")
+	<-w.WatchUntil(a.conf.NrProducers)
+	log.Printf("%v: all producers joined", a.id)
 
 	// Leader will track when all the consumers have exited,
 	// and report final answer.
@@ -33,18 +42,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 	defer j.Exit()
 
-	// Report liveness every 15 seconds.
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	// Watch the producers. First wait for them to all join.
-	// Then report final results when all the producers
-	// have exited.
-	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "producers")
-	<-w.WatchUntil(a.conf.NrProducers)
-
-	log.Printf("%v: all producers joined", a.id)
-
+	c := grid.NewConn(a.id, g.Nats())
 	counts := make(map[string]int)
 	for {
 		select {
@@ -66,6 +64,11 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 				select {
 				case <-exit:
 					return true
+				case <-ticker.C:
+					err := j.Alive()
+					if err != nil {
+						log.Fatalf("%v: failed to report liveness: %v", a.id, err)
+					}
 				case <-c.Published():
 					if c.Size() == 0 {
 						return true
@@ -75,7 +78,6 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case DataMsg:
-				log.Printf("%v: rx: %v", a.id, m.Data)
 				counts[m.Producer]++
 			}
 		}

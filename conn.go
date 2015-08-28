@@ -19,8 +19,8 @@ const (
 type Conn interface {
 	ReceiveC() <-chan interface{}
 	Send(receiver string, m interface{}) error
-	Published() <-chan bool
 	Close()
+	Published() <-chan bool
 	Size() int
 }
 
@@ -134,8 +134,8 @@ func (c *conn) Published() <-chan bool {
 // Size of all output queues of this Conn summed up.
 func (c *conn) Size() int {
 	size := 0
-	for _, c := range c.outputs {
-		size += len(c)
+	for _, q := range c.outputs {
+		size += len(q)
 	}
 	return size
 }

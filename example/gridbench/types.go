@@ -24,4 +24,5 @@ type ResultMsg struct {
 	Producer string
 	From     string
 	Count    int
+	Duration float64
 }
