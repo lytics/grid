@@ -23,6 +23,8 @@ func newActorMaker(conf *Conf) (*maker, error) {
 
 func (m *maker) MakeActor(id string) (grid.Actor, error) {
 	switch {
+	case strings.Contains(id, "leader"):
+		return NewLeaderActor(id, m.conf), nil
 	case strings.Contains(id, "producer"):
 		return NewProducerActor(id, m.conf), nil
 	case strings.Contains(id, "consumer"):

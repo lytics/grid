@@ -190,9 +190,11 @@ func NewCountWatch(e *etcd.Client, exit <-chan bool, path ...string) CountWatch 
 		}
 	}()
 	return &countwatch{
-		exit:   exit,
-		countc: countc,
-		errorc: errorc,
+		exit:       exit,
+		countc:     countc,
+		errorc:     errorc,
+		untilcache: make(map[int]<-chan bool),
+		cleancache: make(chan int),
 	}
 }
 
@@ -201,6 +203,7 @@ type countwatch struct {
 	countc     chan int
 	errorc     chan error
 	untilcache map[int]<-chan bool
+	cleancache chan int
 }
 
 func (w *countwatch) WatchUntil(count int) <-chan bool {

@@ -90,7 +90,7 @@ func (g *grid) Start() (<-chan bool, error) {
 
 	// Define the metafora new task function.
 	ec.NewTask = func(id, value string) metafora.Task {
-		receiver := newActorNameFromString(id)
+		receiver := ActorName(id)
 		a, err := g.maker.MakeActor(receiver.ID())
 		if err != nil {
 			log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
@@ -155,7 +155,7 @@ func (g *grid) StartActor(name string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	err := g.metaclient.SubmitTask(NewActorName(g.name, name))
+	err := g.metaclient.SubmitTask(ActorName(name))
 	if err != nil {
 		switch err := err.(type) {
 		case *etcd.EtcdError:

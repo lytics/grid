@@ -37,6 +37,7 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	if err != nil {
 		log.Fatalf("%v: failed to register: %v", a.id, err)
 	}
+	defer j.Exit()
 
 	// Report liveness every 15 seconds.
 	ticker := time.NewTicker(15 * time.Second)
@@ -46,7 +47,6 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	for {
 		select {
 		case <-exit:
-			j.Exit()
 			return true
 		case <-ticker.C:
 			err := j.Alive()

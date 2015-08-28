@@ -64,13 +64,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: failed to regester: %v", err)
 	}
+	defer j.Exit()
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-exit:
-				j.Exit()
 				return
 			case <-ticker.C:
 				err := j.Alive()
@@ -95,7 +95,7 @@ func main() {
 	for _, name := range rp.Names() {
 		err := g.StartActor(name)
 		if err != nil {
-			log.Fatalf("error: failed to start: %v", name)
+			log.Fatalf("error: failed to start: %v, due to: %v", name, err)
 		}
 	}
 
@@ -103,8 +103,13 @@ func main() {
 	for _, name := range rc.Names() {
 		err := g.StartActor(name)
 		if err != nil {
-			log.Fatalf("error: failed to start: %v", name)
+			log.Fatalf("error: failed to start: %v, due to: %v", name, err)
 		}
+	}
+
+	err = g.StartActor("leader")
+	if err != nil {
+		log.Fatalf("error: failed to start: %v, due to: %v", "leader", err)
 	}
 
 	sig := make(chan os.Signal, 1)

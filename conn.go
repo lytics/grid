@@ -12,11 +12,15 @@ const (
 	BuffSize = 8000
 )
 
+// Conn is a named bi-directional channel connected to Nats.
+// It request messages on its name. Anyone that queue
+// subscribes to its name will start getting pushish
+// requests.
 type Conn interface {
 	ReceiveC() <-chan interface{}
 	Send(receiver string, m interface{}) error
 	Published() <-chan bool
-	Stop()
+	Close()
 	Size() int
 }
 
@@ -72,17 +76,12 @@ func NewConn(name string, ec *nats.EncodedConn) Conn {
 	return c
 }
 
+// ReceiveC is the channel of inputs for this Conn.
 func (c *conn) ReceiveC() <-chan interface{} {
 	return c.intput
 }
 
-func (c *conn) Stop() {
-	c.stoponce.Do(func() {
-		close(c.exit)
-	})
-}
-
-// Send in the context of this Conn's flow to the given role and part.
+// Send a message to the receiver.
 func (c *conn) Send(receiver string, m interface{}) error {
 	out, ok := c.outputs[receiver]
 	if !ok {
@@ -126,7 +125,7 @@ func (c *conn) Send(receiver string, m interface{}) error {
 	return nil
 }
 
-// Published sends a true every time messages drained from
+// Published sends a 'true' every time messages are picked up from
 // output queues of this Conn.
 func (c *conn) Published() <-chan bool {
 	return c.published
@@ -139,4 +138,11 @@ func (c *conn) Size() int {
 		size += len(c)
 	}
 	return size
+}
+
+// Close.
+func (c *conn) Close() {
+	c.stoponce.Do(func() {
+		close(c.exit)
+	})
 }

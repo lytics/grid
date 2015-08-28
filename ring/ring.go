@@ -119,5 +119,5 @@ func (r *ring) ByHashedUint64(key uint64) string {
 }
 
 func (r *ring) actorName(part int) string {
-	return fmt.Sprintf("%s.%s.ring.%d.%d", r.g.Name, r.name, r.nparts, part)
+	return fmt.Sprintf("%s-ring-%d-%d", r.name, r.nparts, part)
 }
