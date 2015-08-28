@@ -40,9 +40,13 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 			log.Printf("%v: fatal: %v", a.id, err)
 			return true
 		case <-w.WatchUntil(0):
+			aggrate := float64(0)
 			for p, n := range pcounts {
-				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v, rate: %2.f m/s", a.id, p, n, ccounts[p], n-ccounts[p], float64(n)/pdurations[p])
+				rate := float64(n) / pdurations[p]
+				aggrate += rate
+				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v, rate: %2.f m/s", a.id, p, n, ccounts[p], n-ccounts[p], rate)
 			}
+			log.Printf("%v: aggragate rate: %.2f m/s", a.id, aggrate)
 			return true
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {

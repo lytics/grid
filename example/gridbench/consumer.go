@@ -43,6 +43,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	defer j.Exit()
 
 	c := grid.NewConn(a.id, g.Nats())
+	n := 0
 	counts := make(map[string]int)
 	for {
 		select {
@@ -79,6 +80,10 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			switch m := m.(type) {
 			case DataMsg:
 				counts[m.Producer]++
+				n++
+				if n%10000 == 0 {
+					log.Printf("%v: received: %v", a.id, n)
+				}
 			}
 		}
 	}

@@ -83,7 +83,7 @@ func (g *grid) Start() (<-chan bool, error) {
 	}
 
 	// Create the metafora etcd coordinator.
-	ec, _ := m_etcd.NewEtcdCoordinator(hostname, g.name, g.etcdservers)
+	ec, err := m_etcd.NewEtcdCoordinator(hostname, g.name, g.etcdservers)
 	if err != nil {
 		return nil, err
 	}

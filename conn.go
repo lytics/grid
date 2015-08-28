@@ -99,7 +99,7 @@ func (c *conn) Send(receiver string, m interface{}) error {
 					eof = true
 				case d := <-out:
 					ds = append(ds, d)
-					if len(ds) >= BuffSize/2 {
+					if len(ds) >= BuffSize/3 {
 						eof = true
 					}
 				}

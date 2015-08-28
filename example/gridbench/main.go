@@ -27,7 +27,7 @@ var (
 )
 
 func main() {
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(6)
 
 	flag.Parse()
 
