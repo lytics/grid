@@ -8,8 +8,6 @@ import (
 	"github.com/nats-io/nats"
 )
 
-const BuffSize = 200
-
 type Ack struct {
 	From  string
 	Count int
@@ -29,22 +27,26 @@ type Conn interface {
 }
 
 type conn struct {
-	ec       *nats.EncodedConn
-	name     string
-	exit     chan bool
-	intput   chan interface{}
-	outputs  map[string][]interface{}
-	stoponce *sync.Once
+	ec          *nats.EncodedConn
+	name        string
+	exit        chan bool
+	intput      chan interface{}
+	outputs     map[string][]interface{}
+	stoponce    *sync.Once
+	buffsize    int
+	sendtiemout time.Duration
 }
 
 func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 	c := &conn{
-		ec:       ec,
-		name:     name,
-		exit:     make(chan bool),
-		intput:   make(chan interface{}, BuffSize),
-		outputs:  make(map[string][]interface{}),
-		stoponce: new(sync.Once),
+		ec:          ec,
+		name:        name,
+		exit:        make(chan bool),
+		intput:      make(chan interface{}),
+		outputs:     make(map[string][]interface{}),
+		stoponce:    new(sync.Once),
+		buffsize:    100,
+		sendtiemout: 2 * time.Second,
 	}
 	log.Printf("%v: connected", name)
 	sub0, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
@@ -92,12 +94,12 @@ func (c *conn) Send(receiver string, m interface{}) error {
 func (c *conn) SendBuffered(receiver string, m interface{}) error {
 	buf, ok := c.outputs[receiver]
 	if !ok {
-		buf = make([]interface{}, 0, BuffSize)
+		buf = make([]interface{}, 0, c.buffsize)
 		c.outputs[receiver] = buf
 	}
 	buf = append(buf, m)
 	c.outputs[receiver] = buf
-	if len(buf) >= BuffSize {
+	if len(buf) >= c.buffsize {
 		err := c.send(receiver, buf)
 		if err == nil {
 			delete(c.outputs, receiver)
@@ -130,7 +132,7 @@ func (c *conn) Close() {
 func (c *conn) send(receiver string, ms []interface{}) error {
 	for {
 		ack := &Ack{}
-		err := c.ec.Request(receiver, &Envelope{Data: ms}, ack, 2*time.Second)
+		err := c.ec.Request(receiver, &Envelope{Data: ms}, ack, c.sendtiemout)
 		if err == nil && ack != nil && ack.From != "" && ack.Count == len(ms) {
 			return nil
 		}
@@ -142,5 +144,25 @@ func (c *conn) send(receiver string, ms []interface{}) error {
 			return nil
 		default:
 		}
+	}
+}
+
+// SetConnBuffSize change the internal buffers used for SendBuffered
+// to the given size.
+func SetConnBuffSize(c Conn, size int) {
+	switch c := c.(type) {
+	case *conn:
+		c.buffsize = size
+	}
+}
+
+// SetConnSendTimeout changes the timeout of send operations, setting
+// this two low while at the same time using a large buffer size with
+// large message may cause sends to error due to inadequate time to
+// send all data.
+func SetConnSendTimeout(c Conn, timeout time.Duration) {
+	switch c := c.(type) {
+	case *conn:
+		c.sendtiemout = timeout
 	}
 }
