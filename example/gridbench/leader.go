@@ -22,7 +22,10 @@ func (a *LeaderActor) ID() string {
 }
 
 func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
-	c := grid.NewConn(a.id, g.Nats())
+	c, err := grid.NewConn(a.id, g.Nats())
+	if err != nil {
+		log.Fatalf("%v: error: %v", a.id, err)
+	}
 
 	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "consumers")
 	<-w.WatchUntil(a.conf.NrConsumers)

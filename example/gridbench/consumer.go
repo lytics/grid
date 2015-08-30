@@ -42,7 +42,11 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 	defer j.Exit()
 
-	c := grid.NewConn(a.id, g.Nats())
+	c, err := grid.NewConn(a.id, g.Nats())
+	if err != nil {
+		log.Fatalf("%v: error: %v", a.id, err)
+	}
+
 	n := 0
 	counts := make(map[string]int)
 	for {
@@ -61,21 +65,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			for p, n := range counts {
 				c.Send("leader", &ResultMsg{Producer: p, Count: n, From: a.id})
 			}
-			for {
-				select {
-				case <-exit:
-					return true
-				case <-ticker.C:
-					err := j.Alive()
-					if err != nil {
-						log.Fatalf("%v: failed to report liveness: %v", a.id, err)
-					}
-				case <-c.Published():
-					if c.Size() == 0 {
-						return true
-					}
-				}
-			}
+			return true
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case DataMsg:
