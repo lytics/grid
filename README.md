@@ -152,9 +152,10 @@ func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
 
 ## Getting Started With Examples
 
-Here we'll walk through getting started with the examples, you'll need:
+Running the examples requires Etcd and Nats services running on `localhost`. Do the following to
+get both running on your system:
 
-Get Etcd:
+Etcd:
 
     $ go get github.com/coreos/etcd
     $ etcd
@@ -162,7 +163,7 @@ Get Etcd:
     2015/08/31 11:06:08 etcdmain: no data-dir provided, using default data-dir ./default.etcd
     ...
 
-Get Nats:
+Nats:
 
     $ go get github.com/nats-io/gnatsd
     $ gnatsd
@@ -171,4 +172,7 @@ Get Nats:
     [19416] 2015/08/31 11:07:19.925278 [INF] gnatsd is ready
     ...
 
-With those services running, checkout the [example](example/).
+With those services running, checkout the [example](example/)s directory. The [firstgrid](example/firstgrid/)
+example is the simplest. It starts two actors and they pass messages. The [gridbench](example/gridbench)
+example is more involved, it uses two helper libraries, [condition](condition/) and [ring](ring/) to
+help coordinate actors, and disstribute messages to them.
