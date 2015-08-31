@@ -8,13 +8,12 @@ use and provides the basic building blocks for distributed processing:
  1. Coorinating the process instances, which in grid is done via ETCD.
  1. Scheduling tasks within the processes, which in grid is done via METAFORA.
 
-### Some Examples
+### Basic Gists
 
 Staring the library is done in one line:
 
 ```go
 func main() {
-    ...
     g := grid.New(name, etcdservers, natsservers, taskmaker)
     g.Start()
     ... 
@@ -25,7 +24,6 @@ Scheduling work is done by calling `StartActor`:
 
 ```go
 func main() {
-    ...
     g := grid.New(name, etcdservers, natsservers, maker)
     g.Start()
     g.StartActor("counter")
@@ -129,7 +127,7 @@ func (a *leaderactor) Act(g grid.Grid, exit <-chan bool) bool {
 }
 ```
 
-Each actor has access to Etcd for state and coordination tasks:
+Each actor has access to Etcd for state and coordination:
 
 ```go
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
@@ -151,3 +149,26 @@ func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
 	...
 }
 ```
+
+## Getting Started With Examples
+
+Here we'll walk through getting started with the examples, you'll need:
+
+Get Etcd:
+
+    $ go get github.com/coreos/etcd
+    $ etcd
+    2015/08/31 11:06:08 etcdmain: setting maximum number of CPUs to 1, total number of available CPUs is 8
+    2015/08/31 11:06:08 etcdmain: no data-dir provided, using default data-dir ./default.etcd
+    ...
+
+Get Nats:
+
+    $ go get github.com/nats-io/gnatsd
+    $ gnatsd
+    [19416] 2015/08/31 11:07:19.925002 [INF] Starting gnatsd version 0.6.1.beta
+    [19416] 2015/08/31 11:07:19.925048 [INF] Listening for client connections on 0.0.0.0:4222
+    [19416] 2015/08/31 11:07:19.925278 [INF] gnatsd is ready
+    ...
+
+With those services running, checkout the [examples](/examples).

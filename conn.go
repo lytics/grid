@@ -1,6 +1,7 @@
 package grid
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -140,7 +141,13 @@ func (c *conn) send(receiver string, ms []interface{}) error {
 		if err == nil && ack != nil && ack.From != "" && ack.Count == len(ms) {
 			return nil
 		}
-		if err.Error() != "nats: Timeout" {
+		if err == nil && ack != nil {
+			return fmt.Errorf("received bad ack from: %v, count: %v, expected ack from: %v, count: %v", ack.From, ack.Count, receiver, len(ms))
+		}
+		if err == nil && ack == nil {
+			return fmt.Errorf("received no ack from: %v", ack.From)
+		}
+		if err != nil && err.Error() != "nats: Timeout" {
 			return err
 		}
 		select {
