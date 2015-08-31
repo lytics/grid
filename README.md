@@ -26,26 +26,40 @@ Scheduling work is done by calling `StartActor`:
 ```go
 func main() {
     ...
-    g := grid.New(name, etcdservers, natsservers, taskmaker)
+    g := grid.New(name, etcdservers, natsservers, maker)
     g.Start()
-    g.StartActor("hello-world-actor")
+    g.StartActor("counter")
     ...
+}
+```
+
+Scheduled units of work are called actors, which are made by user code implementing the `ActorMaker` interface:
+
+```go
+type actormaker struct {}
+
+func (m *actormaker) MakeActor(name string) (Actor, error) {
+	if name == "counter" {
+		return NewCounterActor(), nil
+	} else {
+		return NewOtherActor(), nil
+	}
 }
 ```
 
 An actor is any Go type that implements the two methods of the `Actor` interface:
 
 ```go
-type countingactor struct {
+type counteractor struct {
     id    string
     count int
 }
 
-func (a *countingactor) ID() {
+func (a *counteractor) ID() {
     return a.id
 }
 
-func (a *countingactor) Act(g grid.Grid, exit <-chan bool) bool {
+func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
     ticker := time.NewTicker(10 * time.Second)
     defer ticker.Stop()
     for {
@@ -63,7 +77,7 @@ func (a *countingactor) Act(g grid.Grid, exit <-chan bool) bool {
 An actor can communicate with any other actor it knows the name of:
 
 ```go
-func (a *countingactor) Act(g grid.Grid, exit <-chan bool) bool {
+func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
     c, err := grid.NewConn(a.id, g.Nats())
     if err != nil {
         log.Fatalf("%v: error: %v", a.id, err)
@@ -103,4 +117,13 @@ func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
     }
 }
 ```
-    
+
+An actor can schedule other actors:
+
+```go
+func (a *leaderactor) Act(g grid.Grid, exit <-chan bool) bool {
+    for i:= 0; i<10; i++ {
+        g.StartActor(fmt.Sprintf("follower-%d", i))
+    }
+}
+```
