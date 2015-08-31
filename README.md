@@ -171,4 +171,4 @@ Get Nats:
     [19416] 2015/08/31 11:07:19.925278 [INF] gnatsd is ready
     ...
 
-With those services running, checkout the [examples](/examples).
+With those services running, checkout the [example](example/).
