@@ -58,15 +58,14 @@ func (a *counteractor) ID() {
 }
 
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
-    ticker := time.NewTicker(10 * time.Second)
-    defer ticker.Stop()
+    ...
     for {
         select {
         case <-exit:
             return true
         case <-ticker.C:
-            log.Printf("Hello, I've counted %d times", a.count)
-            count++
+            log.Printf("Hello, I have counted %d times", a.count)
+            a.count++
         }
     }
 }
@@ -78,22 +77,9 @@ An actor can communicate with any other actor it knows the name of:
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
     c, _ := grid.NewConn(a.id, g.Nats())
     c.Send("other", "I have started counting")
-
-    ticker := time.NewTicker(10 * time.Second)
-    defer ticker.Stop()
-    for {
-        select {
-        case <-exit:
-            return true
-        case <-ticker.C:
-            log.Printf("Hello, I've counted %d times", a.count)
-            count++
-        }
-    }
+    ...
 }
-```
 
-```go
 func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
     c, _ := grid.NewConn(a.id, g.Nats())
     for {
@@ -122,8 +108,9 @@ Each actor has access to Etcd for state and coordination:
 
 ```go
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
-	ttl := 30 // seconds
-	g.Etcd().Create(fmt.Sprintf("/%v/state/%v", g.name(), a.id), "0", ttl)
+	ttl := 30
+    path := fmt.Sprintf("/%v/state/%v", g.Name(), a.id)
+	g.Etcd().Create(path, "0", ttl)
 	...
 }
 ```
@@ -133,7 +120,7 @@ can also use Nats directly:
 
 ```go
 func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
-	g.Nats().Publish("announce", "Staring...")
+	g.Nats().Publish("announce", "staring")
 	...
 }
 ```
