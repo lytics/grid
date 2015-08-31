@@ -37,6 +37,9 @@ type conn struct {
 	sendtiemout time.Duration
 }
 
+// NewConn creates a new connection using NATS as the message transport.
+// The connection will receive data sent to the given name. Any NATS
+// client can be used.
 func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 	c := &conn{
 		ec:          ec,
@@ -90,7 +93,8 @@ func (c *conn) Send(receiver string, m interface{}) error {
 	return c.send(receiver, []interface{}{m})
 }
 
-// Send a message if the buffer is full, otherwise just buffer the message.
+// Send the message and previously buffered messages if the buffer is full,
+// otherwise just buffer the message.
 func (c *conn) SendBuffered(receiver string, m interface{}) error {
 	buf, ok := c.outputs[receiver]
 	if !ok {
@@ -147,8 +151,8 @@ func (c *conn) send(receiver string, ms []interface{}) error {
 	}
 }
 
-// SetConnBuffSize change the internal buffers used for SendBuffered
-// to the given size.
+// SetConnBuffSize change the size of internal buffers, used by SendBuffered
+// function, to the given size.
 func SetConnBuffSize(c Conn, size int) {
 	switch c := c.(type) {
 	case *conn:
@@ -156,10 +160,10 @@ func SetConnBuffSize(c Conn, size int) {
 	}
 }
 
-// SetConnSendTimeout changes the timeout of send operations, setting
-// this two low while at the same time using a large buffer size with
-// large message may cause sends to error due to inadequate time to
-// send all data.
+// SetConnSendTimeout changes the timeout of send operations. Setting
+// this low, while at the same time using a large buffer size with
+// large messages, may cause sends to error due to insufficient
+// time to send all data.
 func SetConnSendTimeout(c Conn, timeout time.Duration) {
 	switch c := c.(type) {
 	case *conn:
