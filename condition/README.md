@@ -8,7 +8,7 @@ Things that can be done with the condition library:
  1. Watch the join, and alert when the joined actor exits.
  1. Watch a group of joins, until some count condition is satisfied.
 
- ### Join Example
+### Join Example
 
  ```go
     j := condition.NewJoin(g.Etcd(), 30*time.Second, "registration", "path", "in", "etcd")
