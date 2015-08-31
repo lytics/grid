@@ -1,8 +1,8 @@
 grid
 ====
 
-Grid is a library to build distributed processes. It is a library not a container. It is simple to
-use and provides the basic building blocks for distributed processing:
+Grid is a library to build distributed processes; in contrast to being a container. It is 
+simple to use and provides the basic building blocks for distributed processing:
 
  1. Passing messages, which in grid is done via NATS.
  1. Coorinating the process instances, which in grid is done via ETCD.
@@ -11,7 +11,6 @@ use and provides the basic building blocks for distributed processing:
 ### Basic Gists
 
 Staring the library is done in one line:
-
 ```go
 func main() {
     g := grid.New(name, etcdservers, natsservers, taskmaker)
@@ -21,7 +20,6 @@ func main() {
 ```
 
 Scheduling work is done by calling `StartActor`:
-
 ```go
 func main() {
     g := grid.New(name, etcdservers, natsservers, maker)
@@ -32,7 +30,6 @@ func main() {
 ```
 
 Scheduled units of work are called actors, which are made by user code implementing the `ActorMaker` interface:
-
 ```go
 type actormaker struct {}
 
@@ -46,7 +43,6 @@ func (m *actormaker) MakeActor(name string) (Actor, error) {
 ```
 
 An actor is any Go type that implements the two methods of the `Actor` interface:
-
 ```go
 type counteractor struct {
     id    string
@@ -72,7 +68,6 @@ func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
 ```
 
 An actor can communicate with any other actor it knows the name of:
-
 ```go
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
     c, _ := grid.NewConn(a.id, g.Nats())
@@ -94,7 +89,6 @@ func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
 ```
 
 An actor can schedule other actors:
-
 ```go
 func (a *leaderactor) Act(g grid.Grid, exit <-chan bool) bool {
     for i:= 0; i<10; i++ {
@@ -105,7 +99,6 @@ func (a *leaderactor) Act(g grid.Grid, exit <-chan bool) bool {
 ```
 
 Each actor has access to Etcd for state and coordination:
-
 ```go
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
 	ttl := 30
@@ -117,7 +110,6 @@ func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
 
 Each actor can use the bidiractional `Conn` interface for communication, but it
 can also use Nats directly:
-
 ```go
 func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
 	g.Nats().Publish("announce", "staring")
@@ -147,6 +139,6 @@ Nats:
     ...
 
 With those services running, checkout the [example](example/) directory. The [firstgrid](example/firstgrid/)
-example is the simplest. It starts two actors and they pass messages. The [gridbench](example/gridbench)
+example is the simplest. It starts two actors and they pass messages. The [gridbench](example/gridbench/)
 example is more involved, it uses two helper libraries, [condition](condition/) and [ring](ring/) to
 help coordinate actors, and disstribute messages to them.
