@@ -41,46 +41,58 @@ An actor is any Go type that implements the two methods of the `Actor` interface
     }
 
     func (a *countingactor) Act(g grid.Grid, exit <-chan bool) bool {
-    	ticker := time.NewTicker(10 * time.Second)
-    	defer ticker.Stop()
-    	for {
-    		select {
-    		case <-exit:
-    			return true
-    		case <-ticker.C:
-    			log.Printf("Hello, I've counted %d times", a.count)
-    			count++
-    		}
-    	}
+        ticker := time.NewTicker(10 * time.Second)
+        defer ticker.Stop()
+        for {
+            select {
+            case <-exit:
+                return true
+            case <-ticker.C:
+                log.Printf("Hello, I've counted %d times", a.count)
+                count++
+            }
+        }
     }
 
 An actor can communicate with any other actor it knows the name of:
 
     func (a *countingactor) Act(g grid.Grid, exit <-chan bool) bool {
-    	c, err := grid.NewConn(a.id, g.Nats())
-    	if err != nil {
-    		log.Fatalf("%v: error: %v", a.id, err)
-    	}
-    	err = c.Send("other", "I have started counting")
-    	...
+        c, err := grid.NewConn(a.id, g.Nats())
+        if err != nil {
+            log.Fatalf("%v: error: %v", a.id, err)
+        }
+        err = c.Send("other", "I have started counting")
+
+        ticker := time.NewTicker(10 * time.Second)
+        defer ticker.Stop()
+        for {
+            select {
+            case <-exit:
+                return true
+            case <-ticker.C:
+                log.Printf("Hello, I've counted %d times", a.count)
+                count++
+            }
+        }
     }
 
+```go
     func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
-    	c, err := grid.NewConn(a.id, g.Nats())
-    	if err != nil {
-    		log.Fatalf("%v: error: %v", a.id, err)
-    	}
-    	for {
-    		select {
-    		case <-exit:
-    			return true
-    		case m := <-c.ReceiveC():
-    			switch m := m.(type) {
-    			case string:
-    				log.Printf("%v: got message: %v", a.id, m)
-    			}
-    		}
-    	}
+        c, err := grid.NewConn(a.id, g.Nats())
+        if err != nil {
+            log.Fatalf("%v: error: %v", a.id, err)
+        }
+        for {
+            select {
+            case <-exit:
+                return true
+            case m := <-c.ReceiveC():
+                switch m := m.(type) {
+                case string:
+                    log.Printf("%v: got message: %v", a.id, m)
+                }
+            }
+        }
     }
-
+```
     
