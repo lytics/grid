@@ -19,7 +19,7 @@ Staring the library is done in one line:
         ... 
     }
 
-Scheduling work is done by the `Actor` abstraction:
+Scheduling work is done by calling `StartActor`:
 
     func main() {
         ...
@@ -31,20 +31,56 @@ Scheduling work is done by the `Actor` abstraction:
 
 An actor is any Go type that implements the two methods of the `Actor` interface:
 
-    type helloworld struct {
+    type countingactor struct {
         id    string
         count int
     }
 
-    func (h *helloworld) ID() {
-        return h.id
+    func (a *countingactor) ID() {
+        return a.id
     }
 
-    func (h *helloworld) Act(g grid.Grid, exit <-chan bool) bool {
-    	fmt.Println("hello world... I'm done now")
-    	return true
+    func (a *countingactor) Act(g grid.Grid, exit <-chan bool) bool {
+    	ticker := time.NewTicker(10 * time.Second)
+    	defer ticker.Stop()
+    	for {
+    		select {
+    		case <-exit:
+    			return true
+    		case <-ticker.C:
+    			log.Printf("Hello, I've counted %d times", a.count)
+    			count++
+    		}
+    	}
     }
 
-An actor can communicate with other actors:
+An actor can communicate with any other actor it knows the name of:
+
+    func (a *countingactor) Act(g grid.Grid, exit <-chan bool) bool {
+    	c, err := grid.NewConn(a.id, g.Nats())
+    	if err != nil {
+    		log.Fatalf("%v: error: %v", a.id, err)
+    	}
+    	err = c.Send("other", "I have started counting")
+    	...
+    }
+
+    func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
+    	c, err := grid.NewConn(a.id, g.Nats())
+    	if err != nil {
+    		log.Fatalf("%v: error: %v", a.id, err)
+    	}
+    	for {
+    		select {
+    		case <-exit:
+    			return true
+    		case m := <-c.ReceiveC():
+    			switch m := m.(type) {
+    			case string:
+    				log.Printf("%v: got message: %v", a.id, m)
+    			}
+    		}
+    	}
+    }
 
     
