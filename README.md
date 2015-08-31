@@ -39,11 +39,11 @@ Scheduled units of work are called actors, which are made by user code implement
 type actormaker struct {}
 
 func (m *actormaker) MakeActor(name string) (Actor, error) {
-	if name == "counter" {
-		return NewCounterActor(), nil
-	} else {
-		return NewOtherActor(), nil
-	}
+    if name == "counter" {
+        return NewCounterActor(), nil
+    } else {
+        return NewOtherActor(), nil
+    }
 }
 ```
 
@@ -82,7 +82,7 @@ func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
     if err != nil {
         log.Fatalf("%v: error: %v", a.id, err)
     }
-    err = c.Send("other", "I have started counting")
+    c.Send("other", "I have started counting")
 
     ticker := time.NewTicker(10 * time.Second)
     defer ticker.Stop()
@@ -125,5 +125,29 @@ func (a *leaderactor) Act(g grid.Grid, exit <-chan bool) bool {
     for i:= 0; i<10; i++ {
         g.StartActor(fmt.Sprintf("follower-%d", i))
     }
+    ...
+}
+```
+
+Each actor has access to Etcd for state and coordination tasks:
+
+```go
+func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
+	ttl := 30 // seconds
+	_, err := g.Etcd().Create(fmt.Sprintf("/%v/state/%v", g.name(), a.id), "0", ttl)
+	if err != nil {
+		log.Fatalf("%v: error: %v", a.id, err)
+	}
+	...
+}
+```
+
+Each actor can use the bidiractional `Conn` interface for communication, but it
+can also use Nats directly:
+
+```go
+func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
+	g.Nats().Publish("announce", "Staring...")
+	...
 }
 ```
