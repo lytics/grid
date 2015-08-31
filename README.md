@@ -172,7 +172,7 @@ Nats:
     [19416] 2015/08/31 11:07:19.925278 [INF] gnatsd is ready
     ...
 
-With those services running, checkout the [example](example/)s directory. The [firstgrid](example/firstgrid/)
+With those services running, checkout the [example](example/) directory. The [firstgrid](example/firstgrid/)
 example is the simplest. It starts two actors and they pass messages. The [gridbench](example/gridbench)
 example is more involved, it uses two helper libraries, [condition](condition/) and [ring](ring/) to
 help coordinate actors, and disstribute messages to them.
