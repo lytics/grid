@@ -1,15 +1,14 @@
 condition
 =========
 
-Common usage patterns for Etcd, to implement group join, exit, and watch counts.
+Common usage patterns for Etcd to implement group join, exit, and watch counts.
 Things that can be done with the condition library:
 
- 1. Register that some actor has joined a process.
- 1. Watch the join, and alert when the joined actor exits.
+ 1. Register that someone has joined a process.
+ 1. Watch the join, and signal when they leave.
  1. Watch a group of joins, until some count condition is satisfied.
 
 ### Join Example
-
  ```go
     j := condition.NewJoin(g.Etcd(), 30*time.Second, "registration", "path", "in", "etcd")
     j.Join()
@@ -21,7 +20,6 @@ Things that can be done with the condition library:
 ```
 
 ### WatchJoin Example
-
 ```go
 	w := condition.NewJoinWatch(g.Etcd(), exit, "registration", "path", "to", "watch")
 	<-w.WatchJoin()
@@ -32,7 +30,6 @@ Things that can be done with the condition library:
 ```
 
 ### CountWatch Example
-
 ```go
 	w := condition.NewCountWatch(g.Etcd(), exit, "registration", "path", "to", "watch")
 	<-w.WatchUntil(10)

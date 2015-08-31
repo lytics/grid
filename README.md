@@ -76,10 +76,7 @@ An actor can communicate with any other actor it knows the name of:
 
 ```go
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
-    c, err := grid.NewConn(a.id, g.Nats())
-    if err != nil {
-        log.Fatalf("%v: error: %v", a.id, err)
-    }
+    c, _ := grid.NewConn(a.id, g.Nats())
     c.Send("other", "I have started counting")
 
     ticker := time.NewTicker(10 * time.Second)
@@ -98,19 +95,13 @@ func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
 
 ```go
 func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
-    c, err := grid.NewConn(a.id, g.Nats())
-    if err != nil {
-        log.Fatalf("%v: error: %v", a.id, err)
-    }
+    c, _ := grid.NewConn(a.id, g.Nats())
     for {
         select {
         case <-exit:
             return true
         case m := <-c.ReceiveC():
-            switch m := m.(type) {
-            case string:
-                log.Printf("%v: got message: %v", a.id, m)
-            }
+            log.Printf("%v: got message: %v", a.id, m)
         }
     }
 }
@@ -132,10 +123,7 @@ Each actor has access to Etcd for state and coordination:
 ```go
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
 	ttl := 30 // seconds
-	_, err := g.Etcd().Create(fmt.Sprintf("/%v/state/%v", g.name(), a.id), "0", ttl)
-	if err != nil {
-		log.Fatalf("%v: error: %v", a.id, err)
-	}
+	g.Etcd().Create(fmt.Sprintf("/%v/state/%v", g.name(), a.id), "0", ttl)
 	...
 }
 ```
@@ -167,7 +155,6 @@ Nats:
 
     $ go get github.com/nats-io/gnatsd
     $ gnatsd
-    [19416] 2015/08/31 11:07:19.925002 [INF] Starting gnatsd version 0.6.1.beta
     [19416] 2015/08/31 11:07:19.925048 [INF] Listening for client connections on 0.0.0.0:4222
     [19416] 2015/08/31 11:07:19.925278 [INF] gnatsd is ready
     ...
