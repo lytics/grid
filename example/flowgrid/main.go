@@ -22,6 +22,7 @@ var (
 	producers   = flag.Int("producers", 3, "number of producers")
 	consumers   = flag.Int("consumers", 2, "number of consumers")
 	nodes       = flag.Int("nodes", 1, "number of nodes in the grid")
+	flows       = flag.Int("flows", 1, "number of flows to run in parallel where each flow will have the given number of producers and consumers")
 	minsize     = flag.Int("minsize", 1000, "minimum message size, actual size will be in the range [min,2*min]")
 	mincount    = flag.Int("mincount", 100000, "minimum message count, actual count will be in the range [min,2*min]")
 )
@@ -35,7 +36,7 @@ func main() {
 	natsservers := strings.Split(*natsconnect, ",")
 
 	conf := &Conf{
-		GridName:    "supergrid",
+		GridName:    "flowgrid",
 		MinSize:     *minsize,
 		MinCount:    *mincount,
 		NrProducers: *producers,
@@ -91,7 +92,7 @@ func main() {
 	case <-w.WatchUntil(*nodes):
 	}
 
-	for i := 0; i < 50; i++ {
+	for i := 0; i < *flows; i++ {
 		flow := NewFlow(i)
 
 		rp := ring.New(flow.NewFlowName("producer"), conf.NrProducers, g)
@@ -121,6 +122,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("error: failed to start: %v, due to: %v", "leader", err)
 		}
+
+		time.Sleep(5 * time.Second)
 	}
 
 	sig := make(chan os.Signal, 1)
