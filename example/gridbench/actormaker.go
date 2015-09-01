@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/lytics/grid"
 )
@@ -21,15 +20,15 @@ func newActorMaker(conf *Conf) (*maker, error) {
 	return &maker{conf: conf}, nil
 }
 
-func (m *maker) MakeActor(id string) (grid.Actor, error) {
-	switch {
-	case strings.Contains(id, "leader"):
-		return NewLeaderActor(id, m.conf), nil
-	case strings.Contains(id, "producer"):
-		return NewProducerActor(id, m.conf), nil
-	case strings.Contains(id, "consumer"):
-		return NewConsumerActor(id, m.conf), nil
+func (m *maker) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
+	switch def.Type {
+	case "leader":
+		return NewLeaderActor(def, m.conf), nil
+	case "producer":
+		return NewProducerActor(def, m.conf), nil
+	case "consumer":
+		return NewConsumerActor(def, m.conf), nil
 	default:
-		return nil, fmt.Errorf("name does not map to any type of actor: %v", id)
+		return nil, fmt.Errorf("type does not map to any type of actor: %v", def.Type)
 	}
 }

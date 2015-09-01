@@ -8,44 +8,44 @@ import (
 	"github.com/lytics/grid/condition"
 )
 
-func NewConsumerActor(id string, conf *Conf) grid.Actor {
-	return &ConsumerActor{id: id, conf: conf}
+func NewConsumerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
+	return &ConsumerActor{def: def, conf: conf}
 }
 
 type ConsumerActor struct {
-	id   string
+	def  *grid.ActorDef
 	conf *Conf
 }
 
 func (a *ConsumerActor) ID() string {
-	return a.id
+	return a.def.ID()
 }
 
 func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
-	// Report liveness every 15 seconds.
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
+	c, err := grid.NewConn(a.ID(), g.Nats())
+	if err != nil {
+		log.Fatalf("%v: error: %v", a.ID(), err)
+	}
 
 	// Watch the producers. First wait for them to all join.
 	// Then report final results when all the producers
 	// have exited.
 	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "producers")
 	<-w.WatchUntil(a.conf.NrProducers)
-	log.Printf("%v: all producers joined", a.id)
+	log.Printf("%v: all producers joined", a.ID())
 
 	// Leader will track when all the consumers have exited,
 	// and report final answer.
-	j := condition.NewJoin(g.Etcd(), 30*time.Second, g.Name(), "consumers", a.id)
-	err := j.Join()
+	j := condition.NewJoin(g.Etcd(), 30*time.Second, g.Name(), "consumers", a.ID())
+	err = j.Join()
 	if err != nil {
-		log.Fatalf("%v: failed to register: %v", a.id, err)
+		log.Fatalf("%v: failed to register: %v", a.ID(), err)
 	}
 	defer j.Exit()
 
-	c, err := grid.NewConn(a.id, g.Nats())
-	if err != nil {
-		log.Fatalf("%v: error: %v", a.id, err)
-	}
+	// Report liveness every 15 seconds.
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
 
 	n := 0
 	counts := make(map[string]int)
@@ -56,14 +56,14 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 		case <-ticker.C:
 			err := j.Alive()
 			if err != nil {
-				log.Fatalf("%v: failed to report liveness: %v", a.id, err)
+				log.Fatalf("%v: failed to report liveness: %v", a.ID(), err)
 			}
 		case <-w.WatchError():
-			log.Printf("%v: fatal: %v", a.id, err)
+			log.Printf("%v: fatal: %v", a.ID(), err)
 			return true
 		case <-w.WatchUntil(0):
 			for p, n := range counts {
-				c.Send("leader", &ResultMsg{Producer: p, Count: n, From: a.id})
+				c.Send("leader", &ResultMsg{Producer: p, Count: n, From: a.ID()})
 			}
 			return true
 		case m := <-c.ReceiveC():
@@ -72,7 +72,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 				counts[m.Producer]++
 				n++
 				if n%10000 == 0 {
-					log.Printf("%v: received: %v", a.id, n)
+					log.Printf("%v: received: %v", a.ID(), n)
 				}
 			}
 		}

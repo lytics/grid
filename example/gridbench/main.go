@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -92,22 +91,22 @@ func main() {
 	}
 
 	rp := ring.New("producer", conf.NrProducers, g)
-	for _, name := range rp.Names() {
-		err := g.StartActor(name)
+	for _, def := range rp.ActorDefs() {
+		err := g.StartActor(def)
 		if err != nil {
-			log.Fatalf("error: failed to start: %v, due to: %v", name, err)
+			log.Fatalf("error: failed to start: %v, due to: %v", def, err)
 		}
 	}
 
 	rc := ring.New("consumer", conf.NrConsumers, g)
-	for _, name := range rc.Names() {
-		err := g.StartActor(name)
+	for _, def := range rc.ActorDefs() {
+		err := g.StartActor(def)
 		if err != nil {
-			log.Fatalf("error: failed to start: %v, due to: %v", name, err)
+			log.Fatalf("error: failed to start: %v, due to: %v", def, err)
 		}
 	}
 
-	err = g.StartActor("leader")
+	err = g.StartActor(grid.NewActorDef("leader"))
 	if err != nil {
 		log.Fatalf("error: failed to start: %v, due to: %v", "leader", err)
 	}
@@ -121,8 +120,4 @@ func main() {
 	case <-exit:
 		log.Printf("Shutting down, grid exited")
 	}
-}
-
-func NewName(role string, part int) string {
-	return fmt.Sprintf("%v.%v", role, part)
 }

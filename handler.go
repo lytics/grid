@@ -18,17 +18,17 @@ func newHandler(g *grid, a Actor) *actorhandler {
 	}
 }
 
-// ID makes actorHandler a metafora.Task
+// ID makes actorhandler a metafora.Task
 func (h *actorhandler) ID() string {
 	return h.a.ID()
 }
 
-// Run + Stop make actorHandler a metafora.Handler
+// Run + Stop makes actorhandler a metafora.Handler
 func (h *actorhandler) Run() bool {
 	return h.a.Act(h.g, h.exit)
 }
 
-// Stop + Run make actorHandler a metafora.Handler
+// Stop + Run makes actorhandler a metafora.Handler
 func (h *actorhandler) Stop() {
 	h.stoponce.Do(func() {
 		close(h.exit)

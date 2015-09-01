@@ -1,6 +1,7 @@
 package grid
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -16,7 +17,7 @@ type Grid interface {
 	Start() (<-chan bool, error)
 	Stop()
 	Name() string
-	StartActor(name string) error
+	StartActor(def *ActorDef) error
 	Nats() *nats.EncodedConn
 	Etcd() *etcd.Client
 }
@@ -60,6 +61,7 @@ func (g *grid) Etcd() *etcd.Client {
 	return g.etcdclient
 }
 
+// Name of the grid.
 func (g *grid) Name() string {
 	return g.name
 }
@@ -90,8 +92,13 @@ func (g *grid) Start() (<-chan bool, error) {
 
 	// Define the metafora new task function.
 	ec.NewTask = func(id, value string) metafora.Task {
-		receiver := ActorName(id)
-		a, err := g.maker.MakeActor(receiver.ID())
+		def := NewActorDef(id)
+		err := json.Unmarshal([]byte(value), def)
+		if err != nil {
+			log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
+			return nil
+		}
+		a, err := g.maker.MakeActor(def)
 		if err != nil {
 			log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
 			return nil
@@ -149,13 +156,13 @@ func (g *grid) Stop() {
 	}
 }
 
-// StartActor starts one actor of the given name, if the
-// actor is already running no error is returned.
-func (g *grid) StartActor(name string) error {
+// StartActor starts one actor of the given name, if the actor is already
+// running no error is returned.
+func (g *grid) StartActor(def *ActorDef) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	err := g.metaclient.SubmitTask(ActorName(name))
+	err := g.metaclient.SubmitTask(def)
 	if err != nil {
 		switch err := err.(type) {
 		case *etcd.EtcdError:

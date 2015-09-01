@@ -9,7 +9,7 @@ import (
 )
 
 type Ring interface {
-	Names() []string
+	ActorDefs() []*grid.ActorDef
 	ByInt(key int) string
 	ByUint32(key uint32) string
 	ByUint64(key uint64) string
@@ -27,12 +27,12 @@ func New(name string, nparts int, g grid.Grid) Ring {
 	return &ring{name: name, nparts: nparts, g: g}
 }
 
-// Names returns the list of actor names in this ring. They
+// ActorDefs returns the list of actor names in this ring. They
 // may or may not be running.
-func (r *ring) Names() []string {
-	names := make([]string, r.nparts)
+func (r *ring) ActorDefs() []*grid.ActorDef {
+	names := make([]*grid.ActorDef, r.nparts)
 	for i := 0; i < r.nparts; i++ {
-		names[i] = r.actorName(i)
+		names[i] = r.actorDef(i)
 	}
 	return names
 }
@@ -118,6 +118,12 @@ func (r *ring) ByHashedUint64(key uint64) string {
 	return r.actorName(int(part))
 }
 
+func (r *ring) actorDef(part int) *grid.ActorDef {
+	a := grid.NewActorDef(r.actorName(part))
+	a.DefineType(r.name)
+	return a
+}
+
 func (r *ring) actorName(part int) string {
-	return fmt.Sprintf("%s-ring-%d-%d", r.name, r.nparts, part)
+	return fmt.Sprintf("%s-ring-%d", r.name, part)
 }

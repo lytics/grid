@@ -8,29 +8,30 @@ import (
 	"github.com/lytics/grid/condition"
 )
 
-func NewLeaderActor(id string, conf *Conf) grid.Actor {
-	return &LeaderActor{id: id, conf: conf}
+func NewLeaderActor(def *grid.ActorDef, conf *Conf) grid.Actor {
+	return &LeaderActor{def: def, conf: conf}
 }
 
 type LeaderActor struct {
-	id   string
+	def  *grid.ActorDef
 	conf *Conf
 }
 
 func (a *LeaderActor) ID() string {
-	return a.id
+	return a.def.ID()
 }
 
 func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
-	c, err := grid.NewConn(a.id, g.Nats())
+	c, err := grid.NewConn(a.ID(), g.Nats())
 	if err != nil {
-		log.Fatalf("%v: error: %v", a.id, err)
+		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
+	defer c.Close()
 
 	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "consumers")
 	<-w.WatchUntil(a.conf.NrConsumers)
 
-	log.Printf("%v: all consumers joined", a.id)
+	log.Printf("%v: all consumers joined", a.ID())
 
 	ccounts := make(map[string]int)
 	pcounts := make(map[string]int)
@@ -40,16 +41,16 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 		case <-exit:
 			return true
 		case err := <-w.WatchError():
-			log.Printf("%v: fatal: %v", a.id, err)
+			log.Printf("%v: fatal: %v", a.ID(), err)
 			return true
 		case <-w.WatchUntil(0):
 			aggrate := float64(0)
 			for p, n := range pcounts {
 				rate := float64(n) / pdurations[p]
 				aggrate += rate
-				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v, rate: %2.f m/s", a.id, p, n, ccounts[p], n-ccounts[p], rate)
+				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v, rate: %2.f m/s", a.ID(), p, n, ccounts[p], n-ccounts[p], rate)
 			}
-			log.Printf("%v: aggragate rate: %.2f m/s", a.id, aggrate)
+			log.Printf("%v: aggragate rate: %.2f m/s", a.ID(), aggrate)
 			return true
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {

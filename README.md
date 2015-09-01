@@ -24,7 +24,7 @@ Scheduling work is done by calling `StartActor`:
 func main() {
     g := grid.New(name, etcdservers, natsservers, maker)
     g.Start()
-    g.StartActor("counter")
+    g.StartActor(grid.NewActorDef("counter"))
     ...
 }
 ```
@@ -33,10 +33,11 @@ Scheduled units of work are called actors, which are made by user code implement
 ```go
 type actormaker struct {}
 
-func (m *actormaker) MakeActor(name string) (Actor, error) {
-    if name == "counter" {
+func (m *actormaker) MakeActor(def grid.ActorDef) (Actor, error) {
+    swtich def.Type {
+    case "counter":
         return NewCounterActor(), nil
-    } else {
+    case "other":
         return NewOtherActor(), nil
     }
 }
@@ -45,12 +46,12 @@ func (m *actormaker) MakeActor(name string) (Actor, error) {
 An actor is any Go type that implements the two methods of the `Actor` interface:
 ```go
 type counteractor struct {
-    id    string
+    def   *grid.ActorDef
     count int
 }
 
 func (a *counteractor) ID() {
-    return a.id
+    return a.def.ID()
 }
 
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
@@ -70,19 +71,19 @@ func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
 An actor can communicate with any other actor it knows the name of:
 ```go
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
-    c, _ := grid.NewConn(a.id, g.Nats())
+    c, _ := grid.NewConn(a.ID(), g.Nats())
     c.Send("other", "I have started counting")
     ...
 }
 
 func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
-    c, _ := grid.NewConn(a.id, g.Nats())
+    c, _ := grid.NewConn(a.ID(), g.Nats())
     for {
         select {
         case <-exit:
             return true
         case m := <-c.ReceiveC():
-            log.Printf("%v: got message: %v", a.id, m)
+            log.Printf("%v: got message: %v", a.ID(), m)
         }
     }
 }
@@ -92,7 +93,8 @@ An actor can schedule other actors:
 ```go
 func (a *leaderactor) Act(g grid.Grid, exit <-chan bool) bool {
     for i:= 0; i<10; i++ {
-        g.StartActor(fmt.Sprintf("follower-%d", i))
+        name := fmt.Sprintf("follower-%d", i)
+        g.StartActor(grid.NewActorDef(name).DefineType("follower"))
     }
     ...
 }
@@ -102,7 +104,7 @@ Each actor has access to Etcd for state and coordination:
 ```go
 func (a *counteractor) Act(g grid.Grid, exit <-chan bool) bool {
 	ttl := 30
-    path := fmt.Sprintf("/%v/state/%v", g.Name(), a.id)
+    path := fmt.Sprintf("/%v/state/%v", g.Name(), a.ID())
 	g.Etcd().Create(path, "0", ttl)
 	...
 }
@@ -117,7 +119,7 @@ func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
 }
 ```
 
-## Getting Started With Examples
+### Getting Started With Examples
 
 Running the examples requires Etcd and Nats services running on `localhost`. Do the following to
 get both running on your system:
