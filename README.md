@@ -76,7 +76,7 @@ func (a *leaderactor) Act(g grid.Grid, exit <-chan bool) bool {
 
 Each actor has access to Etcd for state and coordination:
 ```go
-func (a *statfulactor) Act(g grid.Grid, exit <-chan bool) bool {
+func (a *statefulactor) Act(g grid.Grid, exit <-chan bool) bool {
     ttl := uint64(30)
     loc := strings.Join([]string{g.Name(), "state", a.ID()}, "/")
     g.Etcd().Create(loc, "state", ttl)
