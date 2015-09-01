@@ -5,7 +5,7 @@ Grid is a library to build distributed processes. A library in contrast to being
 It is  simple to use and provides the basic building blocks for distributed processing:
 
  1. Passing messages, which in grid is done via NATS.
- 1. Coorinating the process instances, which in grid is done via ETCD.
+ 1. Coorinating process and task instances, which in grid is done via ETCD.
  1. Scheduling tasks across the processes, which in grid is done via METAFORA.
 
 ### Quick Introduction
@@ -18,16 +18,15 @@ Configuring and starting are done in two lines:
 
 Scheduling work is done by calling StartActor:
 ```go
-    g.StartActor(grid.NewActorDef("counter"))
-}
+    g.StartActor(grid.NewActorDef("hello"))
 ```
 
 Scheduled units of work are called actors, which are made by user code implementing the ActorMaker interface:
 ```go
 func (m *actormaker) MakeActor(def grid.ActorDef) (Actor, error) {
     swtich def.Type {
-    case "counter":
-        return &CounterActor{def}, nil
+    case "hello":
+        return &HelloActor{def}, nil
     case "other":
         return &OtherActor{def}, nil
     }
@@ -110,7 +109,7 @@ Nats:
 
     $ go get -u github.com/nats-io/gnatsd
     $ gnatsd
-    [19416] 2015/08/31 11:07:19.925048 [INF] Listening for client connections on 0.0.0.0:4222
+    2015/08/31 11:07:19.925048 [INF] Listening for client connections on 0.0.0.0:4222
     ...
 
 With those services running, look at the [example](example/) directory. The [firstgrid](example/firstgrid/)
