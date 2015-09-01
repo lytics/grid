@@ -5,7 +5,7 @@ Grid is a library to build distributed processes. A library in contrast to being
 It is  simple to use and provides the basic building blocks for distributed processing:
 
  1. Passing messages, which in grid is done via NATS.
- 1. Coorinating process and task instances, which in grid is done via ETCD.
+ 1. Coorinating task and process instances, which in grid is done via ETCD.
  1. Scheduling tasks across the processes, which in grid is done via METAFORA.
 
 ### Quick Introduction
