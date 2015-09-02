@@ -70,4 +70,12 @@ Things that can be done with the condition library:
 	if err != nil {
 		// State failed to read because of deserialization error.
 	}
+
+	stale, err := s.Remove()
+	if stale {
+		// State failed to remove because of a stale view of the state.
+	}
+	if err != nil {
+		// State failed to remove for another type of error.
+	}
 ```
