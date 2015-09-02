@@ -26,12 +26,12 @@ func main() {
 	}
 
 	// Start the leader actor.
-	err = g.StartActor(Leader)
+	err = g.StartActor(grid.NewActorDef(Leader))
 	if err != nil {
 		log.Fatalf("error: failed to start actor: %v", err)
 	}
 	// Start the follower actor.
-	err = g.StartActor(Follower)
+	err = g.StartActor(grid.NewActorDef(Follower))
 	if err != nil {
 		log.Fatalf("error: failed to start actor: %v", err)
 	}
@@ -53,25 +53,25 @@ type maker struct{}
 
 // MakeActor, maps names to actor types and returns instances
 // of those types.
-func (m *maker) MakeActor(name string) (grid.Actor, error) {
-	return &actor{id: name}, nil
+func (m *maker) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
+	return &actor{def: def}, nil
 }
 
 type actor struct {
-	id string
+	def *grid.ActorDef
 }
 
 // ID, must match the name passed to MakeActor.
 func (a *actor) ID() string {
-	return a.id
+	return a.def.ID()
 }
 
 // Act, returns a value of true to signal that it is
 // done and should not be scheduled again.
 func (a *actor) Act(g grid.Grid, exit <-chan bool) bool {
-	c, err := grid.NewConn(a.id, g.Nats())
+	c, err := grid.NewConn(a.ID(), g.Nats())
 	if err != nil {
-		log.Printf("%v: error: %v", a.id, err)
+		log.Printf("%v: error: %v", a.ID(), err)
 	}
 	defer c.Close()
 	ticker := time.NewTicker(2 * time.Second)
@@ -82,10 +82,10 @@ func (a *actor) Act(g grid.Grid, exit <-chan bool) bool {
 			return true
 		case now := <-ticker.C:
 			if a.ID() == Leader {
-				c.Send(Follower, &Msg{Time: now, From: a.id})
+				c.Send(Follower, &Msg{Time: now, From: a.ID()})
 			}
 		case m := <-c.ReceiveC():
-			log.Printf("%v: received: %v", a.id, m)
+			log.Printf("%v: received: %v", a.ID(), m)
 		}
 	}
 }
