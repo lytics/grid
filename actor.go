@@ -27,7 +27,9 @@ func (a *ActorDef) ID() string {
 }
 
 // DefineType defaults to actor name. Commonly used by the ActorMaker
-// to switch on Type. Can we changed by user code if needed.
+// to switch on Type. This method is called if there are many actors
+// with names like "consumer-0", "consumer-1", "consumer-2", etc.
+// But all of them are really of "consumer" type.
 func (a *ActorDef) DefineType(t string) *ActorDef {
 	a.Type = t
 	return a
