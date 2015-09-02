@@ -98,14 +98,14 @@ func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
 Running the examples requires Etcd and Nats services running on `localhost`. Do the following to
 get both running on your system:
 
-Etcd:
+Etcd, get and run:
 
     $ go get -u github.com/coreos/etcd
     $ etcd
     2015/08/31 11:06:08 etcdmain: listening for client requests on http://localhost:2379
     ...
 
-Nats:
+Nats, get and run:
 
     $ go get -u github.com/nats-io/gnatsd
     $ gnatsd
