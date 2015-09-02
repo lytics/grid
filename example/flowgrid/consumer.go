@@ -40,15 +40,15 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 
 	// Leader will track when all the consumers have exited,
 	// and report final answer.
-	j := condition.NewJoin(g.Etcd(), 1*time.Minute, g.Name(), "consumers", a.Flow().Name(), a.ID())
+	j := condition.NewJoin(g.Etcd(), 5*time.Minute, g.Name(), "consumers", a.Flow().Name(), a.ID())
 	err = j.Join()
 	if err != nil {
 		log.Fatalf("%v: failed to register: %v", a.ID(), err)
 	}
 	defer j.Exit()
 
-	// Report liveness every 15 seconds.
-	ticker := time.NewTicker(15 * time.Second)
+	// Report liveness.
+	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 
 	n := 0
@@ -75,7 +75,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			case DataMsg:
 				counts[m.Producer]++
 				n++
-				if n%10000 == 0 {
+				if n%100000 == 0 {
 					log.Printf("%v: received: %v", a.ID(), n)
 				}
 			}

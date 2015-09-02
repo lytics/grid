@@ -39,15 +39,15 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 
 	// Consumers will track when all producers exit,
 	// and send their final results then.
-	j := condition.NewJoin(g.Etcd(), 1*time.Minute, g.Name(), "producers", a.Flow().Name(), a.ID())
+	j := condition.NewJoin(g.Etcd(), 5*time.Minute, g.Name(), "producers", a.Flow().Name(), a.ID())
 	err = j.Join()
 	if err != nil {
 		log.Fatalf("%v: failed to register: %v", a.ID(), err)
 	}
 	defer j.Exit()
 
-	// Report liveness every 15 seconds.
-	ticker := time.NewTicker(15 * time.Second)
+	// Report liveness.
+	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 
 	r := ring.New(a.Flow().NewFlowName("consumer"), a.conf.NrConsumers, g)

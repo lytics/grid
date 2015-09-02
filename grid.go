@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
+	"runtime"
 	"sync"
+	"time"
 
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/lytics/metafora"
@@ -23,29 +26,39 @@ type Grid interface {
 }
 
 type grid struct {
-	name         string
-	etcdservers  []string
-	natsservers  []string
-	mu           *sync.Mutex
-	started      bool
-	stopped      bool
-	exit         chan bool
-	etcdclient   *etcd.Client
-	metaclient   metafora.Client
-	metaconsumer *metafora.Consumer
-	natsconn     *nats.EncodedConn
-	maker        ActorMaker
+	dice           *rand.Rand
+	name           string
+	etcdservers    []string
+	natsservers    []string
+	mu             *sync.Mutex
+	started        bool
+	stopped        bool
+	exit           chan bool
+	etcdclient     *etcd.Client
+	etcdclientpool []*etcd.Client
+	metaclient     metafora.Client
+	metaconsumer   *metafora.Consumer
+	natsconn       *nats.EncodedConn
+	natsconnpool   []*nats.EncodedConn
+	maker          ActorMaker
 }
 
 func New(name string, etcdservers []string, natsservers []string, m ActorMaker) Grid {
+	s := int64(0)
+	for i := 0; i < 100; i++ {
+		s += time.Now().UnixNano()
+	}
 	return &grid{
-		name:        name,
-		etcdservers: etcdservers,
-		natsservers: natsservers,
-		mu:          new(sync.Mutex),
-		stopped:     true,
-		exit:        make(chan bool),
-		maker:       m,
+		name:           name,
+		dice:           rand.New(rand.NewSource(s)),
+		etcdservers:    etcdservers,
+		natsservers:    natsservers,
+		mu:             new(sync.Mutex),
+		stopped:        true,
+		exit:           make(chan bool),
+		maker:          m,
+		natsconnpool:   make([]*nats.EncodedConn, 2*runtime.NumCPU()),
+		etcdclientpool: make([]*etcd.Client, 2*runtime.NumCPU()),
 	}
 }
 
@@ -103,7 +116,8 @@ func (g *grid) Start() (<-chan bool, error) {
 			log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
 			return nil
 		}
-		return newHandler(g, a)
+
+		return newHandler(g.fork(), a)
 	}
 
 	// Create the metafora consumer.
@@ -121,6 +135,43 @@ func (g *grid) Start() (<-chan bool, error) {
 		g.metaconsumer.Run()
 	}()
 
+	for i := 0; i < 2*runtime.NumCPU(); i++ {
+		natsconn, err := g.newNatsConn()
+		if err != nil {
+			return nil, err
+		}
+		g.natsconnpool[i] = natsconn
+		g.etcdclientpool[i] = etcd.NewClient(g.etcdservers)
+		if i == 0 {
+			g.natsconn = g.natsconnpool[0]
+			g.etcdclient = g.etcdclientpool[0]
+		}
+	}
+
+	return g.exit, nil
+}
+
+func (g *grid) fork() *grid {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	return &grid{
+		name:         g.name,
+		etcdservers:  g.etcdservers,
+		natsservers:  g.natsservers,
+		mu:           g.mu,
+		started:      g.started,
+		stopped:      g.stopped,
+		exit:         g.exit,
+		etcdclient:   g.etcdclientpool[g.dice.Intn(2*runtime.NumCPU())],
+		metaclient:   g.metaclient,
+		metaconsumer: g.metaconsumer,
+		natsconn:     g.natsconnpool[g.dice.Intn(2*runtime.NumCPU())],
+		maker:        g.maker,
+	}
+}
+
+func (g *grid) newNatsConn() (*nats.EncodedConn, error) {
 	// Create a nats connection, un-encoded.
 	natsop := nats.DefaultOptions
 	natsop.Servers = g.natsservers
@@ -133,13 +184,7 @@ func (g *grid) Start() (<-chan bool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encoded connection: %v", err)
 	}
-	g.natsconn = natsconn
-
-	// Create an etcd client, this is the "raw" etcd
-	// client.
-	g.etcdclient = etcd.NewClient(g.etcdservers)
-
-	return g.exit, nil
+	return natsconn, nil
 }
 
 // Stop the grid. Asks all actors to exit. Actors that return
