@@ -9,6 +9,7 @@ contained in this example.
 
 ## Running
 
+    $ go install
     $ firstgrid
 
 The code requires that Etcd and Nats are both running on localhost, 
