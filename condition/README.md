@@ -73,9 +73,9 @@ Things that can be done with the condition library:
 
 	stale, err := s.Remove()
 	if stale {
-		// State failed to remove because of a stale view of the state.
+		// State failed to delete because of a stale view of the state.
 	}
 	if err != nil {
-		// State failed to remove for another type of error.
+		// State failed to delete for another type of error.
 	}
 ```
