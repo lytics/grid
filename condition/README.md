@@ -7,6 +7,7 @@ Things that can be done with the condition library:
  1. Register that someone has joined a process.
  1. Watch the join, and signal when they leave.
  1. Watch a group of joins, until some count condition is satisfied.
+ 1. Store and fetch state with CAS operations and stale read flag.
 
 ### Join Example
  ```go
@@ -43,5 +44,30 @@ Things that can be done with the condition library:
 			case n := <-w.WatchCount():
 				log.Printf("there are %d participants registered", n)
 		}
+	}
+```
+
+### State Example
+```go
+	s := condition.NewState(g.Etcd(), 30*time.Second, "path", "to", "saved", "state")
+	err := s.Init(state)
+	if err != nil {
+		// State failed to be created.
+	}
+
+	stale, err := s.Store(state)
+	if stale {
+		// State failed to save because of a stale view of the state.
+	}
+	if err != nil {
+		// State failed to save becuase of another type of error.
+	}
+
+	stale, err := s.Fetch(state)
+	if stale {
+		// State was read, but its Etcd index indicates that updates happened.
+	}
+	if err != nil {
+		// State failed to read because of deserialization error.
 	}
 ```

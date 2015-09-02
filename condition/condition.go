@@ -1,12 +1,20 @@
 package condition
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-etcd/etcd"
 )
+
+type State interface {
+	Init(v interface{}) error
+	Fetch(v interface{}) (bool, error)
+	Store(v interface{}) (bool, error)
+	Remove() (bool, error)
+}
 
 type Join interface {
 	Join() error
@@ -24,6 +32,76 @@ type CountWatch interface {
 	WatchUntil(count int) <-chan bool
 	WatchCount() <-chan int
 	WatchError() <-chan error
+}
+
+func NewState(e *etcd.Client, ttl time.Duration, path ...string) State {
+	realttl := 1 * time.Second
+	if ttl.Seconds() > realttl.Seconds() {
+		realttl = ttl
+	}
+	return &state{
+		e:   e,
+		key: strings.Join(path, "/"),
+		ttl: uint64(realttl.Seconds()),
+	}
+}
+
+type state struct {
+	e     *etcd.Client
+	key   string
+	ttl   uint64
+	index uint64
+}
+
+func (s *state) Init(v interface{}) error {
+	newv, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	res, err := s.e.Create(s.key, string(newv), s.ttl)
+	if err != nil {
+		return err
+	}
+	s.index = res.EtcdIndex
+	return nil
+}
+
+func (s *state) Store(v interface{}) (bool, error) {
+	newv, err := json.Marshal(v)
+	if err != nil {
+		return false, err
+	}
+	res, err := s.e.CompareAndSwap(s.key, string(newv), s.ttl, "", s.index)
+	if err != nil {
+		if err.Error() == "You must give either prevValue or prevIndex." {
+			return true, err
+		}
+	}
+	s.index = res.EtcdIndex
+	return false, nil
+}
+
+func (s *state) Fetch(v interface{}) (bool, error) {
+	res, err := s.e.Get(s.key, false, false)
+	if err != nil {
+		return false, err
+	}
+	if res.Node == nil {
+		return false, nil
+	}
+	stale := s.index != res.EtcdIndex
+	s.index = res.EtcdIndex
+	return stale, json.Unmarshal([]byte(res.Node.Value), v)
+}
+
+func (s *state) Remove() (bool, error) {
+	res, err := s.e.CompareAndDelete(s.key, "", s.index)
+	stale := s.index != res.EtcdIndex
+	return stale, err
+}
+
+func (s *state) String() string {
+	return fmt.Sprintf("%d", s.index)
 }
 
 func NewJoin(e *etcd.Client, ttl time.Duration, path ...string) Join {
