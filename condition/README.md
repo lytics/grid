@@ -68,7 +68,7 @@ Things that can be done with the condition library:
 		// State was read, but its Etcd index indicates that updates happened.
 	}
 	if err != nil {
-		// State failed to read because of deserialization error.
+		// State failed to read because of anther type of error.
 	}
 
 	stale, err := s.Remove()
