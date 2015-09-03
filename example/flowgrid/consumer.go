@@ -32,6 +32,17 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 	defer c.Close()
 
+	state := NewConsumerState()
+	s := condition.NewState(g.Etcd(), 5*time.Minute, g.Name(), "state", a.Flow().Name(), a.ID())
+	err = s.Init(state)
+	if err != nil {
+		_, err := s.Fetch(state)
+		if err != nil {
+			log.Fatalf("%v: failed to init or fetch state: %v", a.ID(), err)
+		}
+	}
+	log.Printf("%v: starting with state: %v, index: %v", a.ID(), state.Counts, s.Index())
+
 	// Watch the producers. First wait for them to all join.
 	// Then report final results when all the producers
 	// have exited.
@@ -86,4 +97,12 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			}
 		}
 	}
+}
+
+type ConsumerState struct {
+	Counts map[string]int
+}
+
+func NewConsumerState() *ConsumerState {
+	return &ConsumerState{Counts: make(map[string]int)}
 }
