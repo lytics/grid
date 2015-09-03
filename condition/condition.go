@@ -14,6 +14,7 @@ type State interface {
 	Fetch(v interface{}) (bool, error)
 	Store(v interface{}) (bool, error)
 	Remove() (bool, error)
+	Index() uint64
 }
 
 type Join interface {
@@ -91,7 +92,7 @@ func (s *state) Fetch(v interface{}) (bool, error) {
 		return false, nil
 	}
 	stale := s.index != res.EtcdIndex
-	s.index = res.EtcdIndex
+	s.index = res.Node.ModifiedIndex
 	return stale, json.Unmarshal([]byte(res.Node.Value), v)
 }
 
@@ -99,6 +100,10 @@ func (s *state) Remove() (bool, error) {
 	res, err := s.e.CompareAndDelete(s.key, "", s.index)
 	stale := s.index != res.EtcdIndex
 	return stale, err
+}
+
+func (s *state) Index() uint64 {
+	return s.index
 }
 
 func (s *state) String() string {

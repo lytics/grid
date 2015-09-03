@@ -42,7 +42,7 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			log.Fatalf("%v: failed to init or fetch state: %v", a.ID(), err)
 		}
 	}
-	log.Printf("%v: starting with state: sent messages: %v", a.ID(), state.SentMessages)
+	log.Printf("%v: starting with state: sent messages: %v, index: %v", a.ID(), state.SentMessages, s.Index())
 
 	// Make some random length string data.
 	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-state.SentMessages)

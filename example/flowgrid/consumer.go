@@ -30,6 +30,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
+	defer c.Close()
 
 	// Watch the producers. First wait for them to all join.
 	// Then report final results when all the producers
@@ -79,7 +80,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			case DataMsg:
 				counts[m.Producer]++
 				n++
-				if n%10000000 == 0 {
+				if n%10000 == 0 {
 					log.Printf("%v: received: %v", a.ID(), n)
 				}
 			}

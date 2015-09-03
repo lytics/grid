@@ -48,12 +48,5 @@ func NewChaos() *Chaos {
 }
 
 func (c *Chaos) Roll() bool {
-	n := c.dice.Intn(100)
-	if n == 10 {
-		panic("chaos happened")
-	}
-	if n < 20 {
-		return true
-	}
-	return false
+	return c.dice.Intn(100) < 20
 }

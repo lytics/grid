@@ -42,7 +42,7 @@ func TestState(t *testing.T) {
 		t.Fatalf("s0: failed fetch with error: %v", err)
 	}
 	if stale {
-		t.Fatal("s0: failed fetch with stale set 'true', but should have been 'false'")
+		t.Fatalf("s0: failed fetch with stale set 'true', but should have been 'false'")
 	}
 
 	// Data read should match previous data.
@@ -55,7 +55,7 @@ func TestState(t *testing.T) {
 		t.Fatalf("s0: failed store with error: %v", err)
 	}
 	if stale {
-		t.Fatal("s0: failed store with stale set 'true', but should have been 'false'")
+		t.Fatalf("s0: failed store with stale set 'true', but should have been 'false'")
 	}
 
 	// Now set things up to perform
@@ -66,7 +66,7 @@ func TestState(t *testing.T) {
 		t.Fatal("s1: store should have failed with error, but did not")
 	}
 	if !stale {
-		t.Fatal("s1: store should have failed with stale set 'true', but did not")
+		t.Fatalf("s1: store should have failed with stale set 'true', but did not")
 	}
 
 	// Do another update to state via s0.
@@ -76,7 +76,7 @@ func TestState(t *testing.T) {
 		t.Fatalf("s0: store failed with error: %v", err)
 	}
 	if stale {
-		t.Fatal("s0: store failed with stale set 'true', but should have been 'falst'")
+		t.Fatalf("s0: store failed with stale set 'true', but should have been 'falst'")
 	}
 
 	// Now set things up to perform
@@ -88,5 +88,14 @@ func TestState(t *testing.T) {
 	}
 	if !stale {
 		t.Fatalf("s1: failed fetch with stale set 'false', but should have been set 'true'")
+	}
+
+	vd.Count = 4
+	stale, err = s1.Store(vd)
+	if err != nil {
+		t.Fatalf("s1: failed store with error: %v", err)
+	}
+	if stale {
+		t.Fatalf("s1: failed store with stale set 'true', but should have been set 'false'")
 	}
 }
