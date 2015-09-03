@@ -52,6 +52,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	defer ticker.Stop()
 
 	n := 0
+	chaos := NewChaos()
 	counts := make(map[string]int)
 	for {
 		select {
@@ -61,6 +62,9 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			err := j.Alive()
 			if err != nil {
 				log.Fatalf("%v: failed to report liveness: %v", a.ID(), err)
+			}
+			if chaos.Roll() {
+				return false
 			}
 		case <-w.WatchError():
 			log.Printf("%v: fatal: %v", a.ID(), err)
@@ -75,7 +79,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			case DataMsg:
 				counts[m.Producer]++
 				n++
-				if n%100000 == 0 {
+				if n%10000000 == 0 {
 					log.Printf("%v: received: %v", a.ID(), n)
 				}
 			}

@@ -33,8 +33,19 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 	defer c.Close()
 
+	state := NewProducerState(0)
+	s := condition.NewState(g.Etcd(), 5*time.Minute, g.Name(), "state", a.Flow().Name(), a.ID())
+	err = s.Init(state)
+	if err != nil {
+		_, err := s.Fetch(state)
+		if err != nil {
+			log.Fatalf("%v: failed to init or fetch state: %v", a.ID(), err)
+		}
+	}
+	log.Printf("%v: starting with state: sent messages: %v", a.ID(), state.SentMessages)
+
 	// Make some random length string data.
-	data := NewDataMaker(a.conf.MinSize, a.conf.MinCount)
+	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-state.SentMessages)
 	go data.Start(exit)
 
 	// Consumers will track when all producers exit,
@@ -51,30 +62,59 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	defer ticker.Stop()
 
 	r := ring.New(a.Flow().NewFlowName("consumer"), a.conf.NrConsumers, g)
-	n := 0
-	s := time.Now()
+	chaos := NewChaos()
+	start := time.Now()
 	for {
 		select {
 		case <-exit:
+			_, err := s.Store(state)
+			if err != nil {
+				log.Printf("%v: failed to store state on exit: %v", a.ID(), err)
+			}
 			return true
 		case <-ticker.C:
 			err := j.Alive()
 			if err != nil {
 				log.Fatalf("%v: failed to report liveness: %v", a.ID(), err)
 			}
+			_, err = s.Store(state)
+			if err != nil {
+				log.Fatalf("%v: failed to store state: %v", a.ID(), err)
+			}
+			if chaos.Roll() {
+				return false
+			}
 		case <-data.Done():
 			err := c.Flush()
 			if err != nil {
 				log.Fatalf("%v: error: %v", a.ID(), err)
 			}
-			c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: a.ID(), Count: n, From: a.ID(), Duration: time.Now().Sub(s).Seconds()})
+			c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: a.ID(), Count: state.SentMessages, From: a.ID(), Duration: time.Now().Sub(start).Seconds()})
+			_, err = s.Remove()
+			if err != nil {
+				log.Printf("%v: failed to clean up state: %v", err)
+			}
 			return true
 		case d := <-data.Next():
-			if n == 1 {
-				s = time.Now()
+			if state.SentMessages == 1 {
+				start = time.Now()
 			}
-			c.SendBuffered(r.ByInt(n), &DataMsg{Producer: a.ID(), Data: d})
-			n++
+			if state.SentMessages%10000 == 0 {
+				_, err := s.Store(state)
+				if err != nil {
+					log.Printf("%v: failed to store state: %v", a.ID(), err)
+				}
+			}
+			c.SendBuffered(r.ByInt(state.SentMessages), &DataMsg{Producer: a.ID(), Data: d})
+			state.SentMessages++
 		}
 	}
+}
+
+type ProducerState struct {
+	SentMessages int `json:"sent_messages"`
+}
+
+func NewProducerState(count int) *ProducerState {
+	return &ProducerState{SentMessages: count}
 }

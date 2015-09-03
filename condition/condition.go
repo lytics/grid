@@ -76,6 +76,7 @@ func (s *state) Store(v interface{}) (bool, error) {
 		if err.Error() == "You must give either prevValue or prevIndex." {
 			return true, err
 		}
+		return false, err
 	}
 	s.index = res.EtcdIndex
 	return false, nil

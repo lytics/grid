@@ -5,14 +5,13 @@ import (
 	"time"
 )
 
-func NewDataMaker(minsize, mincount int) *datamaker {
+func NewDataMaker(minsize, count int) *datamaker {
 	s := int64(0)
 	for i := 0; i < 10000; i++ {
 		s += time.Now().UnixNano()
 	}
 	dice := rand.New(rand.NewSource(s))
 	size := minsize + dice.Intn(minsize)
-	count := mincount + dice.Intn(mincount)
 
 	data := make([]string, 1000)
 	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")

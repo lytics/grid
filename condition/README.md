@@ -7,7 +7,7 @@ Things that can be done with the condition library:
  1. Register that someone has joined a process.
  1. Watch the join, and signal when they leave.
  1. Watch a group of joins, until some count condition is satisfied.
- 1. Store and fetch state with CAS operations and stale read flag.
+ 1. Store and fetch wrappers for CAS, with boolean flag to indicate stale store or fetch.
 
 ### Join Example
  ```go

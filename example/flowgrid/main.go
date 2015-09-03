@@ -23,8 +23,8 @@ var (
 	consumers   = flag.Int("consumers", 2, "number of consumers")
 	nodes       = flag.Int("nodes", 1, "number of nodes in the grid")
 	flows       = flag.Int("flows", 1, "number of flows to run in parallel where each flow will have the given number of producers and consumers")
-	minsize     = flag.Int("minsize", 1000, "minimum message size, actual size will be in the range [min,2*min]")
-	mincount    = flag.Int("mincount", 100000, "minimum message count, actual count will be in the range [min,2*min]")
+	msgsize     = flag.Int("msgsize", 1000, "minimum message size, actual size will be in the range [min,2*min]")
+	msgcount    = flag.Int("msgcount", 100000, "number of messages each producer should send")
 )
 
 func main() {
@@ -37,8 +37,8 @@ func main() {
 
 	conf := &Conf{
 		GridName:    "flowgrid",
-		MinSize:     *minsize,
-		MinCount:    *mincount,
+		MsgSize:     *msgsize,
+		MsgCount:    *msgcount,
 		NrProducers: *producers,
 		NrConsumers: *consumers,
 	}
