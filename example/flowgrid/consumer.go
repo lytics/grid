@@ -9,12 +9,13 @@ import (
 )
 
 func NewConsumerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
-	return &ConsumerActor{def: def, conf: conf}
+	return &ConsumerActor{def: def, conf: conf, counts: make(map[string]int)}
 }
 
 type ConsumerActor struct {
-	def  *grid.ActorDef
-	conf *Conf
+	def    *grid.ActorDef
+	conf   *Conf
+	counts map[string]int
 }
 
 func (a *ConsumerActor) ID() string {
@@ -31,17 +32,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
 	defer c.Close()
-
-	state := NewConsumerState()
-	s := condition.NewState(g.Etcd(), 5*time.Minute, g.Name(), "state", a.Flow().Name(), a.ID())
-	err = s.Init(state)
-	if err != nil {
-		_, err := s.Fetch(state)
-		if err != nil {
-			log.Fatalf("%v: failed to init or fetch state: %v", a.ID(), err)
-		}
-	}
-	log.Printf("%v: starting with state: %v, index: %v", a.ID(), state.Counts, s.Index())
+	defer a.SendCounts(c)
 
 	// Watch the producers. First wait for them to all join.
 	// Then report final results when all the producers
@@ -65,7 +56,6 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 
 	n := 0
 	chaos := NewChaos()
-	counts := make(map[string]int)
 	for {
 		select {
 		case <-exit:
@@ -73,7 +63,8 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 		case <-ticker.C:
 			err := j.Alive()
 			if err != nil {
-				log.Fatalf("%v: failed to report liveness: %v", a.ID(), err)
+				log.Printf("%v: failed to report liveness: %v", a.ID(), err)
+				return false
 			}
 			if chaos.Roll() {
 				return false
@@ -82,27 +73,26 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			log.Printf("%v: fatal: %v", a.ID(), err)
 			return true
 		case <-w.WatchUntil(0):
-			for p, n := range counts {
-				c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: p, Count: n, From: a.ID()})
-			}
 			return true
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case DataMsg:
-				counts[m.Producer]++
+				a.counts[m.Producer]++
 				n++
 				if n%10000 == 0 {
 					log.Printf("%v: received: %v", a.ID(), n)
+					a.SendCounts(c)
 				}
 			}
 		}
 	}
 }
 
-type ConsumerState struct {
-	Counts map[string]int
-}
-
-func NewConsumerState() *ConsumerState {
-	return &ConsumerState{Counts: make(map[string]int)}
+func (a *ConsumerActor) SendCounts(c grid.Conn) {
+	for p, n := range a.counts {
+		err := c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: p, Count: n, From: a.ID()})
+		if err != nil {
+			delete(a.counts, p)
+		}
+	}
 }
