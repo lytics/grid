@@ -299,7 +299,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 					msg := dec.New()
 					err = dec.Decode(msg)
 
-					ticker := time.NewTicker(5 * time.Second)
+					ticker = time.NewTicker(5 * time.Second)
 					if err != nil {
 						errmsg := fmt.Errorf("consumer: topic: %v: partition: %v: offset: %v: instance-type: %T: byte buffer length: %v: %v", topic, part, event.Offset, msg, len(buf.Bytes()), err)
 						select {
