@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/lytics/grid"
 	"github.com/lytics/grid/condition"
@@ -32,41 +33,62 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 	defer c.Close()
 
+	state := NewLeaderState()
+	s := condition.NewState(g.Etcd(), 5*time.Minute, g.Name(), "state", a.Flow().Name(), a.ID())
+	err = s.Init(state)
+	if err != nil {
+		_, err := s.Fetch(state)
+		if err != nil {
+			log.Fatalf("%v: failed to init or fetch state: %v", a.ID(), err)
+		}
+	}
+	log.Printf("%v: starting with state: %v, index: %v", a.ID(), state, s.Index())
+
 	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "consumers", a.Flow().Name())
 	<-w.WatchUntil(a.conf.NrConsumers)
 
 	log.Printf("%v: all consumers joined", a.ID())
 
-	ccounts := make(map[string]int)
-	pcounts := make(map[string]int)
-	pdurations := make(map[string]float64)
 	for {
 		select {
 		case <-exit:
+			_, err := s.Store(state)
+			if err != nil {
+				log.Printf("%v: failed to store state on exit: %v", a.ID(), err)
+			}
 			return true
 		case err := <-w.WatchError():
 			log.Printf("%v: fatal: %v", a.ID(), err)
-			return true
-		case <-w.WatchUntil(0):
-			aggrate := float64(0)
-			for p, n := range pcounts {
-				rate := float64(n) / pdurations[p]
-				aggrate += rate
-				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v, rate: %2.f m/s", a.ID(), p, n, ccounts[p], n-ccounts[p], rate)
+			_, err = s.Store(state)
+			if err != nil {
+				log.Printf("%v: failed to store state on exit: %v", a.ID(), err)
 			}
-			log.Printf("%v: aggragate rate: %.2f m/s", a.ID(), aggrate)
+			return false
+		case <-w.WatchUntil(0):
+			for p, n := range state.ProducerCounts {
+				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v", a.ID(), p, n, state.ConsumerCounts[p], n-state.ConsumerCounts[p])
+			}
 			return true
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case ResultMsg:
 				if strings.Contains(m.From, "producer") {
-					pcounts[m.Producer] = m.Count
-					pdurations[m.Producer] = m.Duration
+					state.ProducerCounts[m.Producer] = m.Count
 				}
 				if strings.Contains(m.From, "consumer") {
-					ccounts[m.Producer] += m.Count
+					state.ConsumerCounts[m.Producer] += m.Count
 				}
 			}
 		}
 	}
+}
+
+type LeaderState struct {
+	Start          time.Time
+	ConsumerCounts map[string]int
+	ProducerCounts map[string]int
+}
+
+func NewLeaderState() *LeaderState {
+	return &LeaderState{ConsumerCounts: make(map[string]int), ProducerCounts: make(map[string]int)}
 }

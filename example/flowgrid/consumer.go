@@ -79,8 +79,10 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			case DataMsg:
 				a.counts[m.Producer]++
 				n++
-				if n%10000 == 0 {
+				if n%1000000 == 0 {
 					log.Printf("%v: received: %v", a.ID(), n)
+				}
+				if n%10000 == 0 {
 					a.SendCounts(c)
 				}
 			}
@@ -92,6 +94,8 @@ func (a *ConsumerActor) SendCounts(c grid.Conn) {
 	for p, n := range a.counts {
 		err := c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: p, Count: n, From: a.ID()})
 		if err != nil {
+			log.Printf("%v: error: %v", a.ID(), err)
+		} else {
 			delete(a.counts, p)
 		}
 	}

@@ -42,7 +42,7 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			log.Fatalf("%v: failed to init or fetch state: %v", a.ID(), err)
 		}
 	}
-	log.Printf("%v: starting with state: sent messages: %v, index: %v", a.ID(), state.SentMessages, s.Index())
+	log.Printf("%v: starting with state: %v, index: %v", a.ID(), state.SentMessages, s.Index())
 
 	// Make some random length string data.
 	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-state.SentMessages)
@@ -90,6 +90,7 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 				log.Fatalf("%v: error: %v", a.ID(), err)
 			}
 			c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: a.ID(), Count: state.SentMessages, From: a.ID(), Duration: time.Now().Sub(start).Seconds()})
+			log.Printf("%v: sent: %v", a.ID(), state.SentMessages)
 			_, err = s.Remove()
 			if err != nil {
 				log.Printf("%v: failed to clean up state: %v", err)

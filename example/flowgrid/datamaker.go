@@ -55,7 +55,6 @@ func (d *datamaker) Done() <-chan bool {
 }
 
 func (d *datamaker) Start(exit <-chan bool) {
-	defer close(d.output)
 	sent := 0
 	for {
 		select {
