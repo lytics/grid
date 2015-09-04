@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/araddon/gou"
 )
 
 type Partitioner interface {
@@ -280,6 +281,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 			if err != nil {
 				log.Fatalf("fatal: consumer: topic: %v: %v", topic, err)
 			}
+			var ticker *time.Ticker
 			for {
 				select {
 				case err, ok := <-events.Errors():
@@ -297,18 +299,33 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 					msg := dec.New()
 					err = dec.Decode(msg)
 
+					ticker := time.NewTicker(5 * time.Second)
 					if err != nil {
 						errmsg := fmt.Errorf("consumer: topic: %v: partition: %v: offset: %v: instance-type: %T: byte buffer length: %v: %v", topic, part, event.Offset, msg, len(buf.Bytes()), err)
 						select {
 						case out <- NewReadable(event.Topic, event.Partition, event.Offset, errmsg):
 						case <-exit:
+						case <-ticker.C:
+							gou.Warnf("grid: slow reader of topic: %v, gird has been trying to send for at least %s or longer", topic, 5*time.Second)
+							select {
+							case out <- NewReadable(event.Topic, event.Partition, event.Offset, errmsg):
+							case <-exit:
+							}
 						}
 					} else {
 						select {
 						case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
 						case <-exit:
+						case <-ticker.C:
+							gou.Warnf("grid: slow reader of topic: %v, gird has been trying to send for at least %s or longer", topic, 5*time.Second)
+							select {
+							case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
+							case <-exit:
+							}
 						}
 					}
+					ticker.Stop()
+					ticker = nil
 				}
 			}
 		}(wg, part, offsets[i], out)
