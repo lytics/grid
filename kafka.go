@@ -307,9 +307,17 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 						case <-exit:
 						case <-ticker.C:
 							gou.Warnf("grid: slow reader of topic: %v, gird has been trying to send for at least %s or longer", topic, 5*time.Second)
+							ticker.Stop()
+							ticker = time.NewTicker(60 * time.Second)
 							select {
 							case out <- NewReadable(event.Topic, event.Partition, event.Offset, errmsg):
 							case <-exit:
+							case <-ticker.C:
+								gou.Warnf("grid: slow reader of topic: %v, gird has been trying to send for at least %s or longer", topic, 60*time.Second)
+								select {
+								case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
+								case <-exit:
+								}
 							}
 						}
 					} else {
@@ -318,9 +326,17 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 						case <-exit:
 						case <-ticker.C:
 							gou.Warnf("grid: slow reader of topic: %v, gird has been trying to send for at least %s or longer", topic, 5*time.Second)
+							ticker.Stop()
+							ticker = time.NewTicker(60 * time.Second)
 							select {
 							case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
 							case <-exit:
+							case <-ticker.C:
+								gou.Warnf("grid: slow reader of topic: %v, gird has been trying to send for at least %s or longer", topic, 60*time.Second)
+								select {
+								case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
+								case <-exit:
+								}
 							}
 						}
 					}
