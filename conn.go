@@ -35,6 +35,7 @@ type conn struct {
 	outputs     map[string][]interface{}
 	stoponce    *sync.Once
 	buffsize    int
+	sendretries int
 	sendtiemout time.Duration
 }
 
@@ -50,6 +51,7 @@ func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 		outputs:     make(map[string][]interface{}),
 		stoponce:    new(sync.Once),
 		buffsize:    100,
+		sendretries: 3,
 		sendtiemout: 2 * time.Second,
 	}
 	log.Printf("%v: connected", name)
@@ -99,7 +101,7 @@ func (c *conn) Send(receiver string, m interface{}) error {
 func (c *conn) SendBuffered(receiver string, m interface{}) error {
 	buf, ok := c.outputs[receiver]
 	if !ok {
-		buf = make([]interface{}, 0, c.buffsize)
+		buf = make([]interface{}, 0, c.buffsize+100)
 		c.outputs[receiver] = buf
 	}
 	buf = append(buf, m)
@@ -135,7 +137,8 @@ func (c *conn) Close() {
 }
 
 func (c *conn) send(receiver string, ms []interface{}) error {
-	for {
+	var t int
+	for ; t < c.sendretries; t++ {
 		ack := &Ack{}
 		err := c.ec.Request(receiver, &Envelope{Data: ms}, ack, c.sendtiemout)
 		if err == nil && ack != nil && ack.From != "" && ack.Count == len(ms) {
@@ -152,28 +155,48 @@ func (c *conn) send(receiver string, ms []interface{}) error {
 		}
 		select {
 		case <-c.exit:
-			return nil
+			return fmt.Errorf("failed to send before exit requested")
 		default:
+			// Exit not wanted, try again.
 		}
 	}
+	return fmt.Errorf("failed to send after %d attempts with total time: %s", t, time.Duration(t)*c.sendtiemout)
 }
 
 // SetConnBuffSize change the size of internal buffers, used by SendBuffered
-// function, to the given size.
+// function, to the given size. The default is 100.
 func SetConnBuffSize(c Conn, size int) {
 	switch c := c.(type) {
 	case *conn:
-		c.buffsize = size
+		if size < 0 {
+			c.buffsize = 1
+		} else {
+			c.buffsize = size
+		}
 	}
 }
 
 // SetConnSendTimeout changes the timeout of send operations. Setting
 // this low, while at the same time using a large buffer size with
 // large messages, may cause sends to error due to insufficient
-// time to send all data.
+// time to send all data. The default is 2 seconds.
 func SetConnSendTimeout(c Conn, timeout time.Duration) {
 	switch c := c.(type) {
 	case *conn:
 		c.sendtiemout = timeout
+	}
+}
+
+// SetConnSendRetries changes the number of attempts to resend data.
+// The total number of send attempts will be 1 + n. The default
+// is 3 retries.
+func SetConnSendRetries(c Conn, n int) {
+	switch c := c.(type) {
+	case *conn:
+		if n < 0 {
+			c.sendretries = 1
+		} else {
+			c.sendretries = 1 + n
+		}
 	}
 }

@@ -37,18 +37,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	// Watch the producers. First wait for them to all join.
 	// Then report final results when all the producers
 	// have exited.
-	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "producers", a.Flow().Name())
-	<-w.WatchUntil(a.conf.NrProducers)
-	log.Printf("%v: all producers joined", a.ID())
-
-	// Leader will track when all the consumers have exited,
-	// and report final answer.
-	j := condition.NewJoin(g.Etcd(), 5*time.Minute, g.Name(), "consumers", a.Flow().Name(), a.ID())
-	err = j.Join()
-	if err != nil {
-		log.Fatalf("%v: failed to register: %v", a.ID(), err)
-	}
-	defer j.Exit()
+	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), a.Flow().Name(), "producers", "done")
 
 	// Report liveness.
 	ticker := time.NewTicker(2 * time.Minute)
@@ -61,19 +50,15 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 		case <-exit:
 			return true
 		case <-ticker.C:
-			err := j.Alive()
-			if err != nil {
-				log.Printf("%v: failed to report liveness: %v", a.ID(), err)
-				return false
-			}
 			if chaos.Roll() {
 				return false
 			}
 		case <-w.WatchError():
-			log.Printf("%v: fatal: %v", a.ID(), err)
-			return true
-		case <-w.WatchUntil(0):
-			return true
+			log.Printf("%v: error: %v", a.ID(), err)
+			return false
+		case <-w.WatchUntil(a.conf.NrProducers):
+			a.SendCounts(c)
+			goto done
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case DataMsg:
@@ -85,6 +70,30 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 				if n%10000 == 0 {
 					a.SendCounts(c)
 				}
+			}
+		}
+	}
+
+done:
+	j := condition.NewJoin(g.Etcd(), 5*time.Minute, g.Name(), a.Flow().Name(), "consumers", "done", a.ID())
+	err = j.Join()
+	if err != nil {
+		log.Printf("%v: failed to register: %v", a.ID(), err)
+		return false
+	}
+	defer j.Exit()
+	for {
+		select {
+		case <-exit:
+			return true
+		case <-ticker.C:
+			err := j.Alive()
+			if err != nil {
+				log.Printf("%v: failed to report liveness: %v", a.ID(), err)
+				return false
+			}
+			if chaos.Roll() {
+				return false
 			}
 		}
 	}

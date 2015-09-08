@@ -32,6 +32,7 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
 	defer c.Close()
+	defer c.Flush()
 
 	state := NewProducerState(0)
 	s := condition.NewState(g.Etcd(), 5*time.Minute, g.Name(), "state", a.Flow().Name(), a.ID())
@@ -48,16 +49,6 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-state.SentMessages)
 	go data.Start(exit)
 
-	// Consumers will track when all producers exit,
-	// and send their final results then.
-	j := condition.NewJoin(g.Etcd(), 5*time.Minute, g.Name(), "producers", a.Flow().Name(), a.ID())
-	err = j.Join()
-	if err != nil {
-		log.Fatalf("%v: failed to register: %v", a.ID(), err)
-	}
-	defer j.Exit()
-
-	// Report liveness.
 	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 
@@ -73,10 +64,6 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			}
 			return true
 		case <-ticker.C:
-			err := j.Alive()
-			if err != nil {
-				log.Fatalf("%v: failed to report liveness: %v", a.ID(), err)
-			}
 			_, err = s.Store(state)
 			if err != nil {
 				log.Fatalf("%v: failed to store state: %v", a.ID(), err)
@@ -89,13 +76,17 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 			if err != nil {
 				log.Fatalf("%v: error: %v", a.ID(), err)
 			}
-			c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: a.ID(), Count: state.SentMessages, From: a.ID(), Duration: time.Now().Sub(start).Seconds()})
-			log.Printf("%v: sent: %v", a.ID(), state.SentMessages)
+			err = c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: a.ID(), Count: state.SentMessages, From: a.ID(), Duration: time.Now().Sub(start).Seconds()})
+			if err != nil {
+				log.Printf("%v: error: %v", a.ID(), err)
+			} else {
+				log.Printf("%v: sent: %v", a.ID(), state.SentMessages)
+			}
 			_, err = s.Remove()
 			if err != nil {
 				log.Printf("%v: failed to clean up state: %v", err)
 			}
-			return true
+			goto done
 		case d := <-data.Next():
 			if state.SentMessages == 1 {
 				start = time.Now()
@@ -106,8 +97,35 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 					log.Printf("%v: failed to store state: %v", a.ID(), err)
 				}
 			}
-			c.SendBuffered(r.ByInt(state.SentMessages), &DataMsg{Producer: a.ID(), Data: d})
+			err := c.SendBuffered(r.ByInt(state.SentMessages), &DataMsg{Producer: a.ID(), Data: d})
+			if err != nil {
+				log.Printf("%v: error: %v", a.ID(), err)
+			}
 			state.SentMessages++
+		}
+	}
+
+done:
+	j := condition.NewJoin(g.Etcd(), 5*time.Minute, g.Name(), a.Flow().Name(), "producers", "done", a.ID())
+	err = j.Join()
+	if err != nil {
+		log.Printf("%v: failed to register: %v", a.ID(), err)
+		return false
+	}
+	defer j.Exit()
+	for {
+		select {
+		case <-exit:
+			return true
+		case <-ticker.C:
+			err := j.Alive()
+			if err != nil {
+				log.Printf("%v: failed to report liveness: %v", a.ID(), err)
+				return false
+			}
+			if chaos.Roll() {
+				return false
+			}
 		}
 	}
 }

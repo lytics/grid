@@ -32,6 +32,7 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
 	defer c.Close()
+	defer c.Flush()
 
 	state := NewLeaderState()
 	s := condition.NewState(g.Etcd(), 5*time.Minute, g.Name(), "state", a.Flow().Name(), a.ID())
@@ -44,12 +45,11 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	}
 	log.Printf("%v: starting with state: %v, index: %v", a.ID(), state, s.Index())
 
-	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "consumers", a.Flow().Name())
-	<-w.WatchUntil(a.conf.NrConsumers)
+	wc := condition.NewCountWatch(g.Etcd(), exit, g.Name(), a.Flow().Name(), "consumers", "done")
+	wp := condition.NewCountWatch(g.Etcd(), exit, g.Name(), a.Flow().Name(), "producers", "done")
 
-	log.Printf("%v: all consumers joined", a.ID())
-
-	for {
+	donecnt := 0
+	for donecnt != 2 {
 		select {
 		case <-exit:
 			_, err := s.Store(state)
@@ -57,18 +57,24 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 				log.Printf("%v: failed to store state on exit: %v", a.ID(), err)
 			}
 			return true
-		case err := <-w.WatchError():
-			log.Printf("%v: fatal: %v", a.ID(), err)
+		case err := <-wc.WatchError():
+			log.Printf("%v: error: %v", a.ID(), err)
 			_, err = s.Store(state)
 			if err != nil {
 				log.Printf("%v: failed to store state on exit: %v", a.ID(), err)
 			}
 			return false
-		case <-w.WatchUntil(0):
-			for p, n := range state.ProducerCounts {
-				log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v", a.ID(), p, n, state.ConsumerCounts[p], n-state.ConsumerCounts[p])
+		case err := <-wp.WatchError():
+			log.Printf("%v: error: %v", a.ID(), err)
+			_, err = s.Store(state)
+			if err != nil {
+				log.Printf("%v: failed to store state on exit: %v", a.ID(), err)
 			}
-			return true
+			return false
+		case <-wc.WatchUntil(a.conf.NrConsumers):
+			donecnt++
+		case <-wp.WatchUntil(a.conf.NrProducers):
+			donecnt++
 		case m := <-c.ReceiveC():
 			switch m := m.(type) {
 			case ResultMsg:
@@ -81,6 +87,11 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 			}
 		}
 	}
+
+	for p, n := range state.ProducerCounts {
+		log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v", a.ID(), p, n, state.ConsumerCounts[p], n-state.ConsumerCounts[p])
+	}
+	return true
 }
 
 type LeaderState struct {

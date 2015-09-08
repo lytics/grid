@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-etcd/etcd"
@@ -253,23 +254,26 @@ func NewCountWatch(e *etcd.Client, exit <-chan bool, path ...string) CountWatch 
 		}
 	}()
 	return &countwatch{
+		mu:         new(sync.Mutex),
 		exit:       exit,
 		countc:     countc,
 		errorc:     errorc,
 		untilcache: make(map[int]<-chan bool),
-		cleancache: make(chan int),
 	}
 }
 
 type countwatch struct {
+	mu         *sync.Mutex
 	exit       <-chan bool
 	countc     chan int
 	errorc     chan error
 	untilcache map[int]<-chan bool
-	cleancache chan int
 }
 
 func (w *countwatch) WatchUntil(count int) <-chan bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if done, ok := w.untilcache[count]; ok {
 		return done
 	}
@@ -281,7 +285,10 @@ func (w *countwatch) WatchUntil(count int) <-chan bool {
 				return
 			case c := <-w.countc:
 				if c == count {
+					w.mu.Lock()
 					close(done)
+					delete(w.untilcache, count)
+					w.mu.Unlock()
 					return
 				}
 			}
