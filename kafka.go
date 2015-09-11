@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/araddon/gou"
 )
 
 type Partitioner interface {
@@ -280,6 +281,10 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 			if err != nil {
 				log.Fatalf("fatal: consumer: topic: %v: %v", topic, err)
 			}
+			var ticker *time.Ticker
+			var retrysteps = []interface{}{
+				time.Duration(5 * time.Second), time.Duration(1 * time.Minute), time.Duration(12 * time.Minute), fmt.Errorf(""),
+			}
 			for {
 				select {
 				case err, ok := <-events.Errors():
@@ -299,14 +304,52 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 
 					if err != nil {
 						errmsg := fmt.Errorf("consumer: topic: %v: partition: %v: offset: %v: instance-type: %T: byte buffer length: %v: %v", topic, part, event.Offset, msg, len(buf.Bytes()), err)
-						select {
-						case out <- NewReadable(event.Topic, event.Partition, event.Offset, errmsg):
-						case <-exit:
+
+					senderrmsg:
+						for _, step := range retrysteps {
+							switch s := step.(type) {
+							case time.Duration:
+								gou.Warnf("grid: slow reader of topic: %v, gird has been trying to send for at least %s or longer", topic, s)
+								ticker = time.NewTicker(s)
+								defer ticker.Stop()
+								select {
+								case out <- NewReadable(event.Topic, event.Partition, event.Offset, errmsg):
+									break senderrmsg
+								case <-exit:
+									break senderrmsg
+								case <-ticker.C:
+								}
+							case error:
+								gou.Warnf("grid: slow reader of topic: %v, gird has been trying to resend but its out of time", topic, s)
+								break senderrmsg
+							default:
+								gou.Warnf("grid: slow reader of topic: %v unknown step type %T", topic, s)
+								break senderrmsg
+							}
 						}
 					} else {
-						select {
-						case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
-						case <-exit:
+
+					sendmsg:
+						for _, step := range retrysteps {
+							switch s := step.(type) {
+							case time.Duration:
+								gou.Warnf("grid: slow reader of topic: %v, gird has been trying to send for at least %s or longer", topic, s)
+								ticker = time.NewTicker(s)
+								defer ticker.Stop()
+								select {
+								case out <- NewReadable(event.Topic, event.Partition, event.Offset, msg):
+									break sendmsg
+								case <-exit:
+									break sendmsg
+								case <-ticker.C:
+								}
+							case error:
+								gou.Warnf("grid: slow reader of topic: %v, gird has been trying to resend but its out of time", topic, s)
+								break sendmsg
+							default:
+								gou.Warnf("grid: slow reader of topic: %v unknown step type %T", topic, s)
+								break sendmsg
+							}
 						}
 					}
 				}
