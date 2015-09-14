@@ -7,6 +7,7 @@ import (
 	"github.com/lytics/grid"
 	"github.com/lytics/grid/condition"
 	"github.com/lytics/grid/ring"
+	"github.com/mdmarek/dfa"
 )
 
 func NewProducerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
@@ -27,6 +28,55 @@ func (a *ProducerActor) Flow() Flow {
 }
 
 func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
+	c, err := grid.NewConn(a.ID(), g.Nats())
+	if err != nil {
+		log.Fatalf("%v: error: %v", a.ID(), err)
+	}
+	defer c.Close()
+	defer c.Flush()
+
+	// States
+	Registering := dfa.State("registering")
+	Exiting := dfa.State("exiting")
+	// Letters
+	RegisterSuccess := dfa.Letter("register-success")
+	RegisterFaulure := dfa.Letter("register-failure")
+	ExitWanted := dfa.Letter("exit-wanted")
+
+	p := dfa.New()
+	p.SetStartState(Registering)
+	p.SetTerminalStates(Exiting)
+
+	p.SetTransition(Registering, RegisterSuccess, ExitWanted, a)
+	p.SetTransition(Registering, RegisterFaulure, ExitWanted, a)
+
+	in := make(chan dfa.Letter)
+	err = p.Run(in)
+	if err != nil {
+		log.Fatalf("%v: error: %v", a, err)
+	}
+
+	if _, err := p.Done(); err != nil {
+		log.Fatalf("%v: error: %v", a, err)
+	} else {
+		return true
+	}
+}
+
+type Producer struct {
+	g         grid.Grid
+	c         grid.Conn
+	exit      <-chan bool
+	lifecycle chan<- dfa.Letter
+}
+
+func NewProducer(g grid.Grid, c grid.Conn)
+
+func (a *Producer) Transition(from dfa.State, l dfa.Letter, to dfa.State) {
+	log.Println("%v: %v + %v -> %v", a, from, l, to)
+}
+
+func (a *Producer) Run(g grid.Grid, exit <-chan bool) <-chan dfa.Letter {
 	c, err := grid.NewConn(a.ID(), g.Nats())
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
