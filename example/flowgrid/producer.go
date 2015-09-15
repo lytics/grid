@@ -1,45 +1,46 @@
 package main
 
 import (
-	"container/ring"
 	"log"
 	"time"
 
 	"github.com/lytics/grid"
 	"github.com/lytics/grid/condition"
+	"github.com/lytics/grid/ring"
 	"github.com/mdmarek/dfa"
 )
 
-var (
-	// States
-	Registering = dfa.State("registering")
-	Exiting     = dfa.State("exiting")
-	// Letters
-	RegisterSuccess   = dfa.Letter("register-success")
-	RegisterFailure   = dfa.Letter("register-failure")
-	SendFailure       = dfa.Letter("send-failure")
-	SendSuccess       = dfs.Letter("send-success")
-	StoreStateFailure = dfa.Letter("store-state-failure")
-	EverybodyReady    = dfa.Letter("everybody-ready")
-	ExitWanted        = dfa.Letter("exit-wanted")
-	Terminal          = dfa.Letter("terminal")
-)
+type ProducerState struct {
+	SentMessages int `json:"sent_messages"`
+}
+
+func NewProducerState(count int) *ProducerState {
+	return &ProducerState{SentMessages: count}
+}
 
 func NewProducerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
-	return &ProducerActor{def: def, conf: conf}
+	return &ProducerActor{
+		def:    def,
+		conf:   conf,
+		flow:   Flow(def.Settings["flow"]),
+		events: make(chan dfa.Letter),
+	}
 }
 
 type ProducerActor struct {
-	def  *grid.ActorDef
-	conf *Conf
+	def      *grid.ActorDef
+	conf     *Conf
+	flow     Flow
+	grid     grid.Grid
+	conn     grid.Conn
+	exit     <-chan bool
+	events   chan dfa.Letter
+	started  condition.Join
+	finished condition.Join
 }
 
 func (a *ProducerActor) ID() string {
 	return a.def.ID()
-}
-
-func (a *ProducerActor) Flow() Flow {
-	return Flow(a.def.Settings["flow"])
 }
 
 func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
@@ -50,176 +51,178 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	defer c.Close()
 	defer c.Flush()
 
-	p := dfa.New()
-	p.SetStartState(Registering)
-	p.SetTerminalStates(Exiting)
+	a.conn = c
+	a.grid = g
+	a.exit = exit
 
-	p.SetTransition(Registering, RegisterSuccess, ExitWanted, a)
-	p.SetTransition(Registering, RegisterFailure, ExitWanted, a)
+	d := dfa.New()
+	d.SetStartState(Starting)
+	d.SetTerminalStates(Exiting, Terminating)
 
-	in := make(chan dfa.Letter)
-	err = p.Run(in)
+	d.SetTransition(Starting, EverybodyStarted, Running, a.Running)
+	d.SetTransition(Starting, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Starting, Exit, Exiting, a.Exiting)
+
+	d.SetTransition(Running, SendFailure, Resending, a.Resending)
+	d.SetTransition(Running, Terminal, Finishing, a.Finishing)
+	d.SetTransition(Running, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Running, Exit, Exiting, a.Exiting)
+
+	d.SetTransition(Resending, SendSuccess, Running, a.Running)
+	d.SetTransition(Resending, SendFailure, Resending, a.Resending)
+	d.SetTransition(Resending, Exit, Exiting, a.Exiting)
+
+	d.SetTransition(Finishing, EverybodyFinished, Terminating, a.Terminating)
+	d.SetTransition(Finishing, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Finishing, Exit, Exiting, a.Exiting)
+
+	a.events = make(chan dfa.Letter)
+	defer close(a.events)
+
+	err = d.Run(a.events)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a, err)
 	}
 
-	if _, err := p.Done(); err != nil {
+	final, err := d.Done()
+	if err != nil {
 		log.Fatalf("%v: error: %v", a, err)
-	} else {
+	}
+	if final == Terminating {
 		return true
 	}
+	return false
 }
 
-func (a *ProducerActor) Transition(from dfa.State, l dfa.Letter, to dfa.State) {
-	log.Println("%v: %v + %v -> %v", a, from, l, to)
-}
-
-func (a *ProducerActor) Act2(g grid.Grid, exit <-chan bool) <-chan dfa.Letter {
-	c, err := grid.NewConn(a.ID(), g.Nats())
-	if err != nil {
-		log.Fatalf("%v: error: %v", a.ID(), err)
-	}
-	defer c.Close()
-	defer c.Flush()
-
-done:
-	j := condition.NewJoin(g.Etcd(), 5*time.Minute, g.Name(), a.Flow().Name(), "producers", "done", a.ID())
-	err = j.Join()
-	if err != nil {
-		log.Printf("%v: failed to register: %v", a.ID(), err)
-		return false
-	}
-	defer j.Exit()
-	for {
-		select {
-		case <-exit:
-			return true
-		case <-ticker.C:
-			err := j.Alive()
-			if err != nil {
-				log.Printf("%v: failed to report liveness: %v", a.ID(), err)
-				return false
-			}
-			if chaos.Roll() {
-				return false
-			}
-		}
-	}
-}
-
-type ProducerState struct {
-	SentMessages int `json:"sent_messages"`
-}
-
-func NewProducerState(count int) *ProducerState {
-	return &ProducerState{SentMessages: count}
-}
-
-type Producer struct {
-	j      condition.Join
-	events chan dfa.Letter
-	exit   <-chan bool
-	conf   *Conf
-	grid.Grid
-	grid.Conn
-}
-
-func (p *Producer) Registering() {
-	p.reg = condition.NewJoin(p.Etcd(), 2*time.Minute, p.Name(), "producer", p.ID())
-	if err := p.j.Join(); err != nil {
-		p.events <- RegisterFailure
-	} else {
-		p.events <- RegisterSuccess
-	}
-	return
-}
-
-func (p *Producer) WaitingStart() {
+func (a *ProducerActor) Starting() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	w := condition.Watch(p.Etcd(), exit, g.Name(), "ready")
+	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "started", a.ID())
+	if err := j.Join(); err != nil {
+		a.events <- GeneralFailure
+		return
+	}
+	a.started = j
+
+	w := condition.NewCountWatch(a.grid.Etcd(), a.exit, a.grid.Name(), a.flow.Name(), "started")
 	for {
 		select {
+		case <-a.exit:
+			a.events <- Exit
+			return
 		case <-ticker.C:
-			if err := p.j.Alive(); err != nil {
-				p.events <- RegisterFailure
+			if err := a.started.Alive(); err != nil {
+				a.events <- GeneralFailure
 				return
 			}
-		case <-w.WatchUntil(p.conf.NrConsumers + p.conf.NrProducers + 1):
-			p.events <- EverybodyReady
+		case <-w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1):
+			a.events <- EverybodyStarted
 			return
 		}
 	}
 	return
 }
 
-func (p *Producer) WaitingFinish() {
+func (a *ProducerActor) Finishing() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 
+	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "finished", a.ID())
+	if err := j.Join(); err != nil {
+		a.events <- GeneralFailure
+		return
+	}
+	a.finished = j
+
+	w := condition.NewCountWatch(a.grid.Etcd(), a.exit, a.grid.Name(), a.flow.Name(), "finished")
+	for {
+		select {
+		case <-a.exit:
+			a.events <- Exit
+			return
+		case <-ticker.C:
+			if err := a.started.Alive(); err != nil {
+				a.events <- GeneralFailure
+				return
+			}
+			if err := a.finished.Alive(); err != nil {
+				a.events <- GeneralFailure
+				return
+			}
+		case <-w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1):
+			a.started.Exit()
+			a.finished.Exit()
+			a.events <- EverybodyFinished
+			return
+		}
+	}
+	return
 }
 
-func (p *Producer) Running() {
+func (a *ProducerActor) Running() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
 	state := NewProducerState(0)
-	s := condition.NewState(g.Etcd(), 5*time.Minute, g.Name(), "state", a.Flow().Name(), a.ID())
-	err = s.Init(state)
-	if err != nil {
-		_, err := s.Fetch(state)
-		if err != nil {
-			log.Fatalf("%v: failed to init or fetch state: %v", a.ID(), err)
+	s := condition.NewState(a.grid.Etcd(), 10*time.Minute, a.grid.Name(), a.flow.Name(), "state", a.ID())
+	if err := s.Init(state); err != nil {
+		if _, err := s.Fetch(state); err != nil {
+			a.events <- FetchStateFailure
+			return
 		}
 	}
 	log.Printf("%v: starting with state: %v, index: %v", a.ID(), state.SentMessages, s.Index())
 
 	// Make some random length string data.
 	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-state.SentMessages)
-	go data.Start(exit)
+	go data.Start(a.exit)
 
-	ticker := time.NewTicker(2 * time.Minute)
-	defer ticker.Stop()
-
-	r := ring.New(a.Flow().NewFlowName("consumer"), a.conf.NrConsumers, g)
+	r := ring.New(a.flow.NewContextualName("consumer"), a.conf.NrConsumers, a.grid)
 	chaos := NewChaos()
 	for {
 		select {
-		case <-exit:
-			p.events <- ExitWanted
+		case <-a.exit:
+			if _, err := s.Store(state); err != nil {
+				log.Printf("%v: failed to save state when exit requested", a)
+			}
+			a.events <- Exit
 			return
 		case <-ticker.C:
-			if err := p.j.Alive(); err != nil {
-				p.events <- RegisterFailure
+			if err := a.started.Alive(); err != nil {
+				a.events <- GeneralFailure
 			}
-			if _, err = s.Store(state); err != nil {
-				p.events <- StoreStateFailure
+			if _, err := s.Store(state); err != nil {
+				a.events <- GeneralFailure
 				return
 			}
 			if chaos.Roll() {
-				p.events <- ExitWanted
+				a.events <- Exit
 				return
 			}
 		case <-data.Done():
-			if err := c.SendBuffered(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: a.ID(), Count: state.SentMessages, From: a.ID()}); err != nil {
-				p.events <- SendFailure
+			if err := a.conn.SendBuffered(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: state.SentMessages, From: a.ID()}); err != nil {
+				a.events <- SendFailure
 				return
 			}
-			if err := c.Flush(); err != nil {
-				p.events <- SendFailure
+			if err := a.conn.Flush(); err != nil {
+				a.events <- SendFailure
 				return
 			}
-			_, err = s.Remove()
-			if err != nil {
+			if _, err := s.Remove(); err != nil {
 				log.Printf("%v: failed to clean up state: %v", err)
 			}
-			p.events <- Terminal
+			a.events <- Terminal
 			return
 		case d := <-data.Next():
 			if state.SentMessages%10000 == 0 {
 				if _, err := s.Store(state); err != nil {
-					p.events <- StoreStateFailure
+					a.events <- GeneralFailure
 					return
 				}
 			}
-			if err := c.SendBuffered(r.ByInt(state.SentMessages), &DataMsg{Producer: a.ID(), Data: d}); err != nil {
-				p.events <- SendFailure
+			if err := a.conn.SendBuffered(r.ByInt(state.SentMessages), &DataMsg{Producer: a.ID(), Data: d}); err != nil {
+				a.events <- SendFailure
 				return
 			}
 			state.SentMessages++
@@ -227,29 +230,35 @@ func (p *Producer) Running() {
 	}
 }
 
-func (p *Producer) Resending() {
-	fasttick := time.NewTicker(2 * time.Second)
-	defer fasttick.Stop()
-	slowtick := time.NewTicker(30 * time.Second)
-	defer slowtick.Stop()
+func (a *ProducerActor) Resending() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
-		case <-p.exit:
-			p.events <- ExitWanted
+		case <-a.exit:
+			a.events <- Exit
 			return
-		case <-fasttick.C:
-			if err := p.Flush(); err == nil {
-				p.events <- SendSuccess
-				return
+		case <-ticker.C:
+			if err := a.started.Alive(); err != nil {
+				log.Printf("%v: failed to report 'started' liveness, but ignoring to flush send buffers", a)
 			}
-		case <-slowtick.C:
-			if err := p.Flush(); err != nil {
-				p.events <- SendFailure
-				return
-			} else {
-				p.events <- SendSuccess
+			if err := a.conn.Flush(); err == nil {
+				a.events <- SendSuccess
 				return
 			}
 		}
 	}
+}
+
+func (a *ProducerActor) Exiting() {
+	if err := a.conn.Flush(); err != nil {
+		log.Printf("%v: failed to flush send buffers, trying again", a)
+		if err := a.conn.Flush(); err != nil {
+			log.Printf("%v: failed to flush send buffers, data is being dropped", a)
+		}
+	}
+}
+
+func (a *ProducerActor) Terminating() {
+	log.Printf("%v: terminating", a)
 }

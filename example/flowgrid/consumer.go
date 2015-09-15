@@ -6,16 +6,30 @@ import (
 
 	"github.com/lytics/grid"
 	"github.com/lytics/grid/condition"
+	"github.com/mdmarek/dfa"
 )
 
 func NewConsumerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
-	return &ConsumerActor{def: def, conf: conf, counts: make(map[string]int)}
+	return &ConsumerActor{
+		def:    def,
+		conf:   conf,
+		flow:   Flow(def.Settings["flow"]),
+		events: make(chan dfa.Letter),
+		counts: make(map[string]int),
+	}
 }
 
 type ConsumerActor struct {
-	def    *grid.ActorDef
-	conf   *Conf
-	counts map[string]int
+	def      *grid.ActorDef
+	conf     *Conf
+	flow     Flow
+	grid     grid.Grid
+	conn     grid.Conn
+	exit     <-chan bool
+	events   chan dfa.Letter
+	started  condition.Join
+	finished condition.Join
+	counts   map[string]int
 }
 
 func (a *ConsumerActor) ID() string {
@@ -23,7 +37,7 @@ func (a *ConsumerActor) ID() string {
 }
 
 func (a *ConsumerActor) Flow() Flow {
-	return Flow(a.def.Settings["flow"])
+	return a.flow
 }
 
 func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
@@ -32,34 +46,142 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
 	defer c.Close()
-	defer a.SendCounts(c)
+	defer c.Flush()
 
-	// Watch the producers. First wait for them to all join.
-	// Then report final results when all the producers
-	// have exited.
-	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), a.Flow().Name(), "producers", "done")
+	a.conn = c
+	a.grid = g
+	a.exit = exit
 
-	// Report liveness.
-	ticker := time.NewTicker(2 * time.Minute)
+	d := dfa.New()
+	d.SetStartState(Starting)
+	d.SetTerminalStates(Exiting, Terminating)
+
+	d.SetTransition(Starting, EverybodyStarted, Running, a.Running)
+	d.SetTransition(Starting, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Starting, Exit, Exiting, a.Exiting)
+
+	d.SetTransition(Running, SendFailure, Resending, a.Resending)
+	d.SetTransition(Running, Terminal, Finishing, a.Finishing)
+	d.SetTransition(Running, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Running, Exit, Exiting, a.Exiting)
+
+	d.SetTransition(Resending, SendSuccess, Running, a.Running)
+	d.SetTransition(Resending, SendFailure, Resending, a.Resending)
+	d.SetTransition(Resending, Exit, Exiting, a.Exiting)
+
+	d.SetTransition(Finishing, EverybodyFinished, Terminating, a.Terminating)
+	d.SetTransition(Finishing, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Finishing, Exit, Exiting, a.Exiting)
+
+	a.events = make(chan dfa.Letter)
+	defer close(a.events)
+
+	err = d.Run(a.events)
+	if err != nil {
+		log.Fatalf("%v: error: %v", a, err)
+	}
+
+	final, err := d.Done()
+	if err != nil {
+		log.Fatalf("%v: error: %v", a, err)
+	}
+	if final == Terminating {
+		return true
+	}
+	return false
+}
+
+func (a *ConsumerActor) Starting() {
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	n := 0
-	chaos := NewChaos()
+	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "started", a.ID())
+	if err := j.Join(); err != nil {
+		a.events <- GeneralFailure
+		return
+	}
+	a.started = j
+
+	w := condition.NewCountWatch(a.grid.Etcd(), a.exit, a.grid.Name(), a.flow.Name(), "started")
 	for {
 		select {
-		case <-exit:
-			return true
+		case <-a.exit:
+			a.events <- Exit
+			return
 		case <-ticker.C:
-			if chaos.Roll() {
-				return false
+			if err := a.started.Alive(); err != nil {
+				a.events <- GeneralFailure
+				return
 			}
-		case <-w.WatchError():
-			log.Printf("%v: error: %v", a.ID(), err)
-			return false
+		case <-w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1):
+			a.events <- EverybodyStarted
+			return
+		}
+	}
+	return
+}
+
+func (a *ConsumerActor) Finishing() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "finished", a.ID())
+	if err := j.Join(); err != nil {
+		a.events <- GeneralFailure
+		return
+	}
+	a.finished = j
+
+	w := condition.NewCountWatch(a.grid.Etcd(), a.exit, a.grid.Name(), a.flow.Name(), "finished")
+	for {
+		select {
+		case <-a.exit:
+			a.events <- Exit
+			return
+		case <-ticker.C:
+			if err := a.started.Alive(); err != nil {
+				a.events <- GeneralFailure
+				return
+			}
+			if err := a.finished.Alive(); err != nil {
+				a.events <- GeneralFailure
+				return
+			}
+		case <-w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1):
+			a.started.Exit()
+			a.finished.Exit()
+			a.events <- EverybodyFinished
+			return
+		}
+	}
+	return
+}
+
+func (a *ConsumerActor) Running() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	w := condition.NewCountWatch(a.grid.Etcd(), a.exit, a.grid.Name(), a.flow.Name(), "finished")
+	n := 0
+	for {
+		select {
+		case <-a.exit:
+			a.events <- Exit
+			return
+		case <-ticker.C:
+			if err := a.started.Alive(); err != nil {
+				a.events <- GeneralFailure
+				return
+			}
 		case <-w.WatchUntil(a.conf.NrProducers):
-			a.SendCounts(c)
-			goto done
-		case m := <-c.ReceiveC():
+			if err := a.SendCounts(); err != nil {
+				a.events <- SendFailure
+				return
+			} else {
+				a.events <- Terminal
+				return
+			}
+		case m := <-a.conn.ReceiveC():
 			switch m := m.(type) {
 			case DataMsg:
 				a.counts[m.Producer]++
@@ -67,45 +189,52 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 				if n%1000000 == 0 {
 					log.Printf("%v: received: %v", a.ID(), n)
 				}
-				if n%10000 == 0 {
-					a.SendCounts(c)
+				if n%1000 == 0 {
+					if err := a.SendCounts(); err != nil {
+						a.events <- SendFailure
+						return
+					}
 				}
-			}
-		}
-	}
-
-done:
-	j := condition.NewJoin(g.Etcd(), 5*time.Minute, g.Name(), a.Flow().Name(), "consumers", "done", a.ID())
-	err = j.Join()
-	if err != nil {
-		log.Printf("%v: failed to register: %v", a.ID(), err)
-		return false
-	}
-	defer j.Exit()
-	for {
-		select {
-		case <-exit:
-			return true
-		case <-ticker.C:
-			err := j.Alive()
-			if err != nil {
-				log.Printf("%v: failed to report liveness: %v", a.ID(), err)
-				return false
-			}
-			if chaos.Roll() {
-				return false
 			}
 		}
 	}
 }
 
-func (a *ConsumerActor) SendCounts(c grid.Conn) {
+func (a *ConsumerActor) Resending() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-a.exit:
+			a.events <- Exit
+			return
+		case <-ticker.C:
+			if err := a.started.Alive(); err != nil {
+				log.Printf("%v: failed to report 'started' liveness, but ignoring to flush send buffers", a)
+			}
+			if err := a.SendCounts(); err == nil {
+				a.events <- SendSuccess
+				return
+			}
+		}
+	}
+}
+
+func (a *ConsumerActor) Exiting() {
+
+}
+
+func (a *ConsumerActor) Terminating() {
+
+}
+
+func (a *ConsumerActor) SendCounts() error {
 	for p, n := range a.counts {
-		err := c.Send(a.Flow().NewFlowName("leader"), &ResultMsg{Producer: p, Count: n, From: a.ID()})
-		if err != nil {
-			log.Printf("%v: error: %v", a.ID(), err)
+		if err := a.conn.Send(a.flow.NewContextualName("leader"), &ResultMsg{Producer: p, Count: n, From: a.ID()}); err != nil {
+			return err
 		} else {
 			delete(a.counts, p)
 		}
 	}
+	return nil
 }

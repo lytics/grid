@@ -95,7 +95,7 @@ func main() {
 	for i := 0; i < *flows; i++ {
 		flow := NewFlow(i)
 
-		rp := ring.New(flow.NewFlowName("producer"), conf.NrProducers, g)
+		rp := ring.New(flow.NewContextualName("producer"), conf.NrProducers, g)
 		for _, def := range rp.ActorDefs() {
 			def.DefineType("producer")
 			def.Define("flow", flow.Name())
@@ -105,7 +105,7 @@ func main() {
 			}
 		}
 
-		rc := ring.New(flow.NewFlowName("consumer"), conf.NrConsumers, g)
+		rc := ring.New(flow.NewContextualName("consumer"), conf.NrConsumers, g)
 		for _, def := range rc.ActorDefs() {
 			def.DefineType("consumer")
 			def.Define("flow", flow.Name())
@@ -115,7 +115,7 @@ func main() {
 			}
 		}
 
-		def := grid.NewActorDef(flow.NewFlowName("leader"))
+		def := grid.NewActorDef(flow.NewContextualName("leader"))
 		def.DefineType("leader")
 		def.Define("flow", flow.Name())
 		err = g.StartActor(def)
@@ -143,7 +143,7 @@ func NewFlow(nr int) Flow {
 	return Flow(fmt.Sprintf("flow-%v", nr))
 }
 
-func (f Flow) NewFlowName(name string) string {
+func (f Flow) NewContextualName(name string) string {
 	return fmt.Sprintf("%v-%v", f, name)
 }
 
