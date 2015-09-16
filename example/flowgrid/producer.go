@@ -14,8 +14,8 @@ type ProducerState struct {
 	SentMessages int `json:"sent_messages"`
 }
 
-func NewProducerState(count int) *ProducerState {
-	return &ProducerState{SentMessages: count}
+func NewProducerState() *ProducerState {
+	return &ProducerState{SentMessages: 0}
 }
 
 func NewProducerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
@@ -37,10 +37,16 @@ type ProducerActor struct {
 	events   chan dfa.Letter
 	started  condition.Join
 	finished condition.Join
+	state    *ProducerState
+	chaos    *Chaos
 }
 
 func (a *ProducerActor) ID() string {
 	return a.def.ID()
+}
+
+func (a *ProducerActor) String() string {
+	return a.ID()
 }
 
 func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
@@ -54,6 +60,8 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	a.conn = c
 	a.grid = g
 	a.exit = exit
+	a.chaos = NewChaos(a.ID())
+	defer a.chaos.Stop()
 
 	d := dfa.New()
 	d.SetStartState(Starting)
@@ -64,12 +72,13 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	d.SetTransition(Starting, Exit, Exiting, a.Exiting)
 
 	d.SetTransition(Running, SendFailure, Resending, a.Resending)
-	d.SetTransition(Running, Terminal, Finishing, a.Finishing)
+	d.SetTransition(Running, IndividualFinished, Finishing, a.Finishing)
 	d.SetTransition(Running, GeneralFailure, Exiting, a.Exiting)
 	d.SetTransition(Running, Exit, Exiting, a.Exiting)
 
 	d.SetTransition(Resending, SendSuccess, Running, a.Running)
 	d.SetTransition(Resending, SendFailure, Resending, a.Resending)
+	d.SetTransition(Resending, GeneralFailure, Exiting, a.Exiting)
 	d.SetTransition(Resending, Exit, Exiting, a.Exiting)
 
 	d.SetTransition(Finishing, EverybodyFinished, Terminating, a.Terminating)
@@ -83,6 +92,7 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	if err != nil {
 		log.Fatalf("%v: error: %v", a, err)
 	}
+	go a.Starting()
 
 	final, err := d.Done()
 	if err != nil {
@@ -95,28 +105,35 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 }
 
 func (a *ProducerActor) Starting() {
+	log.Printf("%v: switched to state: %v", a, "Starting")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "started", a.ID())
-	if err := j.Join(); err != nil {
+	if err := j.Rejoin(); err != nil {
 		a.events <- GeneralFailure
 		return
 	}
 	a.started = j
 
-	w := condition.NewCountWatch(a.grid.Etcd(), a.exit, a.grid.Name(), a.flow.Name(), "started")
+	w := condition.NewCountWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "started")
+	defer w.Stop()
+
+	started := w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1)
 	for {
 		select {
 		case <-a.exit:
 			a.events <- Exit
+			return
+		case <-a.chaos.Roll():
+			a.events <- GeneralFailure
 			return
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
 				a.events <- GeneralFailure
 				return
 			}
-		case <-w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1):
+		case <-started:
 			a.events <- EverybodyStarted
 			return
 		}
@@ -125,21 +142,28 @@ func (a *ProducerActor) Starting() {
 }
 
 func (a *ProducerActor) Finishing() {
+	log.Printf("%v: switched to state: %v", a, "Finishing")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "finished", a.ID())
-	if err := j.Join(); err != nil {
+	j := condition.NewJoin(a.grid.Etcd(), 10*time.Minute, a.grid.Name(), a.flow.Name(), "finished", a.ID())
+	if err := j.Rejoin(); err != nil {
 		a.events <- GeneralFailure
 		return
 	}
 	a.finished = j
 
-	w := condition.NewCountWatch(a.grid.Etcd(), a.exit, a.grid.Name(), a.flow.Name(), "finished")
+	w := condition.NewCountWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "finished")
+	defer w.Stop()
+
+	finished := w.WatchUntil(a.conf.NrConsumers + a.conf.NrConsumers + 1)
 	for {
 		select {
 		case <-a.exit:
 			a.events <- Exit
+			return
+		case <-a.chaos.Roll():
+			a.events <- GeneralFailure
 			return
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
@@ -150,10 +174,14 @@ func (a *ProducerActor) Finishing() {
 				a.events <- GeneralFailure
 				return
 			}
-		case <-w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1):
+		case <-finished:
 			a.started.Exit()
-			a.finished.Exit()
+			a.finished.Alive()
 			a.events <- EverybodyFinished
+			return
+		case err := <-w.WatchError():
+			log.Printf("%v: error: %v", a, err)
+			a.events <- GeneralFailure
 			return
 		}
 	}
@@ -161,47 +189,49 @@ func (a *ProducerActor) Finishing() {
 }
 
 func (a *ProducerActor) Running() {
+	log.Printf("%v: switched to state: %v", a, "Running")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	state := NewProducerState(0)
-	s := condition.NewState(a.grid.Etcd(), 10*time.Minute, a.grid.Name(), a.flow.Name(), "state", a.ID())
-	if err := s.Init(state); err != nil {
-		if _, err := s.Fetch(state); err != nil {
+	a.state = NewProducerState()
+	s := condition.NewState(a.grid.Etcd(), 30*time.Minute, a.grid.Name(), a.flow.Name(), "state", a.ID())
+	if err := s.Init(a.state); err != nil {
+		if _, err := s.Fetch(a.state); err != nil {
 			a.events <- FetchStateFailure
 			return
 		}
 	}
-	log.Printf("%v: starting with state: %v, index: %v", a.ID(), state.SentMessages, s.Index())
+	log.Printf("%v: starting with state: %v, index: %v", a.ID(), a.state, s.Index())
 
 	// Make some random length string data.
-	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-state.SentMessages)
+	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-a.state.SentMessages)
 	go data.Start(a.exit)
 
 	r := ring.New(a.flow.NewContextualName("consumer"), a.conf.NrConsumers, a.grid)
-	chaos := NewChaos()
 	for {
 		select {
 		case <-a.exit:
-			if _, err := s.Store(state); err != nil {
-				log.Printf("%v: failed to save state when exit requested", a)
+			if _, err := s.Store(a.state); err != nil {
+				log.Printf("%v: failed to save state: %v", a, err)
 			}
 			a.events <- Exit
+			return
+		case <-a.chaos.Roll():
+			if _, err := s.Store(a.state); err != nil {
+				log.Printf("%v: failed to save state: %v", a, err)
+			}
+			a.events <- GeneralFailure
 			return
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
 				a.events <- GeneralFailure
 			}
-			if _, err := s.Store(state); err != nil {
+			if _, err := s.Store(a.state); err != nil {
 				a.events <- GeneralFailure
 				return
 			}
-			if chaos.Roll() {
-				a.events <- Exit
-				return
-			}
 		case <-data.Done():
-			if err := a.conn.SendBuffered(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: state.SentMessages, From: a.ID()}); err != nil {
+			if err := a.conn.SendBuffered(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: a.state.SentMessages, From: a.ID()}); err != nil {
 				a.events <- SendFailure
 				return
 			}
@@ -209,39 +239,46 @@ func (a *ProducerActor) Running() {
 				a.events <- SendFailure
 				return
 			}
-			if _, err := s.Remove(); err != nil {
-				log.Printf("%v: failed to clean up state: %v", err)
+			if _, err := s.Store(a.state); err != nil {
+				log.Printf("%v: failed to save state: %v", a, err)
 			}
-			a.events <- Terminal
+			a.events <- IndividualFinished
 			return
 		case d := <-data.Next():
-			if state.SentMessages%10000 == 0 {
-				if _, err := s.Store(state); err != nil {
+			if a.state.SentMessages%10000 == 0 {
+				if _, err := s.Store(a.state); err != nil {
 					a.events <- GeneralFailure
 					return
 				}
 			}
-			if err := a.conn.SendBuffered(r.ByInt(state.SentMessages), &DataMsg{Producer: a.ID(), Data: d}); err != nil {
+			if err := a.conn.SendBuffered(r.ByInt(a.state.SentMessages), &DataMsg{Producer: a.ID(), Data: d}); err != nil {
 				a.events <- SendFailure
 				return
 			}
-			state.SentMessages++
+			a.state.SentMessages++
 		}
 	}
 }
 
 func (a *ProducerActor) Resending() {
+	log.Printf("%v: switched to state: %v", a, "Resending")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+	fastticker := time.NewTicker(5 * time.Second)
+	defer fastticker.Stop()
 	for {
 		select {
 		case <-a.exit:
 			a.events <- Exit
 			return
+		case <-a.chaos.Roll():
+			a.events <- GeneralFailure
+			return
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
 				log.Printf("%v: failed to report 'started' liveness, but ignoring to flush send buffers", a)
 			}
+		case <-fastticker.C:
 			if err := a.conn.Flush(); err == nil {
 				a.events <- SendSuccess
 				return
@@ -251,6 +288,7 @@ func (a *ProducerActor) Resending() {
 }
 
 func (a *ProducerActor) Exiting() {
+	log.Printf("%v: switched to state: %v", a, "Exiting")
 	if err := a.conn.Flush(); err != nil {
 		log.Printf("%v: failed to flush send buffers, trying again", a)
 		if err := a.conn.Flush(); err != nil {
@@ -260,5 +298,5 @@ func (a *ProducerActor) Exiting() {
 }
 
 func (a *ProducerActor) Terminating() {
-	log.Printf("%v: terminating", a)
+	log.Printf("%v: switched to state: %v", a, "Terminating")
 }

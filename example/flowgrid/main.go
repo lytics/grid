@@ -82,14 +82,17 @@ func main() {
 		}
 	}()
 
-	w := condition.NewCountWatch(g.Etcd(), exit, g.Name(), "hosts")
+	w := condition.NewCountWatch(g.Etcd(), g.Name(), "hosts")
+	defer w.Stop()
+
+	started := w.WatchUntil(*nodes)
 	select {
 	case <-exit:
 		log.Printf("Shutting down, grid exited")
 		return
 	case <-w.WatchError():
 		log.Fatalf("error: failed to watch other hosts join: %v", err)
-	case <-w.WatchUntil(*nodes):
+	case <-started:
 	}
 
 	for i := 0; i < *flows; i++ {

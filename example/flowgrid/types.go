@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	"log"
 	"math/rand"
 	"time"
 )
@@ -40,13 +41,43 @@ func newRand() *rand.Rand {
 }
 
 type Chaos struct {
-	dice *rand.Rand
+	roll chan bool
+	stop chan bool
 }
 
-func NewChaos() *Chaos {
-	return &Chaos{dice: newRand()}
+func NewChaos(name string) *Chaos {
+	stop := make(chan bool)
+	roll := make(chan bool, 1)
+	go func() {
+		dice := newRand()
+		delay := time.Duration(30+dice.Intn(600)) * time.Second
+		ticker := time.NewTicker(delay)
+		happen := ticker.C
+		for {
+			select {
+			case <-stop:
+				ticker.Stop()
+			case <-happen:
+				ticker.Stop()
+				delay := time.Duration(30+dice.Intn(600)) * time.Second
+				log.Printf("%v: CHAOS", name)
+				ticker = time.NewTicker(delay)
+				happen = ticker.C
+				select {
+				case <-stop:
+					ticker.Stop()
+				case roll <- true:
+				}
+			}
+		}
+	}()
+	return &Chaos{stop: stop, roll: roll}
 }
 
-func (c *Chaos) Roll() bool {
-	return c.dice.Intn(100) < 20
+func (c *Chaos) Roll() <-chan bool {
+	return c.roll
+}
+
+func (c *Chaos) Stop() {
+	close(c.stop)
 }

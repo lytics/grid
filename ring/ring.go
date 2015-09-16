@@ -125,5 +125,5 @@ func (r *ring) actorDef(part int) *grid.ActorDef {
 }
 
 func (r *ring) actorName(part int) string {
-	return fmt.Sprintf("%s-ring-%d", r.name, part)
+	return fmt.Sprintf("%s-%d", r.name, part)
 }
