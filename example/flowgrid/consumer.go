@@ -4,19 +4,18 @@ import (
 	"log"
 	"time"
 
+	"github.com/lytics/dfa"
 	"github.com/lytics/grid"
 	"github.com/lytics/grid/condition"
 	"github.com/lytics/grid/ring"
-	"github.com/mdmarek/dfa"
 )
 
 func NewConsumerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
 	return &ConsumerActor{
-		def:    def,
-		conf:   conf,
-		flow:   Flow(def.Settings["flow"]),
-		events: make(chan dfa.Letter),
-		state:  NewConsumerState(),
+		def:   def,
+		conf:  conf,
+		flow:  Flow(def.Settings["flow"]),
+		state: NewConsumerState(),
 	}
 }
 
@@ -27,7 +26,6 @@ type ConsumerActor struct {
 	grid     grid.Grid
 	conn     grid.Conn
 	exit     <-chan bool
-	events   chan dfa.Letter
 	started  condition.Join
 	finished condition.Join
 	state    *ConsumerState
@@ -59,33 +57,32 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	d := dfa.New()
 	d.SetStartState(Starting)
 	d.SetTerminalStates(Exiting, Terminating)
+	d.SetTransitionLogger(func(state dfa.State) {
+		log.Printf("%v: switched to state: %v", a, state)
+	})
 
 	d.SetTransition(Starting, EverybodyStarted, Running, a.Running)
-	d.SetTransition(Starting, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Starting, Failure, Exiting, a.Exiting)
 	d.SetTransition(Starting, Exit, Exiting, a.Exiting)
 
 	d.SetTransition(Running, SendFailure, Resending, a.Resending)
 	d.SetTransition(Running, EverybodyFinished, Finishing, a.Finishing)
-	d.SetTransition(Running, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Running, Failure, Exiting, a.Exiting)
 	d.SetTransition(Running, Exit, Exiting, a.Exiting)
 
 	d.SetTransition(Resending, SendSuccess, Running, a.Running)
 	d.SetTransition(Resending, SendFailure, Resending, a.Resending)
-	d.SetTransition(Resending, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Resending, Failure, Exiting, a.Exiting)
 	d.SetTransition(Resending, Exit, Exiting, a.Exiting)
 
 	d.SetTransition(Finishing, EverybodyFinished, Terminating, a.Terminating)
-	d.SetTransition(Finishing, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Finishing, Failure, Exiting, a.Exiting)
 	d.SetTransition(Finishing, Exit, Exiting, a.Exiting)
 
-	a.events = make(chan dfa.Letter)
-	defer close(a.events)
-
-	err = d.Run(a.events)
+	err = d.Run(a.Starting)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a, err)
 	}
-	go a.Starting()
 
 	final, err := d.Done()
 	if err != nil {
@@ -97,15 +94,13 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	return false
 }
 
-func (a *ConsumerActor) Starting() {
-	log.Printf("%v: switched to state: %v", a, "Starting")
+func (a *ConsumerActor) Starting() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "started", a.ID())
 	if err := j.Rejoin(); err != nil {
-		a.events <- GeneralFailure
-		return
+		return Failure
 	}
 	a.started = j
 
@@ -116,33 +111,26 @@ func (a *ConsumerActor) Starting() {
 	for {
 		select {
 		case <-a.exit:
-			a.events <- Exit
-			return
+			return Exit
 		case <-a.chaos.Roll():
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
-				a.events <- GeneralFailure
-				return
+				return Failure
 			}
 		case <-started:
-			a.events <- EverybodyStarted
-			return
+			return EverybodyStarted
 		}
 	}
-	return
 }
 
-func (a *ConsumerActor) Finishing() {
-	log.Printf("%v: switched to state: %v", a, "Finishing")
+func (a *ConsumerActor) Finishing() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	j := condition.NewJoin(a.grid.Etcd(), 10*time.Minute, a.grid.Name(), a.flow.Name(), "finished", a.ID())
 	if err := j.Rejoin(); err != nil {
-		a.events <- GeneralFailure
-		return
+		return Failure
 	}
 	a.finished = j
 
@@ -153,36 +141,28 @@ func (a *ConsumerActor) Finishing() {
 	for {
 		select {
 		case <-a.exit:
-			a.events <- Exit
-			return
+			return Exit
 		case <-a.chaos.Roll():
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
-				a.events <- GeneralFailure
-				return
+				return Failure
 			}
 			if err := a.finished.Alive(); err != nil {
-				a.events <- GeneralFailure
-				return
+				return Failure
 			}
 		case <-finished:
 			a.started.Exit()
 			a.finished.Alive()
-			a.events <- EverybodyFinished
-			return
+			return EverybodyFinished
 		case err := <-w.WatchError():
 			log.Printf("%v: error: %v", a, err)
-			a.events <- GeneralFailure
-			return
+			return Failure
 		}
 	}
-	return
 }
 
-func (a *ConsumerActor) Running() {
-	log.Printf("%v: switched to state: %v", a, "Running")
+func (a *ConsumerActor) Running() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -194,28 +174,22 @@ func (a *ConsumerActor) Running() {
 	for {
 		select {
 		case <-a.exit:
-			a.events <- Exit
-			return
+			return Exit
 		case <-a.chaos.Roll():
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
-				a.events <- GeneralFailure
-				return
+				return Failure
 			}
 		case <-finished:
 			if err := a.SendCounts(); err != nil {
-				a.events <- SendFailure
-				return
+				return SendFailure
 			} else {
-				a.events <- EverybodyFinished
-				return
+				return EverybodyFinished
 			}
 		case err := <-w.WatchError():
 			log.Printf("%v: error: %v", a, err)
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case m := <-a.conn.ReceiveC():
 			switch m := m.(type) {
 			case DataMsg:
@@ -226,8 +200,7 @@ func (a *ConsumerActor) Running() {
 				}
 				if n%1000 == 0 {
 					if err := a.SendCounts(); err != nil {
-						a.events <- SendFailure
-						return
+						return SendFailure
 					}
 				}
 			}
@@ -235,32 +208,27 @@ func (a *ConsumerActor) Running() {
 	}
 }
 
-func (a *ConsumerActor) Resending() {
-	log.Printf("%v: switched to state: %v", a, "Resending")
+func (a *ConsumerActor) Resending() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-a.exit:
-			a.events <- Exit
-			return
+			return Exit
 		case <-a.chaos.Roll():
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
 				log.Printf("%v: failed to report 'started' liveness, but ignoring to flush send buffers", a)
 			}
 			if err := a.SendCounts(); err == nil {
-				a.events <- SendSuccess
-				return
+				return SendSuccess
 			}
 		}
 	}
 }
 
 func (a *ConsumerActor) Exiting() {
-	log.Printf("%v: switched to state: %v", a, "Exiting")
 	if err := a.conn.Flush(); err != nil {
 		log.Printf("%v: failed to flush send buffers, trying again", a)
 		if err := a.conn.Flush(); err != nil {
@@ -270,7 +238,6 @@ func (a *ConsumerActor) Exiting() {
 }
 
 func (a *ConsumerActor) Terminating() {
-	log.Printf("%v: switched to state: %v", a, "Terminating")
 }
 
 func (a *ConsumerActor) SendCounts() error {

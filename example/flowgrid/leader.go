@@ -5,17 +5,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lytics/dfa"
 	"github.com/lytics/grid"
 	"github.com/lytics/grid/condition"
-	"github.com/mdmarek/dfa"
 )
 
 func NewLeaderActor(def *grid.ActorDef, conf *Conf) grid.Actor {
 	return &LeaderActor{
-		def:    def,
-		conf:   conf,
-		flow:   Flow(def.Settings["flow"]),
-		events: make(chan dfa.Letter),
+		def:  def,
+		conf: conf,
+		flow: Flow(def.Settings["flow"]),
 	}
 }
 
@@ -26,7 +25,6 @@ type LeaderActor struct {
 	grid     grid.Grid
 	conn     grid.Conn
 	exit     <-chan bool
-	events   chan dfa.Letter
 	started  condition.Join
 	finished condition.Join
 	state    *LeaderState
@@ -58,27 +56,26 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	d := dfa.New()
 	d.SetStartState(Starting)
 	d.SetTerminalStates(Exiting, Terminating)
+	d.SetTransitionLogger(func(state dfa.State) {
+		log.Printf("%v: switched to state: %v", a, state)
+	})
 
 	d.SetTransition(Starting, EverybodyStarted, Running, a.Running)
-	d.SetTransition(Starting, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Starting, Failure, Exiting, a.Exiting)
 	d.SetTransition(Starting, Exit, Exiting, a.Exiting)
 
 	d.SetTransition(Running, EverybodyFinished, Finishing, a.Finishing)
-	d.SetTransition(Running, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Running, Failure, Exiting, a.Exiting)
 	d.SetTransition(Running, Exit, Exiting, a.Exiting)
 
 	d.SetTransition(Finishing, EverybodyFinished, Terminating, a.Terminating)
-	d.SetTransition(Finishing, GeneralFailure, Exiting, a.Exiting)
+	d.SetTransition(Finishing, Failure, Exiting, a.Exiting)
 	d.SetTransition(Finishing, Exit, Exiting, a.Exiting)
 
-	a.events = make(chan dfa.Letter)
-	defer close(a.events)
-
-	err = d.Run(a.events)
+	err = d.Run(a.Starting)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a, err)
 	}
-	go a.Starting()
 
 	final, err := d.Done()
 	if err != nil {
@@ -90,15 +87,13 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	return false
 }
 
-func (a *LeaderActor) Starting() {
-	log.Printf("%v: switched to state: %v", a, "Starting")
+func (a *LeaderActor) Starting() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "started", a.ID())
 	if err := j.Rejoin(); err != nil {
-		a.events <- GeneralFailure
-		return
+		return Failure
 	}
 	a.started = j
 
@@ -109,33 +104,26 @@ func (a *LeaderActor) Starting() {
 	for {
 		select {
 		case <-a.exit:
-			a.events <- Exit
-			return
+			return Exit
 		case <-a.chaos.Roll():
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
-				a.events <- GeneralFailure
-				return
+				return Failure
 			}
 		case <-started:
-			a.events <- EverybodyStarted
-			return
+			return EverybodyStarted
 		}
 	}
-	return
 }
 
-func (a *LeaderActor) Finishing() {
-	log.Printf("%v: switched to state: %v", a, "Finishing")
+func (a *LeaderActor) Finishing() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	j := condition.NewJoin(a.grid.Etcd(), 10*time.Minute, a.grid.Name(), a.flow.Name(), "finished", a.ID())
 	if err := j.Rejoin(); err != nil {
-		a.events <- GeneralFailure
-		return
+		return Failure
 	}
 	a.finished = j
 
@@ -146,36 +134,28 @@ func (a *LeaderActor) Finishing() {
 	for {
 		select {
 		case <-a.exit:
-			a.events <- Exit
-			return
+			return Exit
 		case <-a.chaos.Roll():
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
-				a.events <- GeneralFailure
-				return
+				return Failure
 			}
 			if err := a.finished.Alive(); err != nil {
-				a.events <- GeneralFailure
-				return
+				return Failure
 			}
 		case <-finished:
 			a.started.Exit()
 			a.finished.Alive()
-			a.events <- EverybodyFinished
-			return
+			return EverybodyFinished
 		case err := <-w.WatchError():
 			log.Printf("%v: error: %v", a, err)
-			a.events <- GeneralFailure
-			return
+			return Failure
 		}
 	}
-	return
 }
 
-func (a *LeaderActor) Running() {
-	log.Printf("%v: switched to state: %v", a, "Running")
+func (a *LeaderActor) Running() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -183,11 +163,10 @@ func (a *LeaderActor) Running() {
 	s := condition.NewState(a.grid.Etcd(), 10*time.Minute, a.grid.Name(), a.flow.Name(), "state", a.ID())
 	if err := s.Init(a.state); err != nil {
 		if _, err := s.Fetch(a.state); err != nil {
-			a.events <- FetchStateFailure
-			return
+			return FetchStateFailure
 		}
 	}
-	log.Printf("%v: starting with state: %v, index: %v", a.ID(), a.state, s.Index())
+	log.Printf("%v: running with state: %v, index: %v", a.ID(), a.state, s.Index())
 
 	w := condition.NewCountWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "finished")
 	defer w.Stop()
@@ -199,28 +178,21 @@ func (a *LeaderActor) Running() {
 			if _, err := s.Store(a.state); err != nil {
 				log.Printf("%v: failed to save state: %v", a, err)
 			}
-			a.events <- Exit
-			return
+			return Exit
 		case <-a.chaos.Roll():
-			log.Printf("%v: trying to save state", a)
 			if _, err := s.Store(a.state); err != nil {
 				log.Printf("%v: failed to save state: %v", a, err)
 			}
-			log.Printf("%v: finished saving state", a)
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
-				a.events <- GeneralFailure
-				return
+				return Failure
 			}
 		case <-finished:
-			a.events <- EverybodyFinished
-			return
+			return EverybodyFinished
 		case err := <-w.WatchError():
 			log.Printf("%v: error: %v", a, err)
-			a.events <- GeneralFailure
-			return
+			return Failure
 		case m := <-a.conn.ReceiveC():
 			switch m := m.(type) {
 			case ResultMsg:
@@ -236,11 +208,9 @@ func (a *LeaderActor) Running() {
 }
 
 func (a *LeaderActor) Exiting() {
-	log.Printf("%v: switched to state: %v", a, "Exiting")
 }
 
 func (a *LeaderActor) Terminating() {
-	log.Printf("%v: switched to state: %v", a, "Terminating")
 	for p, n := range a.state.ProducerCounts {
 		log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v", a.ID(), p, n, a.state.ConsumerCounts[p], n-a.state.ConsumerCounts[p])
 	}
