@@ -119,7 +119,7 @@ func (a *ProducerActor) Starting() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
@@ -149,7 +149,7 @@ func (a *ProducerActor) Finishing() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
@@ -194,7 +194,7 @@ func (a *ProducerActor) Running() dfa.Letter {
 				log.Printf("%v: failed to save state: %v", a, err)
 			}
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			if _, err := s.Store(a.state); err != nil {
 				log.Printf("%v: failed to save state: %v", a, err)
 			}
@@ -225,6 +225,9 @@ func (a *ProducerActor) Running() dfa.Letter {
 				}
 			}
 			if err := a.conn.SendBuffered(r.ByInt(a.state.SentMessages), &DataMsg{Producer: a.ID(), Data: d}); err != nil {
+				if _, err := s.Store(a.state); err != nil {
+					log.Printf("%v: failed to save state: %v", a, err)
+				}
 				return SendFailure
 			}
 			a.state.SentMessages++
@@ -241,7 +244,7 @@ func (a *ProducerActor) Resending() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {

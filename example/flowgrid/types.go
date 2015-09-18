@@ -3,8 +3,9 @@ package main
 import (
 	"encoding/gob"
 	"log"
-	"math/rand"
 	"time"
+
+	"github.com/lytics/grid"
 )
 
 func init() {
@@ -32,24 +33,17 @@ type ResultMsg struct {
 	Duration float64
 }
 
-func newRand() *rand.Rand {
-	s := int64(0)
-	for i := 0; i < 10000; i++ {
-		s += time.Now().UnixNano()
-	}
-	return rand.New(rand.NewSource(s))
-}
-
 type Chaos struct {
 	roll chan bool
 	stop chan bool
+	C    <-chan bool
 }
 
 func NewChaos(name string) *Chaos {
 	stop := make(chan bool)
 	roll := make(chan bool, 1)
 	go func() {
-		dice := newRand()
+		dice := grid.NewSeededRand()
 		delay := time.Duration(30+dice.Intn(600)) * time.Second
 		ticker := time.NewTicker(delay)
 		happen := ticker.C
@@ -57,6 +51,7 @@ func NewChaos(name string) *Chaos {
 			select {
 			case <-stop:
 				ticker.Stop()
+				return
 			case <-happen:
 				ticker.Stop()
 				delay := time.Duration(30+dice.Intn(600)) * time.Second
@@ -71,11 +66,7 @@ func NewChaos(name string) *Chaos {
 			}
 		}
 	}()
-	return &Chaos{stop: stop, roll: roll}
-}
-
-func (c *Chaos) Roll() <-chan bool {
-	return c.roll
+	return &Chaos{stop: stop, roll: roll, C: roll}
 }
 
 func (c *Chaos) Stop() {

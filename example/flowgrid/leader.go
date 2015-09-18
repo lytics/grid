@@ -105,7 +105,7 @@ func (a *LeaderActor) Starting() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
@@ -135,7 +135,7 @@ func (a *LeaderActor) Finishing() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
@@ -179,7 +179,7 @@ func (a *LeaderActor) Running() dfa.Letter {
 				log.Printf("%v: failed to save state: %v", a, err)
 			}
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			if _, err := s.Store(a.state); err != nil {
 				log.Printf("%v: failed to save state: %v", a, err)
 			}

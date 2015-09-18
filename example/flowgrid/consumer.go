@@ -112,7 +112,7 @@ func (a *ConsumerActor) Starting() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
@@ -142,7 +142,7 @@ func (a *ConsumerActor) Finishing() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
@@ -175,7 +175,7 @@ func (a *ConsumerActor) Running() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
@@ -215,7 +215,7 @@ func (a *ConsumerActor) Resending() dfa.Letter {
 		select {
 		case <-a.exit:
 			return Exit
-		case <-a.chaos.Roll():
+		case <-a.chaos.C:
 			return Failure
 		case <-ticker.C:
 			if err := a.started.Alive(); err != nil {
