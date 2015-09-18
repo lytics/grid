@@ -3,6 +3,7 @@ package grid
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -10,11 +11,11 @@ import (
 )
 
 type Ack struct {
-	From  string
-	Count int
+	Hash int64
 }
 
 type Envelope struct {
+	Hash int64
 	Data []interface{}
 }
 
@@ -28,31 +29,36 @@ type Conn interface {
 }
 
 type conn struct {
-	ec          *nats.EncodedConn
-	name        string
-	exit        chan bool
-	intput      chan interface{}
-	outputs     map[string][]interface{}
-	stoponce    *sync.Once
-	buffsize    int
-	sendretries int
-	sendtiemout time.Duration
+	ec               *nats.EncodedConn
+	dice             *rand.Rand
+	name             string
+	exit             chan bool
+	intput           chan interface{}
+	outputs          map[string][]interface{}
+	stoponce         *sync.Once
+	buffsize         int
+	sendretries      int
+	sendtiemout      time.Duration
+	nextenvelopehash int64
 }
 
 // NewConn creates a new connection using NATS as the message transport.
 // The connection will receive data sent to the given name. Any NATS
 // client can be used.
 func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
+	dice := NewSeededRand()
 	c := &conn{
-		ec:          ec,
-		name:        name,
-		exit:        make(chan bool),
-		intput:      make(chan interface{}),
-		outputs:     make(map[string][]interface{}),
-		stoponce:    new(sync.Once),
-		buffsize:    100,
-		sendretries: 3,
-		sendtiemout: 2 * time.Second,
+		ec:               ec,
+		dice:             dice,
+		name:             name,
+		exit:             make(chan bool),
+		intput:           make(chan interface{}),
+		outputs:          make(map[string][]interface{}),
+		stoponce:         new(sync.Once),
+		buffsize:         100,
+		sendretries:      3,
+		sendtiemout:      2 * time.Second,
+		nextenvelopehash: dice.Int63(),
 	}
 	log.Printf("%v: connected", name)
 	sub0, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
@@ -63,7 +69,7 @@ func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 			case c.intput <- d:
 			}
 		}
-		c.ec.Publish(reply, &Ack{From: c.name, Count: len(m.Data)})
+		c.ec.Publish(reply, &Ack{Hash: m.Hash})
 	})
 	sub1, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
 		for _, d := range m.Data {
@@ -73,7 +79,7 @@ func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 			case c.intput <- d:
 			}
 		}
-		c.ec.Publish(reply, &Ack{From: c.name, Count: len(m.Data)})
+		c.ec.Publish(reply, &Ack{Hash: m.Hash})
 	})
 	if err != nil {
 		return nil, err
@@ -101,17 +107,22 @@ func (c *conn) Send(receiver string, m interface{}) error {
 func (c *conn) SendBuffered(receiver string, m interface{}) error {
 	buf, ok := c.outputs[receiver]
 	if !ok {
-		buf = make([]interface{}, 0, c.buffsize+100)
+		buf = make([]interface{}, 0, c.buffsize)
 		c.outputs[receiver] = buf
 	}
-	buf = append(buf, m)
-	c.outputs[receiver] = buf
 	if len(buf) >= c.buffsize {
 		err := c.send(receiver, buf)
 		if err == nil {
-			delete(c.outputs, receiver)
+			buf = make([]interface{}, 0, c.buffsize)
+			buf = append(buf, m)
+			c.outputs[receiver] = buf
+			return nil
+		} else {
+			return err
 		}
-		return err
+	} else {
+		buf = append(buf, m)
+		c.outputs[receiver] = buf
 	}
 	return nil
 }
@@ -140,15 +151,16 @@ func (c *conn) send(receiver string, ms []interface{}) error {
 	var t int
 	for ; t < c.sendretries; t++ {
 		ack := &Ack{}
-		err := c.ec.Request(receiver, &Envelope{Data: ms}, ack, c.sendtiemout)
-		if err == nil && ack != nil && ack.From != "" && ack.Count == len(ms) {
+		err := c.ec.Request(receiver, &Envelope{Data: ms, Hash: c.nextenvelopehash}, ack, c.sendtiemout)
+		if err == nil && ack != nil && ack.Hash == c.nextenvelopehash {
+			c.nextenvelopehash = c.dice.Int63()
 			return nil
 		}
-		if err == nil && ack != nil {
-			return fmt.Errorf("received bad ack from: %v, count: %v, expected ack from: %v, count: %v", ack.From, ack.Count, receiver, len(ms))
+		if err == nil && ack != nil && ack.Hash != c.nextenvelopehash {
+			return fmt.Errorf("received bad ack from: %v, expected ack: %v, got: %v", receiver, c.nextenvelopehash, ack.Hash)
 		}
 		if err == nil && ack == nil {
-			return fmt.Errorf("received no ack from: %v", ack.From)
+			return fmt.Errorf("received no ack from: %v", receiver)
 		}
 		if err != nil && err.Error() != "nats: Timeout" {
 			return err

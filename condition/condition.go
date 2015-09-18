@@ -175,21 +175,44 @@ func NewJoinWatch(e *etcd.Client, path ...string) JoinWatch {
 	exitc := make(chan bool, 1)
 	errorc := make(chan error, 1)
 	go func() {
-		res, err := e.Get(key, false, false)
-		if err != nil {
-			errorc <- err
-			return
+		var res *etcd.Response
+		var err error
+		var exists bool
+		for !exists {
+			res, err = e.Get(key, false, false)
+			if err != nil {
+				switch err := err.(type) {
+				case *etcd.EtcdError:
+					if err.ErrorCode == 100 {
+						ticker := time.NewTicker(5 * time.Second)
+						select {
+						case <-stopc:
+							ticker.Stop()
+							return
+						case <-ticker.C:
+							ticker.Stop()
+						}
+					}
+				default:
+					errorc <- err
+					return
+				}
+			} else {
+				exists = true
+			}
 		}
 
-		if res.Node != nil {
+		index := uint64(0)
+		if res != nil && res.Node != nil {
 			select {
 			case joinc <- true:
 			default:
 			}
+			index = res.Node.ModifiedIndex
 		}
 
 		watch := make(chan *etcd.Response)
-		go e.Watch(key, res.EtcdIndex, false, watch, stopc)
+		go e.Watch(key, index, false, watch, stopc)
 		for {
 			select {
 			case <-stopc:
@@ -253,13 +276,62 @@ func NewCountWatch(e *etcd.Client, path ...string) CountWatch {
 	countc := make(chan int, 1)
 	errorc := make(chan error, 1)
 	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
+		var res *etcd.Response
+		var err error
+		var exists bool
+		for !exists {
+			res, err = e.Get(key, false, false)
+			if err != nil {
+				switch err := err.(type) {
+				case *etcd.EtcdError:
+					if err.ErrorCode == 100 {
+						ticker := time.NewTicker(5 * time.Second)
+						select {
+						case <-stopc:
+							ticker.Stop()
+							return
+						case <-ticker.C:
+							ticker.Stop()
+						}
+					}
+				default:
+					errorc <- err
+					return
+				}
+			} else {
+				exists = true
+			}
+		}
+
+		index := uint64(0)
+		if res != nil && res.Node != nil && res.Node.Dir {
+			select {
+			case countc <- len(res.Node.Nodes):
+			default:
+			}
+			index = res.Node.ModifiedIndex
+		} else {
+			select {
+			case countc <- 0:
+			default:
+			}
+		}
+
+		watch := make(chan *etcd.Response)
+		go e.Watch(key, index, true, watch, stopc)
+
 		for {
 			select {
 			case <-stopc:
 				return
-			case <-ticker.C:
+			case res, open := <-watch:
+				if !open {
+					select {
+					case errorc <- fmt.Errorf("count watch closed unexpectedly"):
+					default:
+					}
+					return
+				}
 				res, err := e.Get(key, false, false)
 				if err != nil {
 					switch err := err.(type) {
@@ -335,13 +407,66 @@ func NewNameWatch(e *etcd.Client, path ...string) NameWatch {
 	namesc := make(chan []string, 1)
 	errorc := make(chan error, 1)
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
+		var res *etcd.Response
+		var err error
+		var exists bool
+		for !exists {
+			res, err = e.Get(key, false, false)
+			if err != nil {
+				switch err := err.(type) {
+				case *etcd.EtcdError:
+					if err.ErrorCode == 100 {
+						ticker := time.NewTicker(5 * time.Second)
+						select {
+						case <-stopc:
+							ticker.Stop()
+							return
+						case <-ticker.C:
+							ticker.Stop()
+						}
+					}
+				default:
+					errorc <- err
+					return
+				}
+			} else {
+				exists = true
+			}
+		}
+
+		index := uint64(0)
+		if res != nil && res.Node != nil && res.Node.Dir {
+			names := make([]string, 0, len(res.Node.Nodes))
+			for _, n := range res.Node.Nodes {
+				names = append(names, n.Key)
+			}
+			select {
+			case namesc <- names:
+			default:
+			}
+			index = res.Node.ModifiedIndex
+		} else {
+			select {
+			case namesc <- nil:
+			default:
+			}
+		}
+
+		watch := make(chan *etcd.Response)
+		go e.Watch(key, index, true, watch, stopc)
+
 		for {
 			select {
 			case <-stopc:
 				return
-			case <-ticker.C:
+			case res, open := <-watch:
+				if !open {
+					select {
+					case errorc <- fmt.Errorf("name watch closed unexpectedly"):
+					default:
+					}
+					return
+				}
 				res, err := e.Get(key, false, false)
 				if err != nil {
 					switch err := err.(type) {
