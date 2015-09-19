@@ -11,11 +11,12 @@ import (
 )
 
 type ProducerState struct {
-	SentMessages int `json:"sent_messages"`
+	SentMessages int     `json:"sent_messages"`
+	Duration     float64 `json:"send_messages"`
 }
 
 func NewProducerState() *ProducerState {
-	return &ProducerState{SentMessages: 0}
+	return &ProducerState{SentMessages: 0, Duration: 0}
 }
 
 func NewProducerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
@@ -69,6 +70,7 @@ func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	})
 
 	d.SetTransition(Starting, EverybodyStarted, Running, a.Running)
+	d.SetTransition(Starting, EverybodyFinished, Terminating, a.Terminating)
 	d.SetTransition(Starting, Failure, Exiting, a.Exiting)
 	d.SetTransition(Starting, Exit, Exiting, a.Exiting)
 
@@ -105,6 +107,8 @@ func (a *ProducerActor) Starting() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
+	time.Sleep(3 * time.Second)
+
 	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "started", a.ID())
 	if err := j.Rejoin(); err != nil {
 		return Failure
@@ -114,7 +118,11 @@ func (a *ProducerActor) Starting() dfa.Letter {
 	w := condition.NewCountWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "started")
 	defer w.Stop()
 
+	f := condition.NewNameWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "finished")
+	defer f.Stop()
+
 	started := w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1)
+	finished := f.WatchUntil(a.flow.NewContextualName("leader"))
 	for {
 		select {
 		case <-a.exit:
@@ -127,6 +135,8 @@ func (a *ProducerActor) Starting() dfa.Letter {
 			}
 		case <-started:
 			return EverybodyStarted
+		case <-finished:
+			return EverybodyFinished
 		}
 	}
 }
@@ -187,6 +197,7 @@ func (a *ProducerActor) Running() dfa.Letter {
 	go data.Start(a.exit)
 
 	r := ring.New(a.flow.NewContextualName("consumer"), a.conf.NrConsumers, a.grid)
+	start := time.Now()
 	for {
 		select {
 		case <-a.exit:
@@ -207,7 +218,7 @@ func (a *ProducerActor) Running() dfa.Letter {
 				return Failure
 			}
 		case <-data.Done():
-			if err := a.conn.SendBuffered(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: a.state.SentMessages, From: a.ID()}); err != nil {
+			if err := a.conn.SendBuffered(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: a.state.SentMessages, From: a.ID(), Duration: a.state.Duration}); err != nil {
 				return SendFailure
 			}
 			if err := a.conn.Flush(); err != nil {
@@ -218,6 +229,10 @@ func (a *ProducerActor) Running() dfa.Letter {
 			}
 			return IndividualFinished
 		case d := <-data.Next():
+			if a.state.SentMessages%100 == 0 {
+				a.state.Duration += time.Now().Sub(start).Seconds()
+				start = time.Now()
+			}
 			if a.state.SentMessages%10000 == 0 {
 				if _, err := s.Store(a.state); err != nil {
 					log.Printf("%v: failed to save state: %v", a, err)
@@ -261,6 +276,7 @@ func (a *ProducerActor) Resending() dfa.Letter {
 func (a *ProducerActor) Exiting() {
 	if err := a.conn.Flush(); err != nil {
 		log.Printf("%v: failed to flush send buffers, trying again", a)
+		time.Sleep(5 * time.Second)
 		if err := a.conn.Flush(); err != nil {
 			log.Printf("%v: failed to flush send buffers, data is being dropped", a)
 		}

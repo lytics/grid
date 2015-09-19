@@ -62,6 +62,7 @@ func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
 	})
 
 	d.SetTransition(Starting, EverybodyStarted, Running, a.Running)
+	d.SetTransition(Starting, EverybodyFinished, Terminating, a.Terminating)
 	d.SetTransition(Starting, Failure, Exiting, a.Exiting)
 	d.SetTransition(Starting, Exit, Exiting, a.Exiting)
 
@@ -98,6 +99,8 @@ func (a *ConsumerActor) Starting() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
+	time.Sleep(3 * time.Second)
+
 	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "started", a.ID())
 	if err := j.Rejoin(); err != nil {
 		return Failure
@@ -107,7 +110,11 @@ func (a *ConsumerActor) Starting() dfa.Letter {
 	w := condition.NewCountWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "started")
 	defer w.Stop()
 
+	f := condition.NewNameWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "finished")
+	defer f.Stop()
+
 	started := w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1)
+	finished := f.WatchUntil(a.flow.NewContextualName("leader"))
 	for {
 		select {
 		case <-a.exit:
@@ -120,6 +127,8 @@ func (a *ConsumerActor) Starting() dfa.Letter {
 			}
 		case <-started:
 			return EverybodyStarted
+		case <-finished:
+			return EverybodyFinished
 		}
 	}
 }
@@ -229,9 +238,10 @@ func (a *ConsumerActor) Resending() dfa.Letter {
 }
 
 func (a *ConsumerActor) Exiting() {
-	if err := a.conn.Flush(); err != nil {
+	if err := a.SendCounts(); err != nil {
 		log.Printf("%v: failed to flush send buffers, trying again", a)
-		if err := a.conn.Flush(); err != nil {
+		time.Sleep(5 * time.Second)
+		if err := a.SendCounts(); err != nil {
 			log.Printf("%v: failed to flush send buffers, data is being dropped", a)
 		}
 	}

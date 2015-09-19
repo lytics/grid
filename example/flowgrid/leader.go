@@ -61,6 +61,7 @@ func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
 	})
 
 	d.SetTransition(Starting, EverybodyStarted, Running, a.Running)
+	d.SetTransition(Starting, EverybodyFinished, Terminating, a.Terminating)
 	d.SetTransition(Starting, Failure, Exiting, a.Exiting)
 	d.SetTransition(Starting, Exit, Exiting, a.Exiting)
 
@@ -91,6 +92,8 @@ func (a *LeaderActor) Starting() dfa.Letter {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
+	time.Sleep(3 * time.Second)
+
 	j := condition.NewJoin(a.grid.Etcd(), 2*time.Minute, a.grid.Name(), a.flow.Name(), "started", a.ID())
 	if err := j.Rejoin(); err != nil {
 		return Failure
@@ -100,7 +103,11 @@ func (a *LeaderActor) Starting() dfa.Letter {
 	w := condition.NewCountWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "started")
 	defer w.Stop()
 
+	f := condition.NewNameWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "finished")
+	defer f.Stop()
+
 	started := w.WatchUntil(a.conf.NrConsumers + a.conf.NrProducers + 1)
+	finished := f.WatchUntil(a.flow.NewContextualName("leader"))
 	for {
 		select {
 		case <-a.exit:
@@ -113,6 +120,8 @@ func (a *LeaderActor) Starting() dfa.Letter {
 			}
 		case <-started:
 			return EverybodyStarted
+		case <-finished:
+			return EverybodyFinished
 		}
 	}
 }
@@ -168,6 +177,8 @@ func (a *LeaderActor) Running() dfa.Letter {
 	}
 	log.Printf("%v: running with state: %v, index: %v", a.ID(), a.state, s.Index())
 
+	time.Sleep(5 * time.Second)
+
 	w := condition.NewCountWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "finished")
 	defer w.Stop()
 
@@ -198,6 +209,7 @@ func (a *LeaderActor) Running() dfa.Letter {
 			case ResultMsg:
 				if strings.Contains(m.From, "producer") {
 					a.state.ProducerCounts[m.Producer] = m.Count
+					a.state.ProducerDurations[m.Producer] = m.Duration
 				}
 				if strings.Contains(m.From, "consumer") {
 					a.state.ConsumerCounts[m.Producer] += m.Count
@@ -212,16 +224,20 @@ func (a *LeaderActor) Exiting() {
 
 func (a *LeaderActor) Terminating() {
 	for p, n := range a.state.ProducerCounts {
-		log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v", a.ID(), p, n, a.state.ConsumerCounts[p], n-a.state.ConsumerCounts[p])
+		rx := a.state.ConsumerCounts[p]
+		delta := a.state.ConsumerCounts[p] - n
+		rate := float64(a.state.ProducerCounts[p]) / a.state.ProducerDurations[p]
+		log.Printf("%v: producer: %v, sent: %v, consumers received: %v, delta: %v, rate: %2.f/s", a.ID(), p, n, rx, delta, rate)
 	}
 }
 
 type LeaderState struct {
-	Start          time.Time
-	ConsumerCounts map[string]int
-	ProducerCounts map[string]int
+	Start             time.Time
+	ConsumerCounts    map[string]int
+	ProducerCounts    map[string]int
+	ProducerDurations map[string]float64
 }
 
 func NewLeaderState() *LeaderState {
-	return &LeaderState{ConsumerCounts: make(map[string]int), ProducerCounts: make(map[string]int)}
+	return &LeaderState{ConsumerCounts: make(map[string]int), ProducerCounts: make(map[string]int), ProducerDurations: make(map[string]float64)}
 }
