@@ -2,7 +2,6 @@ package grid
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -60,7 +59,6 @@ func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 		sendtiemout:      2 * time.Second,
 		nextenvelopehash: dice.Int63(),
 	}
-	log.Printf("%v: connected", name)
 	sub0, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
 		for _, d := range m.Data {
 			select {

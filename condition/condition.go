@@ -16,6 +16,7 @@ type State interface {
 	Store(v interface{}) (bool, error)
 	Remove() (bool, error)
 	Index() uint64
+	Stop()
 }
 
 type Join interface {
@@ -23,6 +24,7 @@ type Join interface {
 	Rejoin() error
 	Exit() error
 	Alive() error
+	Stop()
 }
 
 type JoinWatch interface {
@@ -117,8 +119,8 @@ func (s *state) Index() uint64 {
 	return s.index
 }
 
-func (s *state) String() string {
-	return fmt.Sprintf("%d", s.index)
+func (s *state) Stop() {
+	s.e.Close()
 }
 
 func NewJoin(e *etcd.Client, ttl time.Duration, path ...string) Join {
@@ -168,6 +170,10 @@ func (j *join) Exit() error {
 	return err
 }
 
+func (j *join) Stop() {
+	j.e.Close()
+}
+
 func NewJoinWatch(e *etcd.Client, path ...string) JoinWatch {
 	key := strings.Join(path, "/")
 	stopc := make(chan bool)
@@ -175,6 +181,8 @@ func NewJoinWatch(e *etcd.Client, path ...string) JoinWatch {
 	exitc := make(chan bool, 1)
 	errorc := make(chan error, 1)
 	go func() {
+		defer e.Close()
+
 		var res *etcd.Response
 		var err error
 		var exists bool
@@ -276,6 +284,8 @@ func NewCountWatch(e *etcd.Client, path ...string) CountWatch {
 	countc := make(chan int, 1)
 	errorc := make(chan error, 1)
 	go func() {
+		defer e.Close()
+
 		var res *etcd.Response
 		var err error
 		var exists bool
@@ -407,6 +417,8 @@ func NewNameWatch(e *etcd.Client, path ...string) NameWatch {
 	namesc := make(chan []string, 1)
 	errorc := make(chan error, 1)
 	go func() {
+		defer e.Close()
+
 		var res *etcd.Response
 		var err error
 		var exists bool

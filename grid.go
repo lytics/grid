@@ -26,21 +26,20 @@ type Grid interface {
 }
 
 type grid struct {
-	dice           *rand.Rand
-	name           string
-	etcdservers    []string
-	natsservers    []string
-	mu             *sync.Mutex
-	started        bool
-	stopped        bool
-	exit           chan bool
-	etcdclient     *etcd.Client
-	etcdclientpool []*etcd.Client
-	metaclient     metafora.Client
-	metaconsumer   *metafora.Consumer
-	natsconn       *nats.EncodedConn
-	natsconnpool   []*nats.EncodedConn
-	maker          ActorMaker
+	dice         *rand.Rand
+	name         string
+	etcdservers  []string
+	natsservers  []string
+	mu           *sync.Mutex
+	started      bool
+	stopped      bool
+	exit         chan bool
+	etcdclient   *etcd.Client
+	metaclient   metafora.Client
+	metaconsumer *metafora.Consumer
+	natsconn     *nats.EncodedConn
+	natsconnpool []*nats.EncodedConn
+	maker        ActorMaker
 }
 
 func New(name string, etcdservers []string, natsservers []string, m ActorMaker) Grid {
@@ -49,16 +48,15 @@ func New(name string, etcdservers []string, natsservers []string, m ActorMaker) 
 		s += time.Now().UnixNano()
 	}
 	return &grid{
-		name:           name,
-		dice:           rand.New(rand.NewSource(s)),
-		etcdservers:    etcdservers,
-		natsservers:    natsservers,
-		mu:             new(sync.Mutex),
-		stopped:        true,
-		exit:           make(chan bool),
-		maker:          m,
-		natsconnpool:   make([]*nats.EncodedConn, 2*runtime.NumCPU()),
-		etcdclientpool: make([]*etcd.Client, 2*runtime.NumCPU()),
+		name:         name,
+		dice:         rand.New(rand.NewSource(s)),
+		etcdservers:  etcdservers,
+		natsservers:  natsservers,
+		mu:           new(sync.Mutex),
+		stopped:      true,
+		exit:         make(chan bool),
+		maker:        m,
+		natsconnpool: make([]*nats.EncodedConn, 2*runtime.NumCPU()),
 	}
 }
 
@@ -71,7 +69,7 @@ func (g *grid) Nats() *nats.EncodedConn {
 // Etcd connection usable by any actor running
 // in the grid.
 func (g *grid) Etcd() *etcd.Client {
-	return g.etcdclient
+	return etcd.NewClient(g.etcdservers)
 }
 
 // Name of the grid.
@@ -141,10 +139,8 @@ func (g *grid) Start() (<-chan bool, error) {
 			return nil, err
 		}
 		g.natsconnpool[i] = natsconn
-		g.etcdclientpool[i] = etcd.NewClient(g.etcdservers)
 		if i == 0 {
 			g.natsconn = g.natsconnpool[0]
-			g.etcdclient = g.etcdclientpool[0]
 		}
 	}
 
@@ -163,7 +159,6 @@ func (g *grid) fork() *grid {
 		started:      g.started,
 		stopped:      g.stopped,
 		exit:         g.exit,
-		etcdclient:   g.etcdclientpool[g.dice.Intn(2*runtime.NumCPU())],
 		metaclient:   g.metaclient,
 		metaconsumer: g.metaconsumer,
 		natsconn:     g.natsconnpool[g.dice.Intn(2*runtime.NumCPU())],

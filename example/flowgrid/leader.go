@@ -170,14 +170,14 @@ func (a *LeaderActor) Running() dfa.Letter {
 
 	a.state = NewLeaderState()
 	s := condition.NewState(a.grid.Etcd(), 10*time.Minute, a.grid.Name(), a.flow.Name(), "state", a.ID())
+	defer s.Stop()
+
 	if err := s.Init(a.state); err != nil {
 		if _, err := s.Fetch(a.state); err != nil {
 			return FetchStateFailure
 		}
 	}
 	log.Printf("%v: running with state: %v, index: %v", a.ID(), a.state, s.Index())
-
-	time.Sleep(5 * time.Second)
 
 	w := condition.NewCountWatch(a.grid.Etcd(), a.grid.Name(), a.flow.Name(), "finished")
 	defer w.Stop()
@@ -220,9 +220,22 @@ func (a *LeaderActor) Running() dfa.Letter {
 }
 
 func (a *LeaderActor) Exiting() {
+	if a.started != nil {
+		a.started.Stop()
+	}
+	if a.finished != nil {
+		a.finished.Stop()
+	}
 }
 
 func (a *LeaderActor) Terminating() {
+	if a.started != nil {
+		a.started.Stop()
+	}
+	if a.finished != nil {
+		a.finished.Stop()
+	}
+
 	for p, n := range a.state.ProducerCounts {
 		rx := a.state.ConsumerCounts[p]
 		delta := a.state.ConsumerCounts[p] - n

@@ -185,6 +185,8 @@ func (a *ProducerActor) Running() dfa.Letter {
 
 	a.state = NewProducerState()
 	s := condition.NewState(a.grid.Etcd(), 30*time.Minute, a.grid.Name(), a.flow.Name(), "state", a.ID())
+	defer s.Stop()
+
 	if err := s.Init(a.state); err != nil {
 		if _, err := s.Fetch(a.state); err != nil {
 			return FetchStateFailure
@@ -274,6 +276,13 @@ func (a *ProducerActor) Resending() dfa.Letter {
 }
 
 func (a *ProducerActor) Exiting() {
+	if a.started != nil {
+		a.started.Stop()
+	}
+	if a.finished != nil {
+		a.finished.Stop()
+	}
+
 	if err := a.conn.Flush(); err != nil {
 		log.Printf("%v: failed to flush send buffers, trying again", a)
 		time.Sleep(5 * time.Second)
@@ -284,4 +293,10 @@ func (a *ProducerActor) Exiting() {
 }
 
 func (a *ProducerActor) Terminating() {
+	if a.started != nil {
+		a.started.Stop()
+	}
+	if a.finished != nil {
+		a.finished.Stop()
+	}
 }

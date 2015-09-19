@@ -238,6 +238,13 @@ func (a *ConsumerActor) Resending() dfa.Letter {
 }
 
 func (a *ConsumerActor) Exiting() {
+	if a.started != nil {
+		a.started.Stop()
+	}
+	if a.finished != nil {
+		a.finished.Stop()
+	}
+
 	if err := a.SendCounts(); err != nil {
 		log.Printf("%v: failed to flush send buffers, trying again", a)
 		time.Sleep(5 * time.Second)
@@ -248,6 +255,12 @@ func (a *ConsumerActor) Exiting() {
 }
 
 func (a *ConsumerActor) Terminating() {
+	if a.started != nil {
+		a.started.Stop()
+	}
+	if a.finished != nil {
+		a.finished.Stop()
+	}
 }
 
 func (a *ConsumerActor) SendCounts() error {
