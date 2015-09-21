@@ -199,6 +199,9 @@ func (a *LeaderActor) Running() dfa.Letter {
 			if err := a.started.Alive(); err != nil {
 				return Failure
 			}
+			if _, err := s.Store(a.state); err != nil {
+				return Failure
+			}
 		case <-finished:
 			return EverybodyFinished
 		case err := <-w.WatchError():

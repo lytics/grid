@@ -220,10 +220,10 @@ func (a *ProducerActor) Running() dfa.Letter {
 				return Failure
 			}
 		case <-data.Done():
-			if err := a.conn.SendBuffered(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: a.state.SentMessages, From: a.ID(), Duration: a.state.Duration}); err != nil {
+			if err := a.conn.Flush(); err != nil {
 				return SendFailure
 			}
-			if err := a.conn.Flush(); err != nil {
+			if err := a.conn.Send(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: a.state.SentMessages, From: a.ID(), Duration: a.state.Duration}); err != nil {
 				return SendFailure
 			}
 			if _, err := s.Store(a.state); err != nil {

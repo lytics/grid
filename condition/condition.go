@@ -216,7 +216,7 @@ func NewJoinWatch(e *etcd.Client, path ...string) JoinWatch {
 			case joinc <- true:
 			default:
 			}
-			index = res.Node.ModifiedIndex
+			index = res.EtcdIndex
 		}
 
 		watch := make(chan *etcd.Response)
@@ -228,7 +228,7 @@ func NewJoinWatch(e *etcd.Client, path ...string) JoinWatch {
 			case res, open := <-watch:
 				if !open {
 					select {
-					case errorc <- fmt.Errorf("join watch closed unexpectedly"):
+					case errorc <- fmt.Errorf("join watch closed unexpectedly: %v", key):
 					default:
 					}
 					return
@@ -319,7 +319,7 @@ func NewCountWatch(e *etcd.Client, path ...string) CountWatch {
 			case countc <- len(res.Node.Nodes):
 			default:
 			}
-			index = res.Node.ModifiedIndex
+			index = res.EtcdIndex
 		} else {
 			select {
 			case countc <- 0:
@@ -337,7 +337,7 @@ func NewCountWatch(e *etcd.Client, path ...string) CountWatch {
 			case res, open := <-watch:
 				if !open {
 					select {
-					case errorc <- fmt.Errorf("count watch closed unexpectedly"):
+					case errorc <- fmt.Errorf("count watch closed unexpectedly: %v", key):
 					default:
 					}
 					return
@@ -456,7 +456,7 @@ func NewNameWatch(e *etcd.Client, path ...string) NameWatch {
 			case namesc <- names:
 			default:
 			}
-			index = res.Node.ModifiedIndex
+			index = res.EtcdIndex
 		} else {
 			select {
 			case namesc <- nil:
@@ -474,7 +474,7 @@ func NewNameWatch(e *etcd.Client, path ...string) NameWatch {
 			case res, open := <-watch:
 				if !open {
 					select {
-					case errorc <- fmt.Errorf("name watch closed unexpectedly"):
+					case errorc <- fmt.Errorf("name watch closed unexpectedly for: %v", key):
 					default:
 					}
 					return

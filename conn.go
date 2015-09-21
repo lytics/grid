@@ -79,6 +79,26 @@ func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 		}
 		c.ec.Publish(reply, &Ack{Hash: m.Hash})
 	})
+	sub2, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
+		for _, d := range m.Data {
+			select {
+			case <-c.exit:
+				return
+			case c.intput <- d:
+			}
+		}
+		c.ec.Publish(reply, &Ack{Hash: m.Hash})
+	})
+	sub3, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
+		for _, d := range m.Data {
+			select {
+			case <-c.exit:
+				return
+			case c.intput <- d:
+			}
+		}
+		c.ec.Publish(reply, &Ack{Hash: m.Hash})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +106,8 @@ func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 		<-c.exit
 		sub0.Unsubscribe()
 		sub1.Unsubscribe()
+		sub2.Unsubscribe()
+		sub3.Unsubscribe()
 	}()
 	return c, nil
 }
