@@ -90,14 +90,10 @@ func (g *grid) Start() (<-chan bool, error) {
 		return nil, err
 	}
 
-	// Create the metafora etcd coordinator.
-	ec, err := m_etcd.NewEtcdCoordinator(hostname, g.name, g.etcdservers)
-	if err != nil {
-		return nil, err
-	}
-
-	// Define the metafora new task function.
-	ec.NewTask = func(id, value string) metafora.Task {
+	// Define the metafora new task function and config.
+	conf := m_etcd.NewConfig(g.name, g.etcdservers)
+	conf.Name = hostname
+	conf.NewTaskFunc = func(id, value string) metafora.Task {
 		def := NewActorDef(id)
 		err := json.Unmarshal([]byte(value), def)
 		if err != nil {
@@ -113,8 +109,14 @@ func (g *grid) Start() (<-chan bool, error) {
 		return newHandler(g.fork(), a)
 	}
 
+	// Create the metafora etcd coordinator.
+	ec, err := m_etcd.NewEtcdCoordinator(conf)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create the metafora consumer.
-	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), m_etcd.NewFairBalancer(hostname, g.name, g.etcdservers))
+	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), m_etcd.NewFairBalancer(conf))
 	if err != nil {
 		return nil, err
 	}
