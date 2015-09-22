@@ -8,7 +8,6 @@ import (
 	"os"
 	"runtime"
 	"sync"
-	"time"
 
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/lytics/metafora"
@@ -43,13 +42,9 @@ type grid struct {
 }
 
 func New(name string, etcdservers []string, natsservers []string, m ActorMaker) Grid {
-	s := int64(0)
-	for i := 0; i < 100; i++ {
-		s += time.Now().UnixNano()
-	}
 	return &grid{
 		name:         name,
-		dice:         rand.New(rand.NewSource(s)),
+		dice:         NewSeededRand(),
 		etcdservers:  etcdservers,
 		natsservers:  natsservers,
 		mu:           new(sync.Mutex),
@@ -152,6 +147,7 @@ func (g *grid) fork() *grid {
 	defer g.mu.Unlock()
 
 	return &grid{
+		dice:         NewSeededRand(),
 		name:         g.name,
 		etcdservers:  g.etcdservers,
 		natsservers:  g.natsservers,
