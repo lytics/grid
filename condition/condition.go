@@ -10,7 +10,9 @@ import (
 	"github.com/lytics/grid/ring"
 )
 
+// State saves JSON encoded state in etcd, using CAS operation.
 type State interface {
+	// Initialize the state, fails if it already exists.
 	Init(v interface{}) error
 	Fetch(v interface{}) (bool, error)
 	Store(v interface{}) (bool, error)
