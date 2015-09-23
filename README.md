@@ -44,18 +44,18 @@ type Actor interface {
 An actor can communicate with any other actor it knows the name of:
 ```go
 func (a *helloactor) Act(g grid.Grid, exit <-chan bool) bool {
-    c, _ := grid.NewConn(a.ID(), g.Nats())
-    c.Send("other", "hello")
+    tx, _ := grid.NewSender(g.Nats(), ...)
+    tx.Send("other", "hello")
     return true
 }
 
 func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
-    c, _ := grid.NewConn(a.ID(), g.Nats())
+    rx, _ := grid.NewReceiver(g.Nats(), ...)
     for {
         select {
         case <-exit:
             return true
-        case m := <-c.ReceiveC():
+        case m := <-rx.Msgs():
             log.Printf("got message: %v", m)
             return true
         }
@@ -79,12 +79,13 @@ Each actor has access to Etcd for state and coordination:
 func (a *statefulactor) Act(g grid.Grid, exit <-chan bool) bool {
     ttl := uint64(30)
     loc := strings.Join([]string{g.Name(), "state", a.ID()}, "/")
-    g.Etcd().Create(loc, "state", ttl)
+    etc := g.Etcd()
+    etc.Create(loc, "state", ttl)
     return true
 }
 ```
 
-Each actor can use the bidiractional Conn interface for communication, but it
+Each actor can use the Sender and Receiver interfaces for communication, but it
 can also use Nats directly:
 ```go
 func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
@@ -92,6 +93,13 @@ func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
     return true
 }
 ```
+
+### Sender and Receiver
+
+Though NATS can be used directly, two interface are available for convenience. 
+`Sender` provides a buffered sender with ack requests and resends. `Receiver`
+provides a receiver that acks, and can start multiple subscriber go-routines
+internally to read incoming messages.
 
 ### Getting Started With Examples
 
