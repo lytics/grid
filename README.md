@@ -112,8 +112,10 @@ Nats, get and run:
     2015/08/31 11:07:19.925048 [INF] Listening for client connections on 0.0.0.0:4222
     ...
 
-With those services running, look at the [example](example/) directory. The [firstgrid](example/firstgrid/)
-example is the simplest. It starts two actors and they pass messages. The [benchgrid](example/benchgrid/)
-example is more involved, and uses two helper libraries, [condition](condition/) and [ring](ring/) to
-help coordinate actors and route messages. The third example [flowgrid](example/flowgrid/) is similar
-to benchgrid, but can start thousands of actors to stress Etcd capacity.
+The [firstgrid](example/firstgrid/) example is the simplest. It starts two actors and they pass messages.
+Very little error checking is done but the basics are all there.
+
+The [flowgrid](example/flowgrid/) example is much more involved, but more realistic as it deals with
+coordination using the [condition](condition/) library and [ring](ring/) library. It also adds random
+failure to each actor to simulate how dealing with such failures can be dealt with using the 
+[dfa](http://github.com/lytics/dfa) library.
