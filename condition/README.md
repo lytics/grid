@@ -32,7 +32,7 @@ Things that can be done with the condition library:
 
 ### CountWatch Example
 ```go
-	w := condition.NewCountWatch(g.Etcd(), "registration", "path", "to", "watch")
+	w := condition.NewCountWatch(g.Etcd(), "registration", "dir", "to", "watch")
 	<-w.WatchUntil(10)
 	log.Printf("all ten participants have joined")
 
@@ -49,7 +49,7 @@ Things that can be done with the condition library:
 
 ### NameWatch Example
 ```go
-	w := condition.NewNameWatch(g.Etcd(), "registration", "path", "to", "watch")
+	w := condition.NewNameWatch(g.Etcd(), "registration", "dir", "to", "watch")
 	<-w.WatchUntil("producer-0", "producer-1")
 	log.Printf("both producers have joined")
 
