@@ -19,6 +19,8 @@ Each member of the name will have the same name prefix, for example:
 Will create a set of 18 actor definitions, where the actors are
 named `consumer-0`, `consumer-1`, etc.
 
+### For Creation of Actors
+
 The ring should be used anywhere when someone needs to create the
 memebrs of the ring:
 
@@ -33,6 +35,8 @@ memebrs of the ring:
     	...
     }
 
+### For Sending To Actors
+
 And when someone needs to send to the members of the ring:
 
     func (p *producer) Act(g grid.Grid, exit <-chan bool) bool {
@@ -42,7 +46,7 @@ And when someone needs to send to the members of the ring:
     	p.tx.Send(r.ByHashedString("some-key"), "producer-message")
     }
 
-### Using For Coordination
+### For Coordination of Actors
 
 The [condition](../condition/) library supports ring with the `NameWatch`
 condition. It can be used to watch when all the members of the ring join
