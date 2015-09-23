@@ -7,7 +7,7 @@ messages to the follower, which prints the message. All the basics of
 starting, creating, messaging, and running a system using grid are 
 contained in this example.
 
-## Running
+### Running
 
     $ go install
     $ firstgrid
