@@ -32,7 +32,7 @@ type ProducerActor struct {
 	conf     *Conf
 	flow     Flow
 	grid     grid.Grid
-	conn     grid.Conn
+	tx       grid.Sender
 	exit     <-chan bool
 	started  condition.Join
 	finished condition.Join
@@ -49,14 +49,13 @@ func (a *ProducerActor) String() string {
 }
 
 func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
-	c, err := grid.NewConn(a.ID(), g.Nats())
+	tx, err := grid.NewSender(a.ID(), g.Nats())
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
-	defer c.Close()
-	defer c.Flush()
+	defer tx.Close()
 
-	a.conn = c
+	a.tx = tx
 	a.grid = g
 	a.exit = exit
 	a.chaos = NewChaos(a.ID())
@@ -196,7 +195,7 @@ func (a *ProducerActor) Running() dfa.Letter {
 
 	// Make some random length string data.
 	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-a.state.SentMessages)
-	go data.Start(a.exit)
+	defer data.Stop()
 
 	r := ring.New(a.flow.NewContextualName("consumer"), a.conf.NrConsumers, a.grid)
 	start := time.Now()
@@ -220,10 +219,10 @@ func (a *ProducerActor) Running() dfa.Letter {
 				return Failure
 			}
 		case <-data.Done():
-			if err := a.conn.Flush(); err != nil {
+			if err := a.tx.Flush(); err != nil {
 				return SendFailure
 			}
-			if err := a.conn.Send(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: a.state.SentMessages, From: a.ID(), Duration: a.state.Duration}); err != nil {
+			if err := a.tx.Send(a.flow.NewContextualName("leader"), &ResultMsg{Producer: a.ID(), Count: a.state.SentMessages, From: a.ID(), Duration: a.state.Duration}); err != nil {
 				return SendFailure
 			}
 			if _, err := s.Store(a.state); err != nil {
@@ -241,7 +240,7 @@ func (a *ProducerActor) Running() dfa.Letter {
 					return Failure
 				}
 			}
-			if err := a.conn.SendBuffered(r.ByInt(a.state.SentMessages), &DataMsg{Producer: a.ID(), Data: d}); err != nil {
+			if err := a.tx.SendBuffered(r.ByInt(a.state.SentMessages), &DataMsg{Producer: a.ID(), Data: d}); err != nil {
 				if _, err := s.Store(a.state); err != nil {
 					log.Printf("%v: failed to save state: %v", a, err)
 				}
@@ -268,7 +267,7 @@ func (a *ProducerActor) Resending() dfa.Letter {
 				log.Printf("%v: failed to report 'started' liveness, but ignoring to flush send buffers", a)
 			}
 		case <-fastticker.C:
-			if err := a.conn.Flush(); err == nil {
+			if err := a.tx.Flush(); err == nil {
 				return SendSuccess
 			}
 		}
@@ -283,10 +282,10 @@ func (a *ProducerActor) Exiting() {
 		a.finished.Stop()
 	}
 
-	if err := a.conn.Flush(); err != nil {
+	if err := a.tx.Flush(); err != nil {
 		log.Printf("%v: failed to flush send buffers, trying again", a)
 		time.Sleep(5 * time.Second)
-		if err := a.conn.Flush(); err != nil {
+		if err := a.tx.Flush(); err != nil {
 			log.Printf("%v: failed to flush send buffers, data is being dropped", a)
 		}
 	}

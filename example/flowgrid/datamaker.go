@@ -2,47 +2,36 @@ package main
 
 import (
 	"math/rand"
-	"time"
+
+	"github.com/lytics/grid"
 )
 
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
 func NewDataMaker(minsize, count int) *datamaker {
-	s := int64(0)
-	for i := 0; i < 10000; i++ {
-		s += time.Now().UnixNano()
-	}
-	dice := rand.New(rand.NewSource(s))
-	size := minsize + dice.Intn(minsize)
-
+	dice := grid.NewSeededRand()
 	data := make([]string, 1000)
-	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-	makedata := func(n int) string {
-		b := make([]rune, n)
-		for i := range b {
-			b[i] = letters[dice.Intn(len(letters))]
-		}
-		return string(b)
-	}
 	for i := 0; i < 1000; i++ {
-		data[i] = makedata(dice.Intn(size))
+		data[i] = makedata(minsize, dice)
 	}
 
-	return &datamaker{
-		size:   size,
+	d := &datamaker{
 		count:  count,
 		data:   data,
-		dice:   dice,
 		done:   make(chan bool),
+		stop:   make(chan bool),
 		output: make(chan string),
 	}
+	go d.start()
+
+	return d
 }
 
 type datamaker struct {
-	size   int
 	count  int
 	data   []string
-	dice   *rand.Rand
 	done   chan bool
+	stop   chan bool
 	output chan string
 }
 
@@ -54,11 +43,18 @@ func (d *datamaker) Done() <-chan bool {
 	return d.done
 }
 
-func (d *datamaker) Start(exit <-chan bool) {
+func (d *datamaker) Stop() {
+	close(d.stop)
+}
+
+func (d *datamaker) start() {
 	sent := 0
 	for {
 		select {
-		case <-exit:
+		case <-d.stop:
+			for i := 0; i < len(d.data); i++ {
+				d.data[i] = ""
+			}
 			return
 		default:
 			if sent >= d.count {
@@ -66,11 +62,19 @@ func (d *datamaker) Start(exit <-chan bool) {
 				return
 			}
 			select {
-			case <-exit:
+			case <-d.stop:
 				return
-			case d.output <- d.data[d.dice.Intn(1000)]:
+			case d.output <- d.data[sent%1000]:
 				sent++
 			}
 		}
 	}
+}
+
+func makedata(minsize int, dice *rand.Rand) string {
+	b := make([]rune, minsize+dice.Intn(minsize))
+	for i := range b {
+		b[i] = letters[dice.Intn(len(letters))]
+	}
+	return string(b)
 }

@@ -23,7 +23,7 @@ type LeaderActor struct {
 	conf     *Conf
 	flow     Flow
 	grid     grid.Grid
-	conn     grid.Conn
+	rx       grid.Receiver
 	exit     <-chan bool
 	started  condition.Join
 	finished condition.Join
@@ -40,14 +40,13 @@ func (a *LeaderActor) String() string {
 }
 
 func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
-	c, err := grid.NewConn(a.ID(), g.Nats())
+	rx, err := grid.NewReceiver(a.ID(), g.Nats())
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
-	defer c.Close()
-	defer c.Flush()
+	defer rx.Close()
 
-	a.conn = c
+	a.rx = rx
 	a.grid = g
 	a.exit = exit
 	a.chaos = NewChaos(a.ID())
@@ -207,7 +206,7 @@ func (a *LeaderActor) Running() dfa.Letter {
 		case err := <-w.WatchError():
 			log.Printf("%v: error: %v", a, err)
 			return Failure
-		case m := <-a.conn.ReceiveC():
+		case m := <-a.rx.Msgs():
 			switch m := m.(type) {
 			case ResultMsg:
 				if strings.Contains(m.From, "producer") {

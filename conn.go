@@ -18,21 +18,76 @@ type Envelope struct {
 	Data []interface{}
 }
 
-// Conn is a named bidirectional networked communication channel.
-type Conn interface {
-	ReceiveC() <-chan interface{}
+type Receiver interface {
+	Msgs() <-chan interface{}
+	Close()
+}
+
+type receiver struct {
+	ec           *nats.EncodedConn
+	name         string
+	exit         chan bool
+	intput       chan interface{}
+	stoponce     *sync.Once
+	numreceivers int
+}
+
+func NewReceiver(name string, ec *nats.EncodedConn) (Receiver, error) {
+	r := &receiver{
+		ec:           ec,
+		name:         name,
+		exit:         make(chan bool),
+		intput:       make(chan interface{}),
+		stoponce:     new(sync.Once),
+		numreceivers: 4,
+	}
+	for i := 0; i < r.numreceivers; i++ {
+		sub, err := r.ec.QueueSubscribe(r.name, r.name, func(subject, reply string, m *Envelope) {
+			for _, d := range m.Data {
+				select {
+				case <-r.exit:
+					return
+				case r.intput <- d:
+				}
+			}
+			r.ec.Publish(reply, &Ack{Hash: m.Hash})
+		})
+		if err != nil {
+			r.Close()
+			return nil, err
+		}
+		go func() {
+			<-r.exit
+			sub.Unsubscribe()
+		}()
+	}
+	return r, nil
+}
+
+// Msgs to receive.
+func (r *receiver) Msgs() <-chan interface{} {
+	return r.intput
+}
+
+// Close.
+func (r *receiver) Close() {
+	r.stoponce.Do(func() {
+		close(r.exit)
+	})
+}
+
+type Sender interface {
 	Send(receiver string, m interface{}) error
 	SendBuffered(receiver string, m interface{}) error
 	Flush() error
 	Close()
 }
 
-type conn struct {
+type sender struct {
 	ec               *nats.EncodedConn
 	dice             *rand.Rand
 	name             string
 	exit             chan bool
-	intput           chan interface{}
 	outputs          map[string][]interface{}
 	stoponce         *sync.Once
 	buffsize         int
@@ -41,17 +96,13 @@ type conn struct {
 	nextenvelopehash int64
 }
 
-// NewConn creates a new connection using NATS as the message transport.
-// The connection will receive data sent to the given name. Any NATS
-// client can be used.
-func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
+func NewSender(name string, ec *nats.EncodedConn) (Sender, error) {
 	dice := NewSeededRand()
-	c := &conn{
+	s := &sender{
 		ec:               ec,
 		dice:             dice,
 		name:             name,
 		exit:             make(chan bool),
-		intput:           make(chan interface{}),
 		outputs:          make(map[string][]interface{}),
 		stoponce:         new(sync.Once),
 		buffsize:         100,
@@ -59,100 +110,45 @@ func NewConn(name string, ec *nats.EncodedConn) (Conn, error) {
 		sendtiemout:      2 * time.Second,
 		nextenvelopehash: dice.Int63(),
 	}
-	sub0, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
-		for _, d := range m.Data {
-			select {
-			case <-c.exit:
-				return
-			case c.intput <- d:
-			}
-		}
-		c.ec.Publish(reply, &Ack{Hash: m.Hash})
-	})
-	sub1, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
-		for _, d := range m.Data {
-			select {
-			case <-c.exit:
-				return
-			case c.intput <- d:
-			}
-		}
-		c.ec.Publish(reply, &Ack{Hash: m.Hash})
-	})
-	sub2, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
-		for _, d := range m.Data {
-			select {
-			case <-c.exit:
-				return
-			case c.intput <- d:
-			}
-		}
-		c.ec.Publish(reply, &Ack{Hash: m.Hash})
-	})
-	sub3, err := c.ec.QueueSubscribe(c.name, c.name, func(subject, reply string, m *Envelope) {
-		for _, d := range m.Data {
-			select {
-			case <-c.exit:
-				return
-			case c.intput <- d:
-			}
-		}
-		c.ec.Publish(reply, &Ack{Hash: m.Hash})
-	})
-	if err != nil {
-		return nil, err
-	}
-	go func() {
-		<-c.exit
-		sub0.Unsubscribe()
-		sub1.Unsubscribe()
-		sub2.Unsubscribe()
-		sub3.Unsubscribe()
-	}()
-	return c, nil
-}
-
-// ReceiveC is the channel of inputs for this Conn.
-func (c *conn) ReceiveC() <-chan interface{} {
-	return c.intput
+	return s, nil
 }
 
 // Send a message to the receiver.
-func (c *conn) Send(receiver string, m interface{}) error {
-	return c.send(receiver, []interface{}{m})
+func (s *sender) Send(receiver string, m interface{}) error {
+	return s.send(receiver, []interface{}{m})
 }
 
 // Send the message and previously buffered messages if the buffer is full,
 // otherwise just buffer the message.
-func (c *conn) SendBuffered(receiver string, m interface{}) error {
-	buf, ok := c.outputs[receiver]
+func (s *sender) SendBuffered(receiver string, m interface{}) error {
+	buf, ok := s.outputs[receiver]
 	if !ok {
-		buf = make([]interface{}, 0, c.buffsize)
-		c.outputs[receiver] = buf
+		buf = make([]interface{}, 0, s.buffsize)
+		s.outputs[receiver] = buf
 	}
-	if len(buf) >= c.buffsize {
-		err := c.send(receiver, buf)
+	if len(buf) >= s.buffsize {
+		err := s.send(receiver, buf)
 		if err == nil {
-			buf = make([]interface{}, 0, c.buffsize)
+			buf = make([]interface{}, 0, s.buffsize)
 			buf = append(buf, m)
-			c.outputs[receiver] = buf
+			s.outputs[receiver] = buf
 			return nil
 		} else {
 			return err
 		}
 	} else {
 		buf = append(buf, m)
-		c.outputs[receiver] = buf
+		s.outputs[receiver] = buf
 	}
 	return nil
 }
 
 // Flush forces the send of all buffered messages.
-func (c *conn) Flush() error {
-	for receiver, buf := range c.outputs {
-		err := c.send(receiver, buf)
+func (s *sender) Flush() error {
+	for receiver, buf := range s.outputs {
+		err := s.send(receiver, buf)
 		if err == nil {
-			delete(c.outputs, receiver)
+			delete(s.outputs, receiver)
 		} else {
 			return err
 		}
@@ -161,23 +157,23 @@ func (c *conn) Flush() error {
 }
 
 // Close.
-func (c *conn) Close() {
-	c.stoponce.Do(func() {
-		close(c.exit)
+func (s *sender) Close() {
+	s.stoponce.Do(func() {
+		close(s.exit)
 	})
 }
 
-func (c *conn) send(receiver string, ms []interface{}) error {
+func (s *sender) send(receiver string, ms []interface{}) error {
 	var t int
-	for ; t < c.sendretries; t++ {
+	for ; t < s.sendretries; t++ {
 		ack := &Ack{}
-		err := c.ec.Request(receiver, &Envelope{Data: ms, Hash: c.nextenvelopehash}, ack, c.sendtiemout)
-		if err == nil && ack != nil && ack.Hash == c.nextenvelopehash {
-			c.nextenvelopehash = c.dice.Int63()
+		err := s.ec.Request(receiver, &Envelope{Data: ms, Hash: s.nextenvelopehash}, ack, s.sendtiemout)
+		if err == nil && ack != nil && ack.Hash == s.nextenvelopehash {
+			s.nextenvelopehash = s.dice.Int63()
 			return nil
 		}
-		if err == nil && ack != nil && ack.Hash != c.nextenvelopehash {
-			return fmt.Errorf("received bad ack from: %v, expected ack: %v, got: %v", receiver, c.nextenvelopehash, ack.Hash)
+		if err == nil && ack != nil && ack.Hash != s.nextenvelopehash {
+			return fmt.Errorf("received bad ack from: %v, expected ack: %v, got: %v", receiver, s.nextenvelopehash, ack.Hash)
 		}
 		if err == nil && ack == nil {
 			return fmt.Errorf("received no ack from: %v", receiver)
@@ -186,24 +182,24 @@ func (c *conn) send(receiver string, ms []interface{}) error {
 			return err
 		}
 		select {
-		case <-c.exit:
+		case <-s.exit:
 			return fmt.Errorf("failed to send before exit requested")
 		default:
 			// Exit not wanted, try again.
 		}
 	}
-	return fmt.Errorf("failed to send after %d attempts with total time: %s", t, time.Duration(t)*c.sendtiemout)
+	return fmt.Errorf("failed to send after %d attempts with total time: %s", t, time.Duration(t)*s.sendtiemout)
 }
 
 // SetConnBuffSize change the size of internal buffers, used by SendBuffered
 // function, to the given size. The default is 100.
-func SetConnBuffSize(c Conn, size int) {
-	switch c := c.(type) {
-	case *conn:
+func SetConnBuffSize(s Sender, size int) {
+	switch s := s.(type) {
+	case *sender:
 		if size < 0 {
-			c.buffsize = 1
+			s.buffsize = 1
 		} else {
-			c.buffsize = size
+			s.buffsize = size
 		}
 	}
 }
@@ -212,23 +208,23 @@ func SetConnBuffSize(c Conn, size int) {
 // this low, while at the same time using a large buffer size with
 // large messages, may cause sends to error due to insufficient
 // time to send all data. The default is 2 seconds.
-func SetConnSendTimeout(c Conn, timeout time.Duration) {
-	switch c := c.(type) {
-	case *conn:
-		c.sendtiemout = timeout
+func SetConnSendTimeout(s Sender, timeout time.Duration) {
+	switch s := s.(type) {
+	case *sender:
+		s.sendtiemout = timeout
 	}
 }
 
 // SetConnSendRetries changes the number of attempts to resend data.
 // The total number of send attempts will be 1 + n. The default
 // is 3 retries.
-func SetConnSendRetries(c Conn, n int) {
-	switch c := c.(type) {
-	case *conn:
+func SetConnSendRetries(s Sender, n int) {
+	switch s := s.(type) {
+	case *sender:
 		if n < 0 {
-			c.sendretries = 1
+			s.sendretries = 1
 		} else {
-			c.sendretries = 1 + n
+			s.sendretries = 1 + n
 		}
 	}
 }

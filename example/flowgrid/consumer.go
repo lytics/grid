@@ -24,7 +24,8 @@ type ConsumerActor struct {
 	conf     *Conf
 	flow     Flow
 	grid     grid.Grid
-	conn     grid.Conn
+	tx       grid.Sender
+	rx       grid.Receiver
 	exit     <-chan bool
 	started  condition.Join
 	finished condition.Join
@@ -41,14 +42,20 @@ func (a *ConsumerActor) String() string {
 }
 
 func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
-	c, err := grid.NewConn(a.ID(), g.Nats())
+	tx, err := grid.NewSender(a.ID(), g.Nats())
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
-	defer c.Close()
-	defer c.Flush()
+	defer tx.Close()
 
-	a.conn = c
+	rx, err := grid.NewReceiver(a.ID(), g.Nats())
+	if err != nil {
+		log.Fatalf("%v: error: %v", a.ID(), err)
+	}
+	defer rx.Close()
+
+	a.tx = tx
+	a.rx = rx
 	a.grid = g
 	a.exit = exit
 	a.chaos = NewChaos(a.ID())
@@ -199,7 +206,7 @@ func (a *ConsumerActor) Running() dfa.Letter {
 		case err := <-w.WatchError():
 			log.Printf("%v: error: %v", a, err)
 			return Failure
-		case m := <-a.conn.ReceiveC():
+		case m := <-a.rx.Msgs():
 			switch m := m.(type) {
 			case DataMsg:
 				a.state.Counts[m.Producer]++
@@ -265,7 +272,7 @@ func (a *ConsumerActor) Terminating() {
 
 func (a *ConsumerActor) SendCounts() error {
 	for p, n := range a.state.Counts {
-		if err := a.conn.Send(a.flow.NewContextualName("leader"), &ResultMsg{Producer: p, Count: n, From: a.ID()}); err != nil {
+		if err := a.tx.Send(a.flow.NewContextualName("leader"), &ResultMsg{Producer: p, Count: n, From: a.ID()}); err != nil {
 			return err
 		} else {
 			delete(a.state.Counts, p)
