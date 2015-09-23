@@ -11,10 +11,10 @@ type maker struct {
 }
 
 func newActorMaker(conf *Conf) (*maker, error) {
-	if conf.NrProducers > 100 {
+	if conf.NrProducers > 1024 {
 		return nil, fmt.Errorf("to many producer actors requested: %v", conf.NrProducers)
 	}
-	if conf.NrConsumers > 100 {
+	if conf.NrConsumers > 1024 {
 		return nil, fmt.Errorf("to many consumer actors requested: %v", conf.NrConsumers)
 	}
 	return &maker{conf: conf}, nil

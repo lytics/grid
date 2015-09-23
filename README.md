@@ -12,7 +12,7 @@ It is  simple to use and provides the basic building blocks for distributed proc
 
 Configuring and starting are done in two lines:
 ```go
-g := grid.New(name, etcdservers, natsservers, taskmaker)
+g := grid.New(name, etcdservers, natsservers, actormaker)
 g.Start()
 ```
 
