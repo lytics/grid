@@ -69,11 +69,18 @@ func (a *actor) ID() string {
 // Act, returns a value of true to signal that it is
 // done and should not be scheduled again.
 func (a *actor) Act(g grid.Grid, exit <-chan bool) bool {
-	c, err := grid.NewConn(a.ID(), g.Nats())
+	tx, err := grid.NewSender(g.Nats(), 100)
 	if err != nil {
 		log.Printf("%v: error: %v", a.ID(), err)
 	}
-	defer c.Close()
+	defer tx.Close()
+
+	rx, err := grid.NewReceiver(g.Nats(), a.ID(), 1)
+	if err != nil {
+		log.Printf("%v: error: %v", a.ID(), err)
+	}
+	defer rx.Close()
+
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -82,9 +89,9 @@ func (a *actor) Act(g grid.Grid, exit <-chan bool) bool {
 			return true
 		case now := <-ticker.C:
 			if a.ID() == Leader {
-				c.Send(Follower, &Msg{Time: now, From: a.ID()})
+				tx.Send(Follower, &Msg{Time: now, From: a.ID()})
 			}
-		case m := <-c.ReceiveC():
+		case m := <-rx.Msgs():
 			log.Printf("%v: received: %v", a.ID(), m)
 		}
 	}
