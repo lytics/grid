@@ -5,7 +5,7 @@ Grid is a library to build distributed processes. A library in contrast to being
 It is  simple to use and provides the basic building blocks for distributed processing:
 
  1. Passing messages, which in grid is done via NATS.
- 1. Coorinating task instances, which in grid is done via ETCD.
+ 1. Coordinating task instances, which in grid is done via ETCD.
  1. Scheduling tasks across the processes, which in grid is done via METAFORA.
 
 ### Quick Introduction
@@ -100,6 +100,11 @@ Though NATS can be used directly, two interface are available for convenience.
 `Sender` provides a buffered sender with ack requests and resends. `Receiver`
 provides a receiver that acks, and can start multiple subscriber go-routines
 internally to read incoming messages.
+
+### Ring and Condition
+
+Two helper libraries are included to help with coordination tasks, [condition](condition/), and
+message sending tasks for divide and conquer, [ring](ring/).
 
 ### Getting Started With Examples
 
