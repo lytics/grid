@@ -94,17 +94,17 @@ func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
 }
 ```
 
+### Ring and Condition
+
+Two helper libraries are included to help with coordination tasks, [condition](condition/), and
+message sending tasks for divide and conquer, [ring](ring/).
+
 ### Sender and Receiver
 
 Though NATS can be used directly, two interface are available for convenience. 
 `Sender` provides a buffered sender with ack requests and resends. `Receiver`
 provides a receiver that acks, and can start multiple subscriber go-routines
 internally to read incoming messages.
-
-### Ring and Condition
-
-Two helper libraries are included to help with coordination tasks, [condition](condition/), and
-message sending tasks for divide and conquer, [ring](ring/).
 
 ### Getting Started With Examples
 
