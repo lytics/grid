@@ -1,7 +1,7 @@
 condition
 =========
 
-Common usage patterns for Etcd to implement group join, exit, and watch counts.
+Common usage patterns for Etcd to implement group join, and watch counts.
 Things that can be done with the condition library:
 
  1. Register that someone has joined a process.
@@ -20,9 +20,9 @@ Things that can be done with the condition library:
 }
 ```
 
-### WatchJoin Example
+### JoinWatch Example
 ```go
-	w := condition.NewJoinWatch(g.Etcd(), exit, "registration", "path", "to", "watch")
+	w := condition.NewJoinWatch(g.Etcd(), "registration", "path", "to", "watch")
 	<-w.WatchJoin()
 	log.Printf("other participant has joined")
 
@@ -32,7 +32,7 @@ Things that can be done with the condition library:
 
 ### CountWatch Example
 ```go
-	w := condition.NewCountWatch(g.Etcd(), exit, "registration", "path", "to", "watch")
+	w := condition.NewCountWatch(g.Etcd(), "registration", "path", "to", "watch")
 	<-w.WatchUntil(10)
 	log.Printf("all ten participants have joined")
 
@@ -43,6 +43,24 @@ Things that can be done with the condition library:
 		select {
 			case n := <-w.WatchCount():
 				log.Printf("there are %d participants registered", n)
+		}
+	}
+```
+
+### NameWatch Example
+```go
+	w := condition.NewNameWatch(g.Etcd(), "registration", "path", "to", "watch")
+	<-w.WatchUntil("producer-0", "producer-1")
+	log.Printf("both producers have joined")
+
+	r := ring.New("producer", 2, g)
+	<-w.WatchUntil(r)
+	log.Printf("all members of ring have joined")
+
+	for {
+		select {
+			case names := <- w.WatchNames():
+				log.Printf("the current participants: %v", names)
 		}
 	}
 ```
