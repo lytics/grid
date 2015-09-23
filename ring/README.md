@@ -40,8 +40,6 @@ memebrs of the ring:
 And when someone needs to send to the members of the ring:
 
     func (p *producer) Act(g grid.Grid, exit <-chan bool) bool {
-    	...
-
     	r := ring.New("consumers", 18, g)
     	p.tx.Send(r.ByHashedString("some-key"), "producer-message")
     }
