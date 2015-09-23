@@ -32,14 +32,16 @@ type receiver struct {
 	numreceivers int
 }
 
-func NewReceiver(name string, ec *nats.EncodedConn) (Receiver, error) {
+// NewReciever creates a reciver for the given name, using subs number of go routines
+// to read incoming messages with the given connection.
+func NewReceiver(name string, subs int, ec *nats.EncodedConn) (Receiver, error) {
 	r := &receiver{
 		ec:           ec,
 		name:         name,
 		exit:         make(chan bool),
 		intput:       make(chan interface{}),
 		stoponce:     new(sync.Once),
-		numreceivers: 4,
+		numreceivers: subs,
 	}
 	for i := 0; i < r.numreceivers; i++ {
 		sub, err := r.ec.QueueSubscribe(r.name, r.name, func(subject, reply string, m *Envelope) {
@@ -90,13 +92,19 @@ type sender struct {
 	exit             chan bool
 	outputs          map[string][]interface{}
 	stoponce         *sync.Once
-	buffsize         int
+	bufsize          int
 	sendretries      int
 	sendtiemout      time.Duration
 	nextenvelopehash int64
 }
 
-func NewSender(name string, ec *nats.EncodedConn) (Sender, error) {
+// NewSender creates a buffered sender which can be used to send to
+// an arbitrary number of receivers. Each destination receiver
+// receives its own buffer.
+func NewSender(bufsize int, ec *nats.EncodedConn) (Sender, error) {
+	if bufsize < 0 {
+		return nil, fmt.Errorf("buffer size must be positive number")
+	}
 	dice := NewSeededRand()
 	s := &sender{
 		ec:               ec,
@@ -105,31 +113,34 @@ func NewSender(name string, ec *nats.EncodedConn) (Sender, error) {
 		exit:             make(chan bool),
 		outputs:          make(map[string][]interface{}),
 		stoponce:         new(sync.Once),
-		buffsize:         100,
+		bufsize:          bufsize,
 		sendretries:      3,
-		sendtiemout:      2 * time.Second,
+		sendtiemout:      4 * time.Second,
 		nextenvelopehash: dice.Int63(),
 	}
 	return s, nil
 }
 
-// Send a message to the receiver.
+// Send a message to the receiver, if error is nil the message
+// has been delivered.
 func (s *sender) Send(receiver string, m interface{}) error {
 	return s.send(receiver, []interface{}{m})
 }
 
-// Send the message and previously buffered messages if the buffer is full,
-// otherwise just buffer the message.
+// SendBuffered buffers the message, unless the buffer is full. If it
+// is full then currently buffered messages are sent first, then the
+// current message if buffered. If sending a full buffer fails a non
+// nil error is returned, and the current message is not buffered.
 func (s *sender) SendBuffered(receiver string, m interface{}) error {
 	buf, ok := s.outputs[receiver]
 	if !ok {
-		buf = make([]interface{}, 0, s.buffsize)
+		buf = make([]interface{}, 0, s.bufsize)
 		s.outputs[receiver] = buf
 	}
-	if len(buf) >= s.buffsize {
+	if len(buf) >= s.bufsize {
 		err := s.send(receiver, buf)
 		if err == nil {
-			buf = make([]interface{}, 0, s.buffsize)
+			buf = make([]interface{}, 0, s.bufsize)
 			buf = append(buf, m)
 			s.outputs[receiver] = buf
 			return nil
@@ -191,23 +202,12 @@ func (s *sender) send(receiver string, ms []interface{}) error {
 	return fmt.Errorf("failed to send after %d attempts with total time: %s", t, time.Duration(t)*s.sendtiemout)
 }
 
-// SetConnBuffSize change the size of internal buffers, used by SendBuffered
-// function, to the given size. The default is 100.
-func SetConnBuffSize(s Sender, size int) {
-	switch s := s.(type) {
-	case *sender:
-		if size < 0 {
-			s.buffsize = 1
-		} else {
-			s.buffsize = size
-		}
-	}
-}
-
 // SetConnSendTimeout changes the timeout of send operations. Setting
 // this low, while at the same time using a large buffer size with
-// large messages, may cause sends to error due to insufficient
-// time to send all data. The default is 2 seconds.
+// large messages may cause sends to error due to insufficient
+// time to send all data. The default is 4 seconds. Use this to
+// change the setting after creating the sender if the default
+// is not suitable.
 func SetConnSendTimeout(s Sender, timeout time.Duration) {
 	switch s := s.(type) {
 	case *sender:
@@ -217,7 +217,8 @@ func SetConnSendTimeout(s Sender, timeout time.Duration) {
 
 // SetConnSendRetries changes the number of attempts to resend data.
 // The total number of send attempts will be 1 + n. The default
-// is 3 retries.
+// is 3 retries. Use this to change the setting after creating the
+// sender if the default is not suitable.
 func SetConnSendRetries(s Sender, n int) {
 	switch s := s.(type) {
 	case *sender:
