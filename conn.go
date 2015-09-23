@@ -34,7 +34,7 @@ type receiver struct {
 
 // NewReciever creates a reciver for the given name, using subs number of go routines
 // to read incoming messages with the given connection.
-func NewReceiver(name string, subs int, ec *nats.EncodedConn) (Receiver, error) {
+func NewReceiver(ec *nats.EncodedConn, name string, subs int) (Receiver, error) {
 	r := &receiver{
 		ec:           ec,
 		name:         name,
@@ -88,7 +88,6 @@ type Sender interface {
 type sender struct {
 	ec               *nats.EncodedConn
 	dice             *rand.Rand
-	name             string
 	exit             chan bool
 	outputs          map[string][]interface{}
 	stoponce         *sync.Once
@@ -101,7 +100,7 @@ type sender struct {
 // NewSender creates a buffered sender which can be used to send to
 // an arbitrary number of receivers. Each destination receiver
 // receives its own buffer.
-func NewSender(bufsize int, ec *nats.EncodedConn) (Sender, error) {
+func NewSender(ec *nats.EncodedConn, bufsize int) (Sender, error) {
 	if bufsize < 0 {
 		return nil, fmt.Errorf("buffer size must be positive number")
 	}
@@ -109,7 +108,6 @@ func NewSender(bufsize int, ec *nats.EncodedConn) (Sender, error) {
 	s := &sender{
 		ec:               ec,
 		dice:             dice,
-		name:             name,
 		exit:             make(chan bool),
 		outputs:          make(map[string][]interface{}),
 		stoponce:         new(sync.Once),

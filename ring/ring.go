@@ -8,6 +8,9 @@ import (
 	"github.com/lytics/grid"
 )
 
+// Ring represents a set of actor members used to divide a data
+// space into disjoint parts, each part owned by a particular
+// actor in the ring.
 type Ring interface {
 	ActorDefs() []*grid.ActorDef
 	ByInt(key int) string
@@ -18,20 +21,20 @@ type Ring interface {
 }
 
 type ring struct {
-	g      grid.Grid
-	name   string
-	nparts int
+	g    grid.Grid
+	name string
+	n    int
 }
 
-func New(name string, nparts int, g grid.Grid) Ring {
-	return &ring{name: name, nparts: nparts, g: g}
+func New(name string, n int, g grid.Grid) Ring {
+	return &ring{name: name, n: n, g: g}
 }
 
 // ActorDefs returns the list of actor names in this ring. They
 // may or may not be running.
 func (r *ring) ActorDefs() []*grid.ActorDef {
-	names := make([]*grid.ActorDef, r.nparts)
-	for i := 0; i < r.nparts; i++ {
+	names := make([]*grid.ActorDef, r.n)
+	for i := 0; i < r.n; i++ {
 		names[i] = r.actorDef(i)
 	}
 	return names
@@ -40,22 +43,22 @@ func (r *ring) ActorDefs() []*grid.ActorDef {
 // ByModuloInt selects an actor name by using:
 //     key % number of actors
 func (r *ring) ByInt(key int) string {
-	part := key % r.nparts
-	return r.actorName(part)
+	i := key % r.n
+	return r.actorName(i)
 }
 
 // ByModuloUint32 selects an actor name by using:
 //     key % number of actors
 func (r *ring) ByUint32(key uint32) string {
-	part := key % uint32(r.nparts)
-	return r.actorName(int(part))
+	i := key % uint32(r.n)
+	return r.actorName(int(i))
 }
 
 // ByModuloUint64 selects an actor name by using:
 //     key % number of actors
 func (r *ring) ByUint64(key uint64) string {
-	part := key % uint64(r.nparts)
-	return r.actorName(int(part))
+	i := key % uint64(r.n)
+	return r.actorName(int(i))
 }
 
 // ByHashBytes selects an actor name by using:
@@ -63,8 +66,8 @@ func (r *ring) ByUint64(key uint64) string {
 func (r *ring) ByHashedBytes(key []byte) string {
 	h := fnv.New64()
 	h.Write(key)
-	part := h.Sum64() % uint64(r.nparts)
-	return r.actorName(int(part))
+	i := h.Sum64() % uint64(r.n)
+	return r.actorName(int(i))
 }
 
 // ByHashedString selects an actor name by using:
@@ -72,8 +75,8 @@ func (r *ring) ByHashedBytes(key []byte) string {
 func (r *ring) ByHashedString(key string) string {
 	h := fnv.New64()
 	h.Write([]byte(key))
-	part := h.Sum64() % uint64(r.nparts)
-	return r.actorName(int(part))
+	i := h.Sum64() % uint64(r.n)
+	return r.actorName(int(i))
 }
 
 // ByHashedInt selects an actor name by using:
@@ -86,8 +89,8 @@ func (r *ring) ByHashedInt(key int) string {
 	}
 	h := fnv.New64()
 	h.Write(b)
-	part := h.Sum64() % uint64(r.nparts)
-	return r.actorName(int(part))
+	i := h.Sum64() % uint64(r.n)
+	return r.actorName(int(i))
 }
 
 // ByHashedUint32 selects an actor name by using:
@@ -100,8 +103,8 @@ func (r *ring) ByHashedUint32(key uint32) string {
 	}
 	h := fnv.New64()
 	h.Write(b)
-	part := h.Sum64() % uint64(r.nparts)
-	return r.actorName(int(part))
+	i := h.Sum64() % uint64(r.n)
+	return r.actorName(int(i))
 }
 
 // ByHashedUint64 selects an actor name by using:
@@ -114,16 +117,16 @@ func (r *ring) ByHashedUint64(key uint64) string {
 	}
 	h := fnv.New64()
 	h.Write(b)
-	part := h.Sum64() % uint64(r.nparts)
-	return r.actorName(int(part))
+	i := h.Sum64() % uint64(r.n)
+	return r.actorName(int(i))
 }
 
-func (r *ring) actorDef(part int) *grid.ActorDef {
-	a := grid.NewActorDef(r.actorName(part))
+func (r *ring) actorDef(i int) *grid.ActorDef {
+	a := grid.NewActorDef(r.actorName(i))
 	a.DefineType(r.name)
 	return a
 }
 
-func (r *ring) actorName(part int) string {
-	return fmt.Sprintf("%s-%d", r.name, part)
+func (r *ring) actorName(i int) string {
+	return fmt.Sprintf("%s-%d", r.name, i)
 }

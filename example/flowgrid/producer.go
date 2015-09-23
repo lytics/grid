@@ -49,7 +49,7 @@ func (a *ProducerActor) String() string {
 }
 
 func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
-	tx, err := grid.NewSender(a.ID(), g.Nats())
+	tx, err := grid.NewSender(g.Nats(), 100)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}

@@ -42,13 +42,13 @@ func (a *ConsumerActor) String() string {
 }
 
 func (a *ConsumerActor) Act(g grid.Grid, exit <-chan bool) bool {
-	tx, err := grid.NewSender(a.ID(), g.Nats())
+	tx, err := grid.NewSender(g.Nats(), 100)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
 	defer tx.Close()
 
-	rx, err := grid.NewReceiver(a.ID(), g.Nats())
+	rx, err := grid.NewReceiver(g.Nats(), a.ID(), 4)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}

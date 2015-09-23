@@ -1,5 +1,7 @@
 package grid
 
+import "regexp"
+
 type Actor interface {
 	ID() string
 	Act(g Grid, exit <-chan bool) bool
@@ -40,4 +42,16 @@ func (a *ActorDef) DefineType(t string) *ActorDef {
 func (a *ActorDef) Define(k, v string) *ActorDef {
 	a.Settings[k] = v
 	return a
+}
+
+const validActorName = "^[a-zA-Z0-9-_]+$"
+
+// IsValidActorName returns true if the give name matches the
+// regular expression "^[a-zA-Z0-9-_]+$".
+func IsValidActorName(name string) bool {
+	if matched, err := regexp.MatchString(validActorName, name); err != nil {
+		return false
+	} else {
+		return matched
+	}
 }

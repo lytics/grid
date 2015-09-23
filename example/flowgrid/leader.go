@@ -40,7 +40,7 @@ func (a *LeaderActor) String() string {
 }
 
 func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
-	rx, err := grid.NewReceiver(a.ID(), g.Nats())
+	rx, err := grid.NewReceiver(g.Nats(), a.ID(), 4)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}
