@@ -17,7 +17,7 @@ Each member of the name will have the same name prefix, for example:
     r := ring.New("consumers", 18, g)
 
 Will create a set of 18 actor definitions, where the actors are
-named `consumer-0`, `consumer-1`, etc.
+named `consumer-0`, `consumer-1`, ..., `consumer-17`
 
 ### For Creation of Actors
 
