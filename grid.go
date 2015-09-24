@@ -89,9 +89,10 @@ func (g *grid) Start() (<-chan bool, error) {
 	if err != nil {
 		return nil, err
 	}
+	nodeid := fmt.Sprintf("%s-%s", hostname, g.name)
 
 	// Define the metafora new task function and config.
-	conf := m_etcd.NewConfig(hostname, g.name, g.etcdservers)
+	conf := m_etcd.NewConfig(nodeid, g.name, g.etcdservers)
 	conf.NewTaskFunc = func(id, value string) metafora.Task {
 		def := NewActorDef(id)
 		err := json.Unmarshal([]byte(value), def)
