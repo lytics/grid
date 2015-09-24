@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"hash/fnv"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid2"
 )
 
 // Ring represents a set of actor members used to divide a data
 // space into disjoint parts, each part owned by a particular
 // actor in the ring.
 type Ring interface {
-	ActorDefs() []*grid.ActorDef
+	ActorDefs() []*grid2.ActorDef
 	ByInt(key int) string
 	ByUint32(key uint32) string
 	ByUint64(key uint64) string
@@ -21,19 +21,19 @@ type Ring interface {
 }
 
 type ring struct {
-	g    grid.Grid
+	g    grid2.Grid
 	name string
 	n    int
 }
 
-func New(name string, n int, g grid.Grid) Ring {
+func New(name string, n int, g grid2.Grid) Ring {
 	return &ring{name: name, n: n, g: g}
 }
 
 // ActorDefs returns the list of actor names in this ring. They
 // may or may not be running.
-func (r *ring) ActorDefs() []*grid.ActorDef {
-	names := make([]*grid.ActorDef, r.n)
+func (r *ring) ActorDefs() []*grid2.ActorDef {
+	names := make([]*grid2.ActorDef, r.n)
 	for i := 0; i < r.n; i++ {
 		names[i] = r.actorDef(i)
 	}
@@ -121,8 +121,8 @@ func (r *ring) ByHashedUint64(key uint64) string {
 	return r.actorName(int(i))
 }
 
-func (r *ring) actorDef(i int) *grid.ActorDef {
-	a := grid.NewActorDef(r.actorName(i))
+func (r *ring) actorDef(i int) *grid2.ActorDef {
+	a := grid2.NewActorDef(r.actorName(i))
 	a.DefineType(r.name)
 	return a
 }

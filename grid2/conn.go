@@ -1,4 +1,4 @@
-package grid
+package grid2
 
 import (
 	"fmt"

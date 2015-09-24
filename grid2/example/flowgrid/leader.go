@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/lytics/dfa"
-	"github.com/lytics/grid"
-	"github.com/lytics/grid/condition"
+	"github.com/lytics/grid/grid2"
+	"github.com/lytics/grid/grid2/condition"
 )
 
-func NewLeaderActor(def *grid.ActorDef, conf *Conf) grid.Actor {
+func NewLeaderActor(def *grid2.ActorDef, conf *Conf) grid2.Actor {
 	return &LeaderActor{
 		def:  def,
 		conf: conf,
@@ -19,11 +19,11 @@ func NewLeaderActor(def *grid.ActorDef, conf *Conf) grid.Actor {
 }
 
 type LeaderActor struct {
-	def      *grid.ActorDef
+	def      *grid2.ActorDef
 	conf     *Conf
 	flow     Flow
-	grid     grid.Grid
-	rx       grid.Receiver
+	grid     grid2.Grid
+	rx       grid2.Receiver
 	exit     <-chan bool
 	started  condition.Join
 	finished condition.Join
@@ -39,8 +39,8 @@ func (a *LeaderActor) String() string {
 	return a.ID()
 }
 
-func (a *LeaderActor) Act(g grid.Grid, exit <-chan bool) bool {
-	rx, err := grid.NewReceiver(g.Nats(), a.ID(), 4)
+func (a *LeaderActor) Act(g grid2.Grid, exit <-chan bool) bool {
+	rx, err := grid2.NewReceiver(g.Nats(), a.ID(), 4)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/lytics/dfa"
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid2"
 )
 
 var (
@@ -64,7 +64,7 @@ func NewChaos(name string) *Chaos {
 	stop := make(chan bool)
 	roll := make(chan bool, 1)
 	go func() {
-		dice := grid.NewSeededRand()
+		dice := grid2.NewSeededRand()
 		delay := time.Duration(30+dice.Intn(600)) * time.Second
 		ticker := time.NewTicker(delay)
 		happen := ticker.C

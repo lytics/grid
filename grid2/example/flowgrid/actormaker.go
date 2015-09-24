@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid2"
 )
 
 type maker struct {
@@ -20,7 +20,7 @@ func newActorMaker(conf *Conf) (*maker, error) {
 	return &maker{conf: conf}, nil
 }
 
-func (m *maker) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
+func (m *maker) MakeActor(def *grid2.ActorDef) (grid2.Actor, error) {
 	switch def.Type {
 	case "leader":
 		return NewLeaderActor(def, m.conf), nil

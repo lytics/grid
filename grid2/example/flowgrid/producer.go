@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/lytics/dfa"
-	"github.com/lytics/grid"
-	"github.com/lytics/grid/condition"
-	"github.com/lytics/grid/ring"
+	"github.com/lytics/grid/grid2"
+	"github.com/lytics/grid/grid2/condition"
+	"github.com/lytics/grid/grid2/ring"
 )
 
 type ProducerState struct {
@@ -19,7 +19,7 @@ func NewProducerState() *ProducerState {
 	return &ProducerState{SentMessages: 0, Duration: 0}
 }
 
-func NewProducerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
+func NewProducerActor(def *grid2.ActorDef, conf *Conf) grid2.Actor {
 	return &ProducerActor{
 		def:  def,
 		conf: conf,
@@ -28,11 +28,11 @@ func NewProducerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
 }
 
 type ProducerActor struct {
-	def      *grid.ActorDef
+	def      *grid2.ActorDef
 	conf     *Conf
 	flow     Flow
-	grid     grid.Grid
-	tx       grid.Sender
+	grid     grid2.Grid
+	tx       grid2.Sender
 	exit     <-chan bool
 	started  condition.Join
 	finished condition.Join
@@ -48,8 +48,8 @@ func (a *ProducerActor) String() string {
 	return a.ID()
 }
 
-func (a *ProducerActor) Act(g grid.Grid, exit <-chan bool) bool {
-	tx, err := grid.NewSender(g.Nats(), 100)
+func (a *ProducerActor) Act(g grid2.Grid, exit <-chan bool) bool {
+	tx, err := grid2.NewSender(g.Nats(), 100)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a.ID(), err)
 	}

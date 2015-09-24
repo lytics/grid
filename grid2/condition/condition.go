@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-etcd/etcd"
-	"github.com/lytics/grid/ring"
+	"github.com/lytics/grid/grid2/ring"
 )
 
 // State saves JSON encoded state in etcd, using CAS operations and
