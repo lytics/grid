@@ -72,12 +72,7 @@ func (a *LeaderActor) Act(g grid2.Grid, exit <-chan bool) bool {
 	d.SetTransition(Finishing, Failure, Exiting, a.Exiting)
 	d.SetTransition(Finishing, Exit, Exiting, a.Exiting)
 
-	err = d.Run(a.Starting)
-	if err != nil {
-		log.Fatalf("%v: error: %v", a, err)
-	}
-
-	final, err := d.Done()
+	final, err := d.Run(a.Starting)
 	if err != nil {
 		log.Fatalf("%v: error: %v", a, err)
 	}
