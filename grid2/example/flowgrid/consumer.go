@@ -181,7 +181,7 @@ func (a *ConsumerActor) Running() dfa.Letter {
 	defer w.Stop()
 
 	n := 0
-	finished := w.WatchUntil(ring.New(a.flow.NewContextualName("producer"), a.conf.NrProducers, a.grid))
+	finished := w.WatchUntil(ring.New(a.flow.NewContextualName("producer"), a.conf.NrProducers))
 	for {
 		select {
 		case <-a.exit:

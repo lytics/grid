@@ -104,7 +104,7 @@ func main() {
 	for i := 0; i < *flows; i++ {
 		flow := NewFlow(i)
 
-		rp := ring.New(flow.NewContextualName("producer"), conf.NrProducers, g)
+		rp := ring.New(flow.NewContextualName("producer"), conf.NrProducers)
 		for _, def := range rp.ActorDefs() {
 			def.DefineType("producer")
 			def.Define("flow", flow.Name())
@@ -114,7 +114,7 @@ func main() {
 			}
 		}
 
-		rc := ring.New(flow.NewContextualName("consumer"), conf.NrConsumers, g)
+		rc := ring.New(flow.NewContextualName("consumer"), conf.NrConsumers)
 		for _, def := range rc.ActorDefs() {
 			def.DefineType("consumer")
 			def.Define("flow", flow.Name())

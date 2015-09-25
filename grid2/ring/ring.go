@@ -21,13 +21,12 @@ type Ring interface {
 }
 
 type ring struct {
-	g    grid2.Grid
 	name string
 	n    int
 }
 
-func New(name string, n int, g grid2.Grid) Ring {
-	return &ring{name: name, n: n, g: g}
+func New(name string, n int) Ring {
+	return &ring{name: name, n: n}
 }
 
 // ActorDefs returns the list of actor names in this ring. They

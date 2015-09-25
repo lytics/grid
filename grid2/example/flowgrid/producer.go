@@ -192,7 +192,7 @@ func (a *ProducerActor) Running() dfa.Letter {
 	data := NewDataMaker(a.conf.MsgSize, a.conf.MsgCount-a.state.SentMessages)
 	defer data.Stop()
 
-	r := ring.New(a.flow.NewContextualName("consumer"), a.conf.NrConsumers, a.grid)
+	r := ring.New(a.flow.NewContextualName("consumer"), a.conf.NrConsumers)
 	start := time.Now()
 	for {
 		select {
