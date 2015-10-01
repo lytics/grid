@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
+	"math/rand"
 
 	"github.com/lytics/grid/grid2"
 )
@@ -18,15 +19,17 @@ type Ring interface {
 	ByUint64(key uint64) string
 	ByHashedBytes(key []byte) string
 	ByHashedString(key string) string
+	ByRandom() string
 }
 
 type ring struct {
+	dice *rand.Rand
 	name string
 	n    int
 }
 
 func New(name string, n int) Ring {
-	return &ring{name: name, n: n}
+	return &ring{dice: grid2.NewSeededRand(), name: name, n: n}
 }
 
 // ActorDefs returns the list of actor names in this ring. They
@@ -37,6 +40,11 @@ func (r *ring) ActorDefs() []*grid2.ActorDef {
 		names[i] = r.actorDef(i)
 	}
 	return names
+}
+
+// ByRandom selects an actor name by random.
+func (r *ring) ByRandom() string {
+	return r.actorName(r.dice.Intn(r.n))
 }
 
 // ByModuloInt selects an actor name by using:
