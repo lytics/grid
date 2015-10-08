@@ -206,24 +206,28 @@ func (s *sender) send(receiver string, ms []interface{}) error {
 // time to send all data. The default is 4 seconds. Use this to
 // change the setting after creating the sender if the default
 // is not suitable.
-func SetConnSendTimeout(s Sender, timeout time.Duration) {
+func SetConnSendTimeout(s Sender, timeout time.Duration) error {
 	switch s := s.(type) {
 	case *sender:
 		s.sendtiemout = timeout
+		return nil
 	}
+	return fmt.Errorf("unknown sender type: %T", s)
 }
 
 // SetConnSendRetries changes the number of attempts to resend data.
 // The total number of send attempts will be 1 + n. The default
 // is 3 retries. Use this to change the setting after creating the
 // sender if the default is not suitable.
-func SetConnSendRetries(s Sender, n int) {
+func SetConnSendRetries(s Sender, n int) error {
 	switch s := s.(type) {
 	case *sender:
-		if n < 0 {
-			s.sendretries = 1
-		} else {
+		if n >= 0 {
 			s.sendretries = 1 + n
+			return nil
+		} else {
+			return fmt.Errorf("number of retries must be non-negative")
 		}
 	}
+	return fmt.Errorf("unknown sender type: %T", s)
 }

@@ -14,7 +14,7 @@ the names of the members.
 
 Each member of the name will have the same name prefix, for example:
 
-    r := ring.New("consumers", 18, g)
+    r := ring.New("consumer", 18)
 
 Will create a set of 18 actor definitions, where the actors are
 named `consumer-0`, `consumer-1`, ..., `consumer-17`
@@ -27,7 +27,7 @@ memebrs of the ring:
     func main() {
     	...
 
-    	r := ring.New("consumers", 18, g)
+    	r := ring.New("consumer", 18)
     	for _, def := range r.ActorDefs() {
     		g.StartActor(def)
     	}
@@ -40,7 +40,7 @@ memebrs of the ring:
 And when someone needs to send to the members of the ring:
 
     func (p *producer) Act(g grid.Grid, exit <-chan bool) bool {
-    	r := ring.New("consumers", 18, g)
+    	r := ring.New("consumer", 18)
     	p.tx.Send(r.ByHashedString("some-key"), "producer-message")
     }
 
@@ -60,7 +60,7 @@ a particular path:
 
     func (c *consumer) Act(g grid.Grid, exit <-chan bool) bool {
     	w := condition.NewNameWatch()
-    	r := ring.New("producer", 20, g)
+    	r := ring.New("producer", 20)
 
     	finished := w.WatchUntil(r)
 
