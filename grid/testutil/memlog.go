@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid"
 )
 
 const nparts = 4

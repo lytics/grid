@@ -7,7 +7,7 @@ import (
 	"log"
 	"testing"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid"
 )
 
 const TestTopic = "test-topic"
