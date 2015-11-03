@@ -23,7 +23,7 @@ type Manager struct {
 func NewManager(id int, opts *CoordOptions, g *Grid) *Manager {
 	name := buildPeerName(id)
 	falthook := func() {
-		log.Fatalf("grid: manager %v: exiting due to one or more peers going unhealthy, the grid needs to be restarted.", name)
+		Seppuku("grid: manager %v: exiting due to one or more peers going unhealthy, the grid needs to be restarted.", name)
 	}
 	return &Manager{name, newPeerState(), 0, falthook, make(chan bool), opts, g}
 }
@@ -162,7 +162,7 @@ func (m *Manager) stateMachine(in <-chan Event, out chan<- Event) {
 func buildPeerName(id int) string {
 	host, err := os.Hostname()
 	if err != nil {
-		log.Fatalf("fatal: grid: failed to aquire hostname: %v", err)
+		Seppuku("fatal: grid: failed to aquire hostname: %v", err)
 	}
 
 	return fmt.Sprintf("%v-%v-%v", host, os.Getpid(), id)
