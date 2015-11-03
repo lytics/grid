@@ -200,13 +200,13 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 
 		client, err := sarama.NewClient(kl.conf.Brokers, conf)
 		if err != nil {
-			log.Fatalf("fatal: client: topic: %v: %v", topic, err)
+			Seppuku("fatal: client: topic: %v: %v", topic, err)
 		}
 		defer client.Close()
 
 		producer, err := sarama.NewAsyncProducerFromClient(client)
 		if err != nil {
-			log.Fatalf("fatal: producer: topic: %v: %v", err)
+			Seppuku("fatal: producer: topic: %v: %v", err)
 		}
 		defer producer.Close()
 
@@ -234,7 +234,7 @@ func (kl *kafkalog) Write(topic string, in <-chan Event) {
 					if strings.Contains(err.Error(), "Message was too large") {
 						log.Printf("error: producer: topic: %v: %T :: %v", topic, err.Err, err.Error)
 					} else {
-						log.Fatalf("fatal: producer: topic: %v: %T :: %v", topic, err.Err, err.Error)
+						Seppuku("fatal: producer: topic: %v: %T :: %v", topic, err.Err, err.Error)
 					}
 				}
 			}
@@ -255,7 +255,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 
 	client, err := sarama.NewClient(kl.conf.Brokers, kl.conf.Config)
 	if err != nil {
-		log.Fatalf("fatal: client: topic: %v: %v", topic, err)
+		Seppuku("fatal: client: topic: %v: %v", topic, err)
 	}
 
 	for i, part := range parts {
@@ -266,7 +266,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 
 			consumer, err := sarama.NewConsumerFromClient(client)
 			if err != nil {
-				log.Fatalf("fatal: consumer: topic: %v: %v", topic, err)
+				Seppuku("fatal: consumer: topic: %v: %v", topic, err)
 			}
 
 			go func() {
@@ -278,7 +278,7 @@ func (kl *kafkalog) Read(topic string, parts []int32, offsets []int64, exit <-ch
 			var buf bytes.Buffer
 			events, err := consumer.ConsumePartition(topic, part, offset)
 			if err != nil {
-				log.Fatalf("fatal: consumer: topic: %v: %v", topic, err)
+				Seppuku("fatal: consumer: topic: %v: %v", topic, err)
 			}
 			for {
 				select {

@@ -11,6 +11,14 @@ import (
 	metrics "github.com/rcrowley/go-metrics"
 )
 
+type Fataler func(format string, v ...interface{})
+
+var Seppuku Fataler = DefaultFataler
+
+func DefaultFataler(format string, v ...interface{}) {
+	log.Fatalf(format, v...)
+}
+
 type Grid struct {
 	log        ReadWriteLog
 	gridname   string
@@ -108,8 +116,8 @@ func (g *Grid) Start() error {
 
 	_, max, err := g.log.Offsets(g.cmdtopic, 0)
 	if err != nil {
-		log.Fatalf("fatal: grid: topic: %v: failed to get offset for partition: %v: %v", g.cmdtopic, 0, err)
-		log.Fatalf("fatal: grid: topic: %v: this topic must be available for the grid to function", g.cmdtopic)
+		Seppuku("fatal: grid: topic: %v: failed to get offset for partition: %v: %v", g.cmdtopic, 0, err)
+		///log.Fatalf("fatal: grid: topic: %v: this topic must be available for the grid to function", g.cmdtopic)
 	}
 
 	// Read needs to know topic, partitions, offsets, and
@@ -206,13 +214,13 @@ func (g *Grid) startInstance(inst *Instance) {
 
 	// Validate early that the instance was added to the grid.
 	if _, exists := g.actorconfs[name]; !exists {
-		log.Fatalf("fatal: grid: %v-%d: never configured", name, id)
+		Seppuku("fatal: grid: %v-%d: never configured", name, id)
 	}
 
 	// Validate early that the instance has topics and partition subsets.
 	for topic, _ := range inst.TopicSlices {
 		if !g.actorconfs[name].inputs[topic] {
-			log.Fatalf("fatal: grid: %v-%d: not set as reader of: %v", name, id, topic)
+			Seppuku("fatal: grid: %v-%d: not set as reader of: %v", name, id, topic)
 		}
 	}
 
@@ -260,7 +268,7 @@ func (g *Grid) negotiateReadOffsets(id int, name, topic string, parts []int32, i
 		for _, part := range parts {
 			min, max, err := g.log.Offsets(topic, part)
 			if err != nil {
-				log.Fatalf("fatal: grid: %v-%d: topic: %v: partition: %v: failed getting offset: %v", name, id, topic, part, err)
+				Seppuku("fatal: grid: %v-%d: topic: %v: partition: %v: failed getting offset: %v", name, id, topic, part, err)
 			}
 			state <- NewReadable(g.statetopic, 0, 0, NewMinMaxOffset(min, max, part, topic, response))
 		}
@@ -300,7 +308,7 @@ func writer(out <-chan Event, topics map[string]chan Event) {
 			topic <- event
 		} else {
 			// The uesr called a topic that was never configured.
-			log.Fatalf("fatal: grid: no encoder found for topic: %v", event.Topic())
+			Seppuku("fatal: grid: no encoder found for topic: %v", event.Topic())
 		}
 	}
 }
