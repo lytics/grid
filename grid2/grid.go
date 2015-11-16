@@ -170,7 +170,7 @@ func (g *grid) newNatsConn() (*nats.EncodedConn, error) {
 	natsop.Servers = g.natsservers
 	natsnc, err := natsop.Connect()
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to nats: %v, maybe user: %v", err, nats.DefaultURL)
+		return nil, fmt.Errorf("failed to connect to nats: %v, maybe use: %v", err, nats.DefaultURL)
 	}
 	// Create a nats connection, with encoding.
 	natsconn, err := nats.NewEncodedConn(natsnc, nats.GOB_ENCODER)
