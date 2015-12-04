@@ -10,22 +10,6 @@ import (
 	"github.com/lytics/grid/grid2/ring"
 )
 
-// State saves JSON encoded state in etcd, using CAS operations and
-// does the work of maintaining the etcd RAFT index. Eeach operation
-// of fetch, store, remove return a boolean flag indicating if the
-// operation was operating on stale data. In the case of store and
-// remove, it will cause the operation to fail, and the user must
-// call fetch to get the latest version and then retry the operation.
-//
-//     s := condition.NewState(client, 5 * time.Minute, "path", "of", "state")
-//     defer s.Stop()
-//
-// The path must always start at the root. So if /state/producers/p1
-// was the etcd path, then the three path parts would be "state",
-// "producers", "p1"
-//
-// The value saved in state can be of any type that can be JSON
-// encoded and decoded.
 type State interface {
 	// Initialize the state. If it already exists an error will
 	// be returned.
@@ -35,14 +19,13 @@ type State interface {
 	//         ... error code ...
 	//     }
 	Init(v interface{}) error
-	// Fetch etcd state into v. A bool value of true indicates
-	// that there has been an update to the state performed
-	// by someone else.
+	// Fetch state into v. A bool value of true indicates that 
+	// there has been an update performed by someone else.
 	Fetch(v interface{}) (bool, error)
-	// Store v into etcd state. A bool value of true indicates
+	// Store v into state. A bool value of true indicates
 	// that there has been an update to the state performed
 	// by someone else. Stale operations always produce an
-	// error in addition.
+	// error.
 	//
 	//     stale, err := s.Store(v)
 	//     if stale {
@@ -53,10 +36,9 @@ type State interface {
 	//         ... error code ...
 	//     }
 	Store(v interface{}) (bool, error)
-	// Remove state from etcd. A bool value of true indicates
-	// that there has been an update to the state performed
-	// by someone else. State operations always produce an
-	// error in addition.
+	// Remove state. A bool value of true indicates that there 
+	// has been an update to the state performed by someone else.
+	// Stale operations always produce an error.
 	Remove() (bool, error)
 	// Index of the state, this is the etcd RAFT index.
 	Index() uint64
@@ -64,13 +46,6 @@ type State interface {
 	Stop()
 }
 
-// Join is used to indicate that some component has joined an operation.
-// In conjunction with the JoinWatch, CountWatch, and NameWatch it can
-// be used to coordinate components running on different machines via
-// etcd.
-//
-//     j := condition.NewJoin(client, 30 * time.Second, "path", "to", "join")
-//     defer j.Stop()
 type Join interface {
 	// Join to indicate that caller is present. Returns an error
 	// if the component has already joined within the last TTL
@@ -111,22 +86,6 @@ type Join interface {
 	Stop()
 }
 
-// JoinWatch watches for joins. It can be used to discover when
-// another component was joined or exited.
-//
-//     w := condition.NewJoinWatch(client, "path", "to", "watch")
-//     defer w.Stop()
-//
-//     for {
-//         select {
-//         case <- w.WatchJoin():
-//             ... partner has joined ...
-//         case <- w.WatchExit():
-//             ... partner has exited ...
-//         case err := <- w.WatchError():
-//             ... error code ...
-//         }
-//     }
 type JoinWatch interface {
 	// WatchJoin channel sends true when watched path has joined.
 	WatchJoin() <-chan bool
@@ -140,36 +99,6 @@ type JoinWatch interface {
 	Stop()
 }
 
-// CountWatch watches for some number of joins. It can be used to discover
-// when a known number of group memebers are present.
-//
-//     w := condition.NewCountWatch(client, "path", "to", "watch")
-//     defer w.Stop()
-//
-// The path must be to an etcd directory, otherwise the watch will not
-// function.
-//
-//     for {
-//         select {
-//         case <- w.WatchUntil(10):
-//             ... 10 partners are present ...
-//         case err := <- w.WatchError():
-//             ... error code ...
-//         }
-//     }
-//
-// Or
-//     for {
-//         select {
-//         case n := <- w.WatchCount():
-//             ... n partners are present ...
-//         case err := <- w.WatchError():
-//             ... error code ...
-//         }
-//     }
-//
-// It is not correct to select from both WatchUntil and WatchCount at
-// the same time.
 type CountWatch interface {
 	// WatchUntil count number of members have joined. The channel
 	// is closed when the given count joins.
@@ -183,36 +112,6 @@ type CountWatch interface {
 	Stop()
 }
 
-// NameWatch watches for specific member names to join. It can be used
-// to discover when a known group of members is present.
-//
-//     w := condition.NewNameWatch(client, "path", "to", "watch")
-//     defer w.Stop()
-//
-// The path must be to an etcd directory, otherwise the watch will not
-// function.
-//
-//     for {
-//         select {
-//         case <- w.WatchUntil("member1", "member2"):
-//             ... 2 partners are present ...
-//         case err := <- w.WatchError():
-//             ... error code ...
-//         }
-//     }
-//
-// Or
-//     for {
-//         select {
-//         case names := <- w.WatchNames():
-//             ... names of partners currently present ...
-//         case err := <- w.WatchError():
-//             ... error code ...
-//         }
-//     }
-//
-// It is not correct to select from both WatchUntil and WatchCount at
-// the same time.
 type NameWatch interface {
 	// WatchUntil the given names are present. The channel is closed
 	// when all members are present. Name can be of type string or
@@ -229,6 +128,22 @@ type NameWatch interface {
 	Stop()
 }
 
+// State saves JSON encoded state in etcd, using CAS operations and
+// does the work of maintaining the etcd RAFT index. Eeach operation
+// of fetch, store, remove return a boolean flag indicating if the
+// operation was operating on stale data. In the case of store and
+// remove, it will cause the operation to fail, and the user must
+// call fetch to get the latest version and then retry the operation.
+//
+//     s := condition.NewState(client, 5 * time.Minute, "path", "of", "state")
+//     defer s.Stop()
+//
+// The path must always start at the root. So if /state/producers/p1
+// was the etcd path, then the three path parts would be "state",
+// "producers", "p1"
+//
+// The value saved in state can be of any type that can be JSON
+// encoded and decoded.
 func NewState(e *etcd.Client, ttl time.Duration, path ...string) State {
 	realttl := 1 * time.Second
 	if ttl.Seconds() > realttl.Seconds() {
@@ -304,6 +219,13 @@ func (s *state) Stop() {
 	s.e.Close()
 }
 
+// Join is used to indicate that some component has joined an operation.
+// In conjunction with the JoinWatch, CountWatch, and NameWatch it can
+// be used to coordinate components running on different machines via
+// etcd.
+//
+//     j := condition.NewJoin(client, 30 * time.Second, "path", "to", "join")
+//     defer j.Stop()
 func NewJoin(e *etcd.Client, ttl time.Duration, path ...string) Join {
 	realttl := 1 * time.Second
 	if ttl.Seconds() > realttl.Seconds() {
@@ -355,6 +277,22 @@ func (j *join) Stop() {
 	j.e.Close()
 }
 
+// JoinWatch watches for joins. It can be used to discover when
+// another component was joined or exited.
+//
+//     w := condition.NewJoinWatch(client, "path", "to", "watch")
+//     defer w.Stop()
+//
+//     for {
+//         select {
+//         case <- w.WatchJoin():
+//             ... partner has joined ...
+//         case <- w.WatchExit():
+//             ... partner has exited ...
+//         case err := <- w.WatchError():
+//             ... error code ...
+//         }
+//     }
 func NewJoinWatch(e *etcd.Client, path ...string) JoinWatch {
 	key := strings.Join(path, "/")
 	stopc := make(chan bool)
@@ -459,6 +397,36 @@ func (w *joinwatch) Stop() {
 	close(w.stopc)
 }
 
+// CountWatch watches for some number of joins. It can be used to discover
+// when a known number of group memebers are present.
+//
+//     w := condition.NewCountWatch(client, "path", "to", "watch")
+//     defer w.Stop()
+//
+// The path must be to an etcd directory, otherwise the watch will not
+// function.
+//
+//     for {
+//         select {
+//         case <- w.WatchUntil(10):
+//             ... 10 partners are present ...
+//         case err := <- w.WatchError():
+//             ... error code ...
+//         }
+//     }
+//
+// Or
+//     for {
+//         select {
+//         case n := <- w.WatchCount():
+//             ... n partners are present ...
+//         case err := <- w.WatchError():
+//             ... error code ...
+//         }
+//     }
+//
+// It is not correct to select from both WatchUntil and WatchCount at
+// the same time.
 func NewCountWatch(e *etcd.Client, path ...string) CountWatch {
 	key := strings.Join(path, "/")
 	stopc := make(chan bool)
@@ -592,6 +560,36 @@ func (w *countwatch) Stop() {
 	close(w.stopc)
 }
 
+// NameWatch watches for specific member names to join. It can be used
+// to discover when a known group of members is present.
+//
+//     w := condition.NewNameWatch(client, "path", "to", "watch")
+//     defer w.Stop()
+//
+// The path must be to an etcd directory, otherwise the watch will not
+// function.
+//
+//     for {
+//         select {
+//         case <- w.WatchUntil("member1", "member2"):
+//             ... 2 partners are present ...
+//         case err := <- w.WatchError():
+//             ... error code ...
+//         }
+//     }
+//
+// Or
+//     for {
+//         select {
+//         case names := <- w.WatchNames():
+//             ... names of partners currently present ...
+//         case err := <- w.WatchError():
+//             ... error code ...
+//         }
+//     }
+//
+// It is not correct to select from both WatchUntil and WatchCount at
+// the same time.
 func NewNameWatch(e *etcd.Client, path ...string) NameWatch {
 	key := strings.Join(path, "/")
 	stopc := make(chan bool)
