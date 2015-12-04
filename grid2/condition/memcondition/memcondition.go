@@ -310,7 +310,7 @@ func NewJoinWatch(e *Memory, path ...string) condition.JoinWatch {
 			res, err = e.Get(key)
 			if err != nil {
 				if err == ErrKeyDoesNotExist {
-					ticker := time.NewTicker(5 * time.Second)
+					ticker := time.NewTicker(20 * time.Millisecond)
 					select {
 					case <-stopc:
 						ticker.Stop()
@@ -331,7 +331,7 @@ func NewJoinWatch(e *Memory, path ...string) condition.JoinWatch {
 			case <-stopc:
 				return
 			default:
-				time.Sleep(5 * time.Second)
+				time.Sleep(20 * time.Millisecond)
 				res, err = e.Get(key)
 				if res != nil && res.Node != nil {
 					select {
@@ -421,7 +421,7 @@ func NewCountWatch(e *Memory, path ...string) condition.CountWatch {
 			res, err = e.Get(key)
 			if err != nil {
 				if err == ErrKeyDoesNotExist {
-					ticker := time.NewTicker(5 * time.Second)
+					ticker := time.NewTicker(20 * time.Millisecond)
 					select {
 					case <-stopc:
 						ticker.Stop()
@@ -455,7 +455,7 @@ func NewCountWatch(e *Memory, path ...string) condition.CountWatch {
 			case <-stopc:
 				return
 			default:
-				time.Sleep(5 * time.Second)
+				time.Sleep(20 * time.Millisecond)
 				res, err := e.Get(key)
 				if err != nil {
 					if err == ErrKeyDoesNotExist {
@@ -565,7 +565,7 @@ func NewNameWatch(e *Memory, path ...string) condition.NameWatch {
 			res, err = e.Get(key)
 			if err != nil {
 				if err == ErrKeyDoesNotExist {
-					ticker := time.NewTicker(5 * time.Second)
+					ticker := time.NewTicker(20 * time.Millisecond)
 					select {
 					case <-stopc:
 						ticker.Stop()
@@ -603,7 +603,7 @@ func NewNameWatch(e *Memory, path ...string) condition.NameWatch {
 			case <-stopc:
 				return
 			default:
-				time.Sleep(5 * time.Second)
+				time.Sleep(20 * time.Millisecond)
 				res, err := e.Get(key)
 				if err != nil {
 					if err == ErrKeyDoesNotExist {
