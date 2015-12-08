@@ -86,6 +86,7 @@ type Sender interface {
 }
 
 type sender struct {
+	mu               *sync.Mutex
 	ec               *nats.EncodedConn
 	dice             *rand.Rand
 	exit             chan bool
@@ -106,6 +107,7 @@ func NewSender(ec *nats.EncodedConn, bufsize int) (Sender, error) {
 	}
 	dice := NewSeededRand()
 	s := &sender{
+		mu:               new(sync.Mutex),
 		ec:               ec,
 		dice:             dice,
 		exit:             make(chan bool),
@@ -122,6 +124,8 @@ func NewSender(ec *nats.EncodedConn, bufsize int) (Sender, error) {
 // Send a message to the receiver, if error is nil the message
 // has been delivered.
 func (s *sender) Send(receiver string, m interface{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.send(receiver, []interface{}{m})
 }
 
@@ -130,6 +134,8 @@ func (s *sender) Send(receiver string, m interface{}) error {
 // current message if buffered. If sending a full buffer fails a non
 // nil error is returned, and the current message is not buffered.
 func (s *sender) SendBuffered(receiver string, m interface{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	buf, ok := s.outputs[receiver]
 	if !ok {
 		buf = make([]interface{}, 0, s.bufsize)
@@ -154,6 +160,8 @@ func (s *sender) SendBuffered(receiver string, m interface{}) error {
 
 // Flush forces the send of all buffered messages.
 func (s *sender) Flush() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for receiver, buf := range s.outputs {
 		err := s.send(receiver, buf)
 		if err == nil {
