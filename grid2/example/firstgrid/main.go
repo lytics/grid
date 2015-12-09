@@ -75,7 +75,7 @@ func (a *actor) Act(g grid2.Grid, exit <-chan bool) bool {
 	}
 	defer tx.Close()
 
-	rx, err := grid2.NewReceiver(g.Nats(), a.ID(), 1)
+	rx, err := grid2.NewReceiver(g.Nats(), a.ID(), 1, 0)
 	if err != nil {
 		log.Printf("%v: error: %v", a.ID(), err)
 	}

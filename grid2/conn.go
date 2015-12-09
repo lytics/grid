@@ -34,12 +34,12 @@ type receiver struct {
 
 // NewReciever creates a reciver for the given name, using subs number of go routines
 // to read incoming messages with the given connection.
-func NewReceiver(ec *nats.EncodedConn, name string, subs int) (Receiver, error) {
+func NewReceiver(ec *nats.EncodedConn, name string, subs, bufsize int) (Receiver, error) {
 	r := &receiver{
 		ec:           ec,
 		name:         name,
 		exit:         make(chan bool),
-		intput:       make(chan interface{}),
+		intput:       make(chan interface{}, bufsize),
 		stoponce:     new(sync.Once),
 		numreceivers: subs,
 	}
