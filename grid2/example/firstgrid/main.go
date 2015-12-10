@@ -38,15 +38,19 @@ func main() {
 
 	// Wait for a signal from the user to exit, or
 	// exit if exit channel is closed by grid2.
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	select {
-	case <-sig:
-		log.Printf("shutting down")
-		g.Stop()
-	case <-exit:
-		log.Printf("shutting down, grid exited")
-	}
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		select {
+		case <-sig:
+			log.Printf("shutting down")
+			g.Stop()
+		case <-exit:
+		}
+	}()
+
+	<-exit
+	log.Printf("shutdown complete")
 }
 
 type maker struct{}

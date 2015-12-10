@@ -135,15 +135,19 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	select {
-	case <-sig:
-		log.Printf("Shutting down")
-		g.Stop()
-	case <-exit:
-		log.Printf("Shutting down, grid exited")
-	}
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		select {
+		case <-sig:
+			log.Printf("shutting down")
+			g.Stop()
+		case <-exit:
+		}
+	}()
+
+	<-exit
+	log.Println("shutdown complete")
 }
 
 type Flow string
