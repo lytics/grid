@@ -1,9 +1,6 @@
 package grid2
 
-import (
-	"fmt"
-	"sync"
-)
+import "sync"
 
 type actorhandler struct {
 	a        Actor
@@ -33,9 +30,7 @@ func (h *actorhandler) Run() bool {
 
 // Stop + Run makes actorhandler a metafora.Handler
 func (h *actorhandler) Stop() {
-	fmt.Println("handler trying to stop 1")
 	h.stoponce.Do(func() {
-		fmt.Println("handler tyring to stop 2")
 		close(h.exit)
 	})
 }
