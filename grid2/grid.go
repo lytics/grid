@@ -49,6 +49,7 @@ func New(name string, etcdservers []string, natsservers []string, m ActorMaker) 
 		natsservers:  natsservers,
 		mu:           new(sync.Mutex),
 		stopped:      true,
+		started:      false,
 		exit:         make(chan bool),
 		maker:        m,
 		natsconnpool: make([]*nats.EncodedConn, 2*runtime.NumCPU()),
@@ -122,6 +123,8 @@ func (g *grid) Start() (<-chan bool, error) {
 	}
 	g.metaconsumer = c
 	g.metaclient = m_etcd.NewClient(g.name, g.etcdservers)
+	g.stopped = false
+	g.started = true
 
 	// Close the exit channel when metafora thinks
 	// an exit is needed.
