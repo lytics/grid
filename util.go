@@ -1,4 +1,4 @@
-package grid2
+package grid
 
 import (
 	"encoding/binary"

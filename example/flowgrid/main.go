@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lytics/grid/grid2"
-	"github.com/lytics/grid/grid2/condition"
-	"github.com/lytics/grid/grid2/ring"
+	"github.com/lytics/grid"
+	"github.com/lytics/grid/condition"
+	"github.com/lytics/grid/ring"
 )
 
 var (
@@ -59,7 +59,7 @@ func main() {
 		log.Fatalf("error: failed to make actor maker: %v", err)
 	}
 
-	g := grid2.New(conf.GridName, etcdservers, natsservers, m)
+	g := grid.New(conf.GridName, etcdservers, natsservers, m)
 
 	exit, err := g.Start()
 	if err != nil {
@@ -124,7 +124,7 @@ func main() {
 			}
 		}
 
-		def := grid2.NewActorDef(flow.NewContextualName("leader"))
+		def := grid.NewActorDef(flow.NewContextualName("leader"))
 		def.DefineType("leader")
 		def.Define("flow", flow.Name())
 		err = g.StartActor(def)

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-etcd/etcd"
-	"github.com/lytics/grid/grid2/ring"
+	"github.com/lytics/grid/ring"
 )
 
 type State interface {
