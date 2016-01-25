@@ -27,6 +27,7 @@ type Grid interface {
 type grid struct {
 	dice         *rand.Rand
 	name         string
+	nodeid       string
 	etcdservers  []string
 	natsservers  []string
 	mu           *sync.Mutex
@@ -41,9 +42,10 @@ type grid struct {
 	maker        ActorMaker
 }
 
-func New(name string, etcdservers []string, natsservers []string, m ActorMaker) Grid {
+func New(name, nodeid string, etcdservers []string, natsservers []string, m ActorMaker) Grid {
 	return &grid{
 		name:         name,
+		nodeid:       nodeid,
 		dice:         NewSeededRand(),
 		etcdservers:  etcdservers,
 		natsservers:  natsservers,
@@ -85,15 +87,17 @@ func (g *grid) Start() (<-chan bool, error) {
 		return g.exit, nil
 	}
 
-	// Use the hostname as the node identifier.
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, err
+	if g.nodeid == "" {
+		// Use the hostname as the node identifier.
+		hostname, err := os.Hostname()
+		if err != nil {
+			return nil, err
+		}
+		g.nodeid = fmt.Sprintf("%s-%s", hostname, g.name)
 	}
-	nodeid := fmt.Sprintf("%s-%s", hostname, g.name)
 
 	// Define the metafora new task function and config.
-	conf := m_etcd.NewConfig(nodeid, g.name, g.etcdservers)
+	conf := m_etcd.NewConfig(g.nodeid, g.name, g.etcdservers)
 	conf.NewTaskFunc = func(id, value string) metafora.Task {
 		def := NewActorDef(id)
 		err := json.Unmarshal([]byte(value), def)

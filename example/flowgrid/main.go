@@ -59,7 +59,7 @@ func main() {
 		log.Fatalf("error: failed to make actor maker: %v", err)
 	}
 
-	g := grid.New(conf.GridName, etcdservers, natsservers, m)
+	g := grid.New(conf.GridName, hostname, etcdservers, natsservers, m)
 
 	exit, err := g.Start()
 	if err != nil {
