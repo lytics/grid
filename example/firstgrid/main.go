@@ -17,7 +17,7 @@ const (
 )
 
 func main() {
-	g := grid.New("firstgrid", []string{"http://localhost:2379"}, []string{"nats://localhost:4222"}, &maker{})
+	g := grid.New("firstgrid", "", []string{"http://localhost:2379"}, []string{"nats://localhost:4222"}, &maker{})
 
 	// Start the grid.
 	exit, err := g.Start()
