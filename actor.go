@@ -14,13 +14,14 @@ type ActorMaker interface {
 }
 
 func NewActorDef(name string) *ActorDef {
-	return &ActorDef{Name: name, Type: name, Settings: make(map[string]string)}
+	return &ActorDef{Name: name, Type: name, Settings: make(map[string]string), RawData: make(map[string][]byte)}
 }
 
 type ActorDef struct {
 	Name     string            `json:"name"`
 	Type     string            `json:"type"`
 	Settings map[string]string `json:"settings"`
+	RawData  map[string][]byte `json:"rawdata"`
 }
 
 // ID returns the name of this actor definition.
