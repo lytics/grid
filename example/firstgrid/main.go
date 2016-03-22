@@ -17,7 +17,13 @@ const (
 )
 
 func main() {
-	g := grid.New("firstgrid", "", []string{"http://localhost:2379"}, []string{"nats://localhost:4222"}, &maker{})
+	// Use the hostname as the node identifier.
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatalf("error: failed to discover hostname")
+	}
+
+	g := grid.New("firstgrid", hostname, []string{"http://localhost:2379"}, []string{"nats://localhost:4222"}, &maker{})
 
 	// Start the grid.
 	exit, err := g.Start()

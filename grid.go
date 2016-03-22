@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
 	"runtime"
 	"sync"
 
@@ -88,12 +87,7 @@ func (g *grid) Start() (<-chan bool, error) {
 	}
 
 	if g.nodeid == "" {
-		// Use the hostname as the node identifier.
-		hostname, err := os.Hostname()
-		if err != nil {
-			return nil, err
-		}
-		g.nodeid = fmt.Sprintf("%s-%s", hostname, g.name)
+		return nil, fmt.Errorf("nodeid cannot be empty")
 	}
 
 	// Define the metafora new task function and config.
