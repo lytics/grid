@@ -23,13 +23,14 @@ type Ring interface {
 }
 
 type ring struct {
-	dice *rand.Rand
-	name string
-	n    int
+	dice      *rand.Rand
+	name      string
+	actortype string
+	n         int
 }
 
 func New(name string, n int) Ring {
-	return &ring{dice: grid.NewSeededRand(), name: name, n: n}
+	return &ring{dice: grid.NewSeededRand(), name: name, actortype: name, n: n}
 }
 
 // ActorDefs returns the list of actor names in this ring. They
@@ -130,7 +131,7 @@ func (r *ring) ByHashedUint64(key uint64) string {
 
 func (r *ring) actorDef(i int) *grid.ActorDef {
 	a := grid.NewActorDef(r.actorName(i))
-	a.DefineType(r.name)
+	a.DefineType(r.actortype)
 	return a
 }
 
