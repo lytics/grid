@@ -9,6 +9,19 @@ import (
 	"github.com/nats-io/nats"
 )
 
+// Create Test Options that don't Conflict with
+// any local server 4222 port
+var GnatsdTestOptions = server.Options{
+	Host:   "localhost",
+	Port:   9547,
+	NoLog:  true,
+	NoSigs: true,
+}
+
+var (
+	TestURL = "nats://127.0.0.1:9547"
+)
+
 func StartEmbeddedNATS() (*server.Server, error) {
 	const (
 		retry = 10
@@ -16,10 +29,10 @@ func StartEmbeddedNATS() (*server.Server, error) {
 	)
 
 	// Start the server.
-	s := gnatsd.RunServer(&gnatsd.DefaultTestOptions)
+	s := gnatsd.RunServer(&GnatsdTestOptions)
 
 	// Create a client connection.
-	nc, err := nats.Connect(nats.DefaultURL)
+	nc, err := nats.Connect(TestURL)
 	if err != nil {
 		s.Shutdown()
 		return nil, err
