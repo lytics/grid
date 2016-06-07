@@ -195,7 +195,7 @@ func (s *sender) send(receiver string, ms []interface{}) error {
 		if err == nil && ack == nil {
 			return fmt.Errorf("received no ack from: %v", receiver)
 		}
-		if err != nil && err.Error() != "nats: Timeout" {
+		if err != nil && err != nats.ErrTimeout {
 			return err
 		}
 		select {
