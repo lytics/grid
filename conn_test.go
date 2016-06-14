@@ -42,24 +42,22 @@ func TestSenderTimeouts(t *testing.T) {
 	}
 	defer receiver.Close()
 
-	done := make(chan bool)
+	errs := make(chan error)
+	defer close(errs)
 	expected := errFailedToSend(defaultSendRetries, defaultSendRetries*timeout)
 	go func() {
-		defer close(done)
-		for {
-			if err := sender.Send("receiver", []byte("lol")); err != nil {
-				if expected.Error() != err.Error() {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				// we got the expected error
-				return
-			}
+		if err := sender.Send("receiver", []byte("lol")); err != nil {
+			errs <- err
+			return
 		}
 	}()
 
 	select {
 	case <-time.After(2 * defaultSendRetries * timeout):
 		t.Fatalf("test timed out")
-	case <-done:
+	case err := <-errs:
+		if err.Error() != expected.Error() {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	}
 }
