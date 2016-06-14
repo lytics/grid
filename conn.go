@@ -9,6 +9,11 @@ import (
 	"github.com/nats-io/nats"
 )
 
+const (
+	defaultSendRetries = 3
+	defaultSendTimeout = 4
+)
+
 type Ack struct {
 	Hash int64
 }
@@ -94,7 +99,7 @@ type sender struct {
 	stoponce         *sync.Once
 	bufsize          int
 	sendretries      int
-	sendtiemout      time.Duration
+	sendtimeout      time.Duration
 	nextenvelopehash int64
 }
 
@@ -114,8 +119,8 @@ func NewSender(ec *nats.EncodedConn, bufsize int) (Sender, error) {
 		outputs:          make(map[string][]interface{}),
 		stoponce:         new(sync.Once),
 		bufsize:          bufsize,
-		sendretries:      3,
-		sendtiemout:      4 * time.Second,
+		sendretries:      defaultSendRetries,
+		sendtimeout:      defaultSendTimeout * time.Second,
 		nextenvelopehash: dice.Int63(),
 	}
 	return s, nil
@@ -184,7 +189,7 @@ func (s *sender) send(receiver string, ms []interface{}) error {
 	var t int
 	for ; t < s.sendretries; t++ {
 		ack := &Ack{}
-		err := s.ec.Request(receiver, &Envelope{Data: ms, Hash: s.nextenvelopehash}, ack, s.sendtiemout)
+		err := s.ec.Request(receiver, &Envelope{Data: ms, Hash: s.nextenvelopehash}, ack, s.sendtimeout)
 		if err == nil && ack != nil && ack.Hash == s.nextenvelopehash {
 			s.nextenvelopehash = s.dice.Int63()
 			return nil
@@ -205,7 +210,11 @@ func (s *sender) send(receiver string, ms []interface{}) error {
 			// Exit not wanted, try again.
 		}
 	}
-	return fmt.Errorf("failed to send after %d attempts with total time: %s", t, time.Duration(t)*s.sendtiemout)
+	return errFailedToSend(t, time.Duration(t)*s.sendtimeout)
+}
+
+func errFailedToSend(t int, dur time.Duration) error {
+	return fmt.Errorf("failed to send after %d attemps with total time: %s", t, dur)
 }
 
 // SetConnSendTimeout changes the timeout of send operations. Setting
@@ -217,7 +226,7 @@ func (s *sender) send(receiver string, ms []interface{}) error {
 func SetConnSendTimeout(s Sender, timeout time.Duration) error {
 	switch s := s.(type) {
 	case *sender:
-		s.sendtiemout = timeout
+		s.sendtimeout = timeout
 		return nil
 	}
 	return fmt.Errorf("unknown sender type: %T", s)
