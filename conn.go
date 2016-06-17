@@ -168,6 +168,9 @@ func (s *sender) Flush() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for receiver, buf := range s.outputs {
+		if len(buf) == 0 {
+			continue
+		}
 		err := s.send(receiver, buf)
 		if err == nil {
 			delete(s.outputs, receiver)
