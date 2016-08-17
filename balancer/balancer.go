@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"math/rand"
 	"os"
 	"path"
+	"sort"
 	"sync"
 	"time"
 
@@ -55,6 +57,7 @@ type Balancer struct {
 	mu                      *sync.RWMutex
 	exit                    chan bool
 	nodeid                  string
+	nodeidx                 uint64
 	project                 string
 	members                 int
 	Logger                  *log.Logger
@@ -86,11 +89,16 @@ func (b *Balancer) CanClaim(task metafora.Task) (time.Time, bool) {
 	if b.members == 0 {
 		return time.Now().Add(time.Duration(2) * b.CheckMembershipInterval), false
 	}
-	if b.r.Intn(b.members) == 0 {
+
+	hash := fnv.New64a()
+	hash.Write([]byte(task.ID()))
+	taskHash := hash.Sum64()
+
+	if taskHash%uint64(b.members) == b.nodeidx-1 {
 		return time.Now(), true
-	} else {
-		return time.Now().Add(20 * time.Millisecond), false
 	}
+
+	return time.Time{}, false
 }
 
 func (b *Balancer) Balance() []string {
@@ -136,6 +144,7 @@ func (b *Balancer) Stop() {
 }
 
 func (b *Balancer) findMembers() {
+
 	// Get initial set of members.
 	res, err := b.c.Get(b.nodePath(), false, true)
 	if err != nil {
@@ -148,7 +157,18 @@ func (b *Balancer) findMembers() {
 
 	b.members = 0
 	if res != nil && res.Node != nil {
+		baseNodeId := path.Base(b.nodeid)
+		nodes := make([]string, len(res.Node.Nodes))
+		for i, n := range res.Node.Nodes {
+			nodes[i] = path.Base(n.Key)
+		}
 		b.members = len(res.Node.Nodes)
+		sort.Strings(nodes)
+		for i, n := range nodes {
+			if n == baseNodeId {
+				b.nodeidx = uint64(i + 1)
+			}
+		}
 	}
 }
 
@@ -163,6 +183,7 @@ func (b *Balancer) nodePath() string {
 // ownedTasks ids plus total task count across whole cluster,
 // or error if one occured.
 func (b *Balancer) ownedTasks() ([]string, int, error) {
+
 	// Owned task ids.
 	owned := []string{}
 

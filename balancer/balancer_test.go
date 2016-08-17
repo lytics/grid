@@ -7,16 +7,18 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/bmizerany/assert"
 	"github.com/coreos/go-etcd/etcd"
-	"github.com/lytics/lio/src/testutil/testconfig"
 	"github.com/lytics/metafora"
 )
 
 var ErrNotImplemented = errors.New("not implemented")
+
+var EtcdTestHosts = "127.0.0.1:2379"
 
 func TestInit(t *testing.T) {
 	const (
@@ -32,7 +34,7 @@ func TestInit(t *testing.T) {
 	}
 
 	// After initialize is called, the memebrs should
-	// match the expected number of memebers created.
+	// match the expected number of members created.
 	b.Init(bc)
 	assert.Equal(t, nodes, b.members)
 	b.Stop()
@@ -218,7 +220,12 @@ func TestFewerThanExpectedTasksBalance(t *testing.T) {
 }
 
 func testSetup(t *testing.T) (*Balancer, metafora.BalancerContext, string) {
-	c := etcd.NewClient(testconfig.Config.WorkEtcdHosts)
+	b, bc, _, project := testSetupAll(t)
+	return b, bc, project
+}
+func testSetupAll(t *testing.T) (*Balancer, metafora.BalancerContext, *etcd.Client, string) {
+	hosts := strings.Split(EtcdTestHosts, ",")
+	c := etcd.NewClient(hosts)
 	assert.Equal(t, true, c.SyncCluster())
 	err := c.SetConsistency(etcd.STRONG_CONSISTENCY)
 	assert.Equal(t, nil, err)
@@ -231,7 +238,7 @@ func testSetup(t *testing.T) (*Balancer, metafora.BalancerContext, string) {
 	assert.Equal(t, nil, err)
 	b.Logger = log.New(&bytes.Buffer{}, "", log.LstdFlags)
 
-	return b, bc, project
+	return b, bc, c, project
 }
 
 type TestRunningTask struct {
