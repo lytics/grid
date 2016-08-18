@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/lytics/grid/balancer"
@@ -120,6 +121,7 @@ func (g *grid) Start() (<-chan bool, error) {
 	if err != nil {
 		return nil, err
 	}
+	metafora.BalanceEvery = time.Minute
 	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), b)
 	if err != nil {
 		return nil, err
