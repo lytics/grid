@@ -115,12 +115,16 @@ func (b *Balancer) Balance() []string {
 	defer b.mu.RUnlock()
 
 	unwanted := []string{}
+	wanted := []string{}
 	for _, tid := range b.taskids {
 		//if findMembers changes the hashes, we should release tasks that aren't ours
-		if !claimable(tid, b.nodeidx, b.members) {
+		if claimable(tid, b.nodeidx, b.members) {
+			wanted = append(wanted, tid)
+		} else {
 			unwanted = append(unwanted, tid)
 		}
 	}
+	b.taskids = wanted
 
 	return unwanted
 }
