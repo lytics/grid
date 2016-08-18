@@ -23,13 +23,13 @@ var (
 
 func init() {
 	metafora.SetLogger(logger)
-	metafora.SetLogLevel(metafora.LogLevelDebug)
+	if testing.Verbose() {
+		metafora.SetLogLevel(metafora.LogLevelDebug)
+	}
 }
 
 func TestBalancerMetafora(t *testing.T) {
 	t.Parallel()
-
-	metafora.Debugf("hello world")
 
 	ec, coord1, conf1, project := setupEtcd(t)
 	conf2 := conf1.Copy()
