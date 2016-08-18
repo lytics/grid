@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"log"
 	"math/rand"
 	"os"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/lytics/metafora"
+	jump "github.com/renstrom/go-jump-consistent-hash"
 )
 
 var (
@@ -101,10 +101,7 @@ func (b *Balancer) CanClaim(task metafora.Task) (time.Time, bool) {
 }
 
 func claimable(tid string, nodeidx uint64, members int) bool {
-	hash := fnv.New64a()
-	hash.Write([]byte(tid))
-	taskHash := hash.Sum64()
-	if taskHash%uint64(members) == nodeidx-1 {
+	if jump.HashString(tid, int32(members), jump.FNV1a) == int32(nodeidx-1) {
 		return true
 	}
 	return false
