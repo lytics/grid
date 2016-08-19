@@ -62,6 +62,8 @@ type Balancer struct {
 	members                 int
 	Logger                  *log.Logger
 	CheckMembershipInterval time.Duration
+
+	taskids []string
 }
 
 func (b *Balancer) Init(bc metafora.BalancerContext) {
@@ -90,47 +92,39 @@ func (b *Balancer) CanClaim(task metafora.Task) (time.Time, bool) {
 		return time.Now().Add(time.Duration(2) * b.CheckMembershipInterval), false
 	}
 
-	hash := fnv.New64a()
-	hash.Write([]byte(task.ID()))
-	taskHash := hash.Sum64()
-
-	if taskHash%uint64(b.members) == b.nodeidx-1 {
+	if claimable(task.ID(), b.nodeidx, b.members) {
+		b.taskids = append(b.taskids, task.ID())
 		return time.Now(), true
 	}
 
 	return time.Time{}, false
 }
 
+func claimable(tid string, nodeidx uint64, members int) bool {
+	hash := fnv.New64a()
+	hash.Write([]byte(tid))
+	taskHash := hash.Sum64()
+	if taskHash%uint64(members) == nodeidx-1 {
+		return true
+	}
+	return false
+}
+
 func (b *Balancer) Balance() []string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	owned, total, err := b.ownedTasks()
-	if err != nil {
-		b.Logger.Printf("failed to fetch owned tasks: %v", err)
-		return []string{}
+	unwanted := []string{}
+	wanted := []string{}
+	for _, tid := range b.taskids {
+		//if findMembers changes the hashes, we should release tasks that aren't ours
+		if claimable(tid, b.nodeidx, b.members) {
+			wanted = append(wanted, tid)
+		} else {
+			unwanted = append(unwanted, tid)
+		}
 	}
-
-	l := len(owned)
-	n := total / b.members
-
-	// Don't give up any tasks if number owned is
-	// smaller than the expected tasks per node.
-	if l <= n {
-		return []string{}
-	}
-
-	// Remove enough nodes to get to the average.
-	idx := make(map[int]bool)
-	for len(idx) < l-n {
-		idx[rand.Intn(l)] = true
-	}
-
-	// Find all the task IDs of the unwanted tasks.
-	unwanted := make([]string, 0, len(idx))
-	for i, _ := range idx {
-		unwanted = append(unwanted, owned[i])
-	}
+	b.taskids = wanted
 
 	return unwanted
 }
