@@ -121,7 +121,7 @@ func (g *grid) Start() (<-chan bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	metafora.BalanceEvery = time.Minute
+	metafora.BalanceEvery = 5 * time.Minute
 	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), b)
 	if err != nil {
 		return nil, err

@@ -104,7 +104,7 @@ func claimable(tid string, nodeidx uint64, members int) bool {
 	hash := fnv.New64a()
 	hash.Write([]byte(tid))
 	taskHash := hash.Sum64()
-	if taskHash%uint64(members) == nodeidx-1 {
+	if taskHash%uint64(members) == nodeidx {
 		return true
 	}
 	return false
@@ -160,7 +160,7 @@ func (b *Balancer) findMembers() {
 		sort.Strings(nodes)
 		for i, n := range nodes {
 			if n == baseNodeId {
-				b.nodeidx = uint64(i + 1)
+				b.nodeidx = uint64(i)
 			}
 		}
 	}
