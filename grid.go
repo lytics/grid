@@ -7,8 +7,10 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/coreos/go-etcd/etcd"
+	"github.com/lytics/grid/balancer"
 	"github.com/lytics/metafora"
 	"github.com/lytics/metafora/m_etcd"
 	"github.com/nats-io/nats"
@@ -115,7 +117,12 @@ func (g *grid) Start() (<-chan bool, error) {
 	}
 
 	// Create the metafora consumer.
-	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), m_etcd.NewFairBalancer(conf))
+	b, err := balancer.New(g.name, g.nodeid, g.Etcd())
+	if err != nil {
+		return nil, err
+	}
+	metafora.BalanceEvery = 3 * time.Minute
+	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), b)
 	if err != nil {
 		return nil, err
 	}
