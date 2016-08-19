@@ -62,8 +62,8 @@ type Balancer struct {
 	members                 int
 	Logger                  *log.Logger
 	CheckMembershipInterval time.Duration
-
-	taskids []string
+	taskids                 []string
+	buckets                 int
 }
 
 func (b *Balancer) Init(bc metafora.BalancerContext) {
@@ -92,7 +92,9 @@ func (b *Balancer) CanClaim(task metafora.Task) (time.Time, bool) {
 		return time.Now().Add(time.Duration(2) * b.CheckMembershipInterval), false
 	}
 
-	if claimable(task.ID(), b.nodeidx, b.members) {
+	b.buckets = max(b.buckets, b.members)
+
+	if claimable(task.ID(), b.nodeidx, b.buckets, b.members) {
 		b.taskids = append(b.taskids, task.ID())
 		return time.Now(), true
 	}
@@ -100,11 +102,18 @@ func (b *Balancer) CanClaim(task metafora.Task) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func claimable(tid string, nodeidx uint64, members int) bool {
-	if jump.HashString(tid, int32(members), jump.FNV1a) == int32(nodeidx-1) {
+func claimable(tid string, nodeidx uint64, buckets, members int) bool {
+	if jump.HashString(tid, int32(buckets), jump.FNV1a)%int32(members) == int32(nodeidx-1) {
 		return true
 	}
 	return false
+}
+
+func max(x, y int) int {
+	if x > y {
+		return x
+	}
+	return y
 }
 
 func (b *Balancer) Balance() []string {
@@ -115,7 +124,7 @@ func (b *Balancer) Balance() []string {
 	wanted := []string{}
 	for _, tid := range b.taskids {
 		//if findMembers changes the hashes, we should release tasks that aren't ours
-		if claimable(tid, b.nodeidx, b.members) {
+		if claimable(tid, b.nodeidx, b.buckets, b.members) {
 			wanted = append(wanted, tid)
 		} else {
 			unwanted = append(unwanted, tid)
