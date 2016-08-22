@@ -23,6 +23,10 @@ var (
 	ErrInsufficientEntropy = errors.New("insufficient entropy")
 )
 
+const (
+	MembershipInterval = 2 * time.Second
+)
+
 type ownerValue struct {
 	Node string `json:"node"`
 }
@@ -47,7 +51,7 @@ func New(project, nodeid string, c *etcd.Client) (*Balancer, error) {
 		nodeid:                  nodeid,
 		project:                 project,
 		Logger:                  l,
-		CheckMembershipInterval: 2 * time.Second,
+		CheckMembershipInterval: MembershipInterval,
 	}, nil
 }
 
