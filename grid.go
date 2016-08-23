@@ -131,6 +131,11 @@ func (g *grid) Start() (<-chan bool, error) {
 	g.stopped = false
 	g.started = true
 
+	// We need to sleep the amount of balancer membership interval to ensure
+	// that all balancers have refreshed their membership
+	// before we start allowing tasks to be assigned
+	time.Sleep(balancer.MembershipInterval + (time.Second * 1))
+
 	// Close the exit channel when metafora thinks
 	// an exit is needed.
 	go func() {
