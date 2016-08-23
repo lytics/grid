@@ -9,7 +9,7 @@ func TestMultiRing(t *testing.T) {
 	expected["reader-1-0"] = true
 	expected["reader-1-1"] = true
 
-	m := NewMultiRing("reader", 2, 2)
+	m := NewMultiRing("reader", 2, 2, 0)
 	for _, r := range m.Rings() {
 		for _, def := range r.ActorDefs() {
 			if !expected[def.Name] {
@@ -27,7 +27,7 @@ func TestMultiRing(t *testing.T) {
 }
 
 func TestMultiRingByHashedString(t *testing.T) {
-	m := NewMultiRing("reader", 2, 20)
+	m := NewMultiRing("reader", 2, 20, 0)
 
 	if r := m.ByHashedString("group-0"); r.(*ring).name != "reader-17" {
 		t.Fatalf("expected '%v' to hash to ring '%v'", "group-0", "")

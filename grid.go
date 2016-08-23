@@ -7,8 +7,10 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/coreos/go-etcd/etcd"
+	"github.com/lytics/grid/balancer"
 	"github.com/lytics/metafora"
 	"github.com/lytics/metafora/m_etcd"
 	"github.com/nats-io/nats"
@@ -115,7 +117,12 @@ func (g *grid) Start() (<-chan bool, error) {
 	}
 
 	// Create the metafora consumer.
-	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), m_etcd.NewFairBalancer(conf))
+	b, err := balancer.New(g.name, g.nodeid, g.Etcd())
+	if err != nil {
+		return nil, err
+	}
+	metafora.BalanceEvery = 5 * time.Minute
+	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), b)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +130,11 @@ func (g *grid) Start() (<-chan bool, error) {
 	g.metaclient = m_etcd.NewClient(g.name, g.etcdservers)
 	g.stopped = false
 	g.started = true
+
+	// We need to sleep the amount of balancer membership interval to ensure
+	// that all balancers have refreshed their membership
+	// before we start allowing tasks to be assigned
+	time.Sleep(balancer.MembershipInterval + (time.Second * 1))
 
 	// Close the exit channel when metafora thinks
 	// an exit is needed.
