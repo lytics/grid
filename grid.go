@@ -32,6 +32,7 @@ type grid struct {
 	etcdservers  []string
 	natsservers  []string
 	mu           *sync.Mutex
+	accepttasks  bool
 	started      bool
 	stopped      bool
 	exit         chan bool
@@ -43,7 +44,21 @@ type grid struct {
 	maker        ActorMaker
 }
 
+// New Grid Task runner and client
 func New(name, nodeid string, etcdservers []string, natsservers []string, m ActorMaker) Grid {
+	gc := newGrid(name, nodeid, etcdservers, natsservers)
+	gc.maker = m
+	gc.accepttasks = true
+	return gc
+}
+
+// NewClient Grid Clients can start, submit tasks, send/recieve messages
+// via nats, but aren't able to accept/run tasks.
+func NewClient(name, nodeid string, etcdservers []string, natsservers []string) Grid {
+	return newGrid(name, nodeid, etcdservers, natsservers)
+}
+
+func newGrid(name, nodeid string, etcdservers []string, natsservers []string) *grid {
 	return &grid{
 		name:         name,
 		nodeid:       nodeid,
@@ -54,7 +69,6 @@ func New(name, nodeid string, etcdservers []string, natsservers []string, m Acto
 		stopped:      true,
 		started:      false,
 		exit:         make(chan bool),
-		maker:        m,
 		natsconnpool: make([]*nats.EncodedConn, 2*runtime.NumCPU()),
 	}
 }
@@ -80,6 +94,7 @@ func (g *grid) Name() string {
 // of the grid but returned a "done" status of false will start
 // to be scheduled. New actors can be scheduled with StartActor.
 func (g *grid) Start() (<-chan bool, error) {
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -92,56 +107,60 @@ func (g *grid) Start() (<-chan bool, error) {
 		return nil, fmt.Errorf("nodeid cannot be empty")
 	}
 
-	// Define the metafora new task function and config.
-	conf := m_etcd.NewConfig(g.nodeid, g.name, g.etcdservers)
-	conf.NewTaskFunc = func(id, value string) metafora.Task {
-		def := NewActorDef(id)
-		err := json.Unmarshal([]byte(value), def)
-		if err != nil {
-			log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
-			return nil
-		}
-		a, err := g.maker.MakeActor(def)
-		if err != nil {
-			log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
-			return nil
-		}
-
-		return newHandler(g.fork(), a)
-	}
-
-	// Create the metafora etcd coordinator.
-	ec, err := m_etcd.NewEtcdCoordinator(conf)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create the metafora consumer.
-	b, err := balancer.New(g.name, g.nodeid, g.Etcd())
-	if err != nil {
-		return nil, err
-	}
-	metafora.BalanceEvery = 5 * time.Minute
-	c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), b)
-	if err != nil {
-		return nil, err
-	}
-	g.metaconsumer = c
 	g.metaclient = m_etcd.NewClient(g.name, g.etcdservers)
+
+	if g.accepttasks {
+		// Define the metafora new task function and config.
+		conf := m_etcd.NewConfig(g.nodeid, g.name, g.etcdservers)
+		conf.NewTaskFunc = func(id, value string) metafora.Task {
+			def := NewActorDef(id)
+			err := json.Unmarshal([]byte(value), def)
+			if err != nil {
+				log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
+				return nil
+			}
+			a, err := g.maker.MakeActor(def)
+			if err != nil {
+				log.Printf("error: failed to schedule actor: %v, error: %v", id, err)
+				return nil
+			}
+
+			return newHandler(g.fork(), a)
+		}
+
+		// Create the metafora etcd coordinator.
+		ec, err := m_etcd.NewEtcdCoordinator(conf)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create the metafora consumer.
+		b, err := balancer.New(g.name, g.nodeid, g.Etcd())
+		if err != nil {
+			return nil, err
+		}
+		metafora.BalanceEvery = 5 * time.Minute
+		c, err := metafora.NewConsumer(ec, handler(etcd.NewClient(g.etcdservers)), b)
+		if err != nil {
+			return nil, err
+		}
+		g.metaconsumer = c
+
+		// We need to sleep the amount of balancer membership interval to ensure
+		// that all balancers have refreshed their membership
+		// before we start allowing tasks to be assigned
+		time.Sleep(balancer.MembershipInterval + (time.Second * 1))
+
+		// Close the exit channel when metafora thinks
+		// an exit is needed.
+		go func() {
+			defer close(g.exit)
+			g.metaconsumer.Run()
+		}()
+	}
+
 	g.stopped = false
 	g.started = true
-
-	// We need to sleep the amount of balancer membership interval to ensure
-	// that all balancers have refreshed their membership
-	// before we start allowing tasks to be assigned
-	time.Sleep(balancer.MembershipInterval + (time.Second * 1))
-
-	// Close the exit channel when metafora thinks
-	// an exit is needed.
-	go func() {
-		defer close(g.exit)
-		g.metaconsumer.Run()
-	}()
 
 	for i := 0; i < 2*runtime.NumCPU(); i++ {
 		natsconn, err := g.newNatsConn()
@@ -202,7 +221,9 @@ func (g *grid) Stop() {
 	defer g.mu.Unlock()
 
 	if !g.stopped {
-		g.metaconsumer.Shutdown()
+		if g.metaconsumer != nil {
+			g.metaconsumer.Shutdown()
+		}
 		g.stopped = true
 	}
 }
