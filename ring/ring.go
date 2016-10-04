@@ -13,6 +13,7 @@ import (
 // space into disjoint parts, each part owned by a particular
 // actor in the ring.
 type Ring interface {
+	ID() string
 	ActorDefs() []*grid.ActorDef
 	ByInt(key int) string
 	ByUint32(key uint32) string
@@ -31,6 +32,10 @@ type ring struct {
 
 func New(name string, n int) Ring {
 	return &ring{dice: grid.NewSeededRand(), name: name, actortype: name, n: n}
+}
+
+func (r *ring) ID() string {
+	return r.name
 }
 
 // ActorDefs returns the list of actor names in this ring. They
