@@ -32,6 +32,11 @@ type receiverRecord struct {
 	Address string `json:"address"`
 }
 
+type clientAndConn struct {
+	conn   *grpc.ClientConn
+	client WireClient
+}
+
 type Envelope struct {
 	Msg      interface{}
 	response chan []byte
@@ -73,15 +78,15 @@ func (env *Envelope) Respond(msg interface{}) error {
 
 type Subscription struct {
 	mailbox chan *Envelope
-	cleanup func() error
+	cleanup func(c context.Context) error
 }
 
 func (s *Subscription) Mailbox() <-chan *Envelope {
 	return s.mailbox
 }
 
-func (s *Subscription) Unsubscribe() error {
-	return s.cleanup()
+func (s *Subscription) Unsubscribe(c context.Context) error {
+	return s.cleanup(c)
 }
 
 func New(address string, etcdServers []string) (*Nexus, error) {
@@ -91,41 +96,58 @@ func New(address string, etcdServers []string) (*Nexus, error) {
 	cfg := etcdv3.Config{
 		Endpoints: etcdServers,
 	}
-	client, err := etcdv3.New(cfg)
+	etcd, err := etcdv3.New(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &Nexus{
-		mu:        sync.Mutex{},
-		kv:        etcdv3.NewKV(client),
-		address:   address,
-		clients:   make(map[string]WireClient),
-		addresses: make(map[string]string),
-		listeners: make(map[string]*Subscription),
-	}, nil
+	server := grpc.NewServer()
+	nx := &Nexus{
+		mu:              sync.Mutex{},
+		etcd:            etcd,
+		kv:              etcdv3.NewKV(etcd),
+		server:          server,
+		address:         address,
+		addresses:       make(map[string]string),
+		listeners:       make(map[string]*Subscription),
+		clientsAndConns: make(map[string]*clientAndConn),
+	}
+	RegisterWireServer(server, nx)
+	return nx, nil
 }
 
 type Nexus struct {
-	mu        sync.Mutex
-	kv        etcdv3.KV
-	address   string
-	clients   map[string]WireClient
-	addresses map[string]string
-	listeners map[string]*Subscription
+	mu              sync.Mutex
+	etcd            *etcdv3.Client
+	kv              etcdv3.KV
+	server          *grpc.Server
+	address         string
+	addresses       map[string]string
+	listeners       map[string]*Subscription
+	clientsAndConns map[string]*clientAndConn
 }
 
-func (nx *Nexus) Serve() error {
-	lis, err := net.Listen("tcp", nx.address)
+func (nx *Nexus) Start() error {
+	listener, err := net.Listen("tcp", nx.address)
 	if err != nil {
 		return err
 	}
-	grpcServer := grpc.NewServer()
-	RegisterWireServer(grpcServer, nx)
-	return grpcServer.Serve(lis)
+	return nx.server.Serve(listener)
+}
+
+func (nx *Nexus) Stop() {
+	nx.mu.Lock()
+	defer nx.mu.Unlock()
+
+	for _, cc := range nx.clientsAndConns {
+		cc.conn.Close()
+	}
+
+	nx.server.Stop()
+	nx.etcd.Close()
 }
 
 func (nx *Nexus) Process(c context.Context, req *Gram) (*Gram, error) {
-	sub, err := nx.subscription(req.Receiver)
+	sub, err := nx.subscription(req.Namespace, req.Receiver)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +174,10 @@ func (nx *Nexus) Process(c context.Context, req *Gram) (*Gram, error) {
 	env.response = make(chan []byte)
 
 	// Send the filled envelope to the actual
-	// receiver.
+	// receiver. Also note that the receiver
+	// can stop listenting when it wants, so
+	// some defualt or timeout always needs
+	// to exist here.
 	select {
 	case sub.mailbox <- env:
 	default:
@@ -176,6 +201,8 @@ func (nx *Nexus) Request(c context.Context, namespace, receiver string, msg inte
 		Msg: msg,
 	}
 
+	key := makeKey(namespace, receiver)
+
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(env)
@@ -183,16 +210,17 @@ func (nx *Nexus) Request(c context.Context, namespace, receiver string, msg inte
 		return nil, err
 	}
 
-	client, err := nx.client(c, namespace, receiver)
+	client, err := nx.client(c, key)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &Gram{
-		Ver:      Gram_V1,
-		Enc:      Gram_Gob,
-		Data:     buf.Bytes(),
-		Receiver: receiver,
+		Ver:       Gram_V1,
+		Enc:       Gram_Gob,
+		Data:      buf.Bytes(),
+		Receiver:  receiver,
+		Namespace: namespace,
 	}
 	res, err := client.Process(c, req)
 	if err != nil {
@@ -222,70 +250,76 @@ func (nx *Nexus) Subscribe(c context.Context, namespace, receiver string, mailbo
 	nx.mu.Lock()
 	defer nx.mu.Unlock()
 
-	_, ok := nx.listeners[receiver]
+	key := makeKey(namespace, receiver)
+
+	_, ok := nx.listeners[key]
 	if !ok {
-		err := nx.register(c, namespace, receiver)
+		err := nx.register(c, key)
 		if err != nil {
 			return nil, err
 		}
 		mailbox := make(chan *Envelope, mailboxSize)
-		cleanup := func() error {
+		cleanup := func(c context.Context) error {
 			nx.mu.Lock()
 			defer nx.mu.Unlock()
-			close(mailbox)
-			delete(nx.listeners, receiver)
-			return nx.deregister(c, namespace, receiver)
+			delete(nx.listeners, key)
+			return nx.deregister(c, key)
 		}
 		sub := &Subscription{
 			mailbox: mailbox,
 			cleanup: cleanup,
 		}
-		nx.listeners[receiver] = sub
-		nx.addresses[receiver] = nx.address
+		nx.listeners[key] = sub
+		nx.addresses[key] = nx.address
 		return sub, nil
 	}
 
 	return nil, ErrAlreadySubscribed
 }
 
-func (nx *Nexus) subscription(receiver string) (*Subscription, error) {
+func (nx *Nexus) subscription(namespace, receiver string) (*Subscription, error) {
 	nx.mu.Lock()
 	defer nx.mu.Unlock()
 
-	sub, ok := nx.listeners[receiver]
+	key := makeKey(namespace, receiver)
+
+	sub, ok := nx.listeners[key]
 	if !ok {
 		return nil, ErrUnknownReceiver
 	}
 	return sub, nil
 }
 
-func (nx *Nexus) client(c context.Context, namespace, receiver string) (WireClient, error) {
+func (nx *Nexus) client(c context.Context, key string) (WireClient, error) {
 	nx.mu.Lock()
 	defer nx.mu.Unlock()
 
-	address, ok := nx.addresses[receiver]
+	address, ok := nx.addresses[key]
 	if !ok {
-		address, err := nx.discover(c, namespace, receiver)
+		address, err := nx.discover(c, key)
 		if err != nil {
 			return nil, err
 		}
-		nx.addresses[receiver] = address
+		nx.addresses[key] = address
 	}
 
-	client, ok := nx.clients[address]
+	cc, ok := nx.clientsAndConns[address]
 	if !ok {
 		conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(1*time.Minute), grpc.WithBlock())
 		if err != nil {
 			return nil, err
 		}
-		client = NewWireClient(conn)
-		nx.clients[address] = client
+		client := NewWireClient(conn)
+		cc = &clientAndConn{
+			conn:   conn,
+			client: client,
+		}
+		nx.clientsAndConns[address] = cc
 	}
-	return client, nil
+	return cc.client, nil
 }
 
-func (nx *Nexus) discover(c context.Context, namespace, receiver string) (string, error) {
-	key := makeKey(namespace, receiver)
+func (nx *Nexus) discover(c context.Context, key string) (string, error) {
 	res, err := nx.kv.Get(c, key)
 	if err != nil {
 		return "", err
@@ -304,11 +338,21 @@ func (nx *Nexus) discover(c context.Context, namespace, receiver string) (string
 	return rec.Address, nil
 }
 
-func (nx *Nexus) register(c context.Context, namespace, receiver string) error {
-	key := makeKey(namespace, receiver)
-	_, err := nx.kv.Get(c, key)
+func (nx *Nexus) register(c context.Context, key string) error {
+	getRes, err := nx.kv.Get(c, key)
 	if err != nil {
 		return err
+	}
+	if getRes != nil && len(getRes.Kvs) == 1 {
+		rec := &receiverRecord{}
+		err = json.Unmarshal(getRes.Kvs[0].Value, rec)
+		if err != nil {
+			return err
+		}
+		// Already registered, did we crash a recover?
+		if rec.Address == nx.address {
+			return nil
+		}
 	}
 	value, err := json.Marshal(&receiverRecord{Address: nx.address})
 	if err != nil {
@@ -327,20 +371,19 @@ func (nx *Nexus) register(c context.Context, namespace, receiver string) error {
 	return nil
 }
 
-func (nx *Nexus) deregister(c context.Context, namespace, receiver string) error {
-	key := makeKey(namespace, receiver)
+func (nx *Nexus) deregister(c context.Context, key string) error {
 	var version int64
-	res, err := nx.kv.Get(c, key)
+	getRes, err := nx.kv.Get(c, key)
 	if err != nil {
 		return err
 	}
-	if res != nil && len(res.Kvs) == 1 {
-		version = res.Kvs[0].Version
+	if getRes != nil && len(getRes.Kvs) == 1 {
+		version = getRes.Kvs[0].Version
 	} else {
 		return ErrInvalidRegistration
 	}
 	rec := &receiverRecord{}
-	err = json.Unmarshal(res.Kvs[0].Value, rec)
+	err = json.Unmarshal(getRes.Kvs[0].Value, rec)
 	if err != nil {
 		return err
 	}

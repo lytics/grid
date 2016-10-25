@@ -13,6 +13,7 @@ message Gram {
     Enc enc = 2;
     bytes data = 3;
     string receiver = 4;
+    string namespace = 5;
 }
 
 service wire {

@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -24,7 +25,6 @@ func init() {
 
 func TestFoo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -35,32 +35,44 @@ func TestFoo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, err := nx.Subscribe(ctx, "testing", "r0", 1)
+	sub, err := nx.Subscribe(ctx, "testing", "r0", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sub.Unsubscribe()
 
-	go func() {
-		cnt := 0
-		for {
-			time.Sleep(1 * time.Second)
+	wg := &sync.WaitGroup{}
+	for id := 0; id < 8; id++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
 
-			msg := &FooReqMsg{Cnt: cnt}
-			fmt.Printf("req: %+v\n", msg)
+			var cnt int
+			var start time.Time
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					msg := &FooReqMsg{Cnt: cnt}
 
-			timeout, cancel := context.WithTimeout(ctx, 1*time.Second)
-			defer cancel()
+					timeout, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+					_, err := nx.Request(timeout, "testing", "r0", msg)
+					cancel()
 
-			e, err := nx.Request(timeout, "testing", "r0", msg)
-			if err != nil {
-				fmt.Printf("error: %v\n", err)
-			} else {
-				fmt.Printf("res: %+v\n", e.Msg)
+					if err != nil {
+						fmt.Printf("error: %v\n", err)
+					}
+					if cnt == 0 {
+						start = time.Now()
+					}
+					cnt++
+					if cnt%10000 == 0 {
+						fmt.Printf("sender-%v: msg/sec: %.2f\n", id, float64(cnt)/time.Now().Sub(start).Seconds())
+					}
+				}
 			}
-			cnt++
-		}
-	}()
+		}(id)
+	}
 
 	go func() {
 		cnt := 0
@@ -73,8 +85,17 @@ func TestFoo(t *testing.T) {
 		}
 	}()
 
-	err = nx.Serve()
-	if err != nil {
-		t.Fatal(err)
-	}
+	go func() {
+		time.Sleep(20 * time.Second)
+		cancel()
+		wg.Wait()
+		err := sub.Unsubscribe(context.Background())
+		if err != nil {
+			fmt.Printf("unsub error: %v\n", err)
+		}
+		nx.Stop()
+	}()
+
+	// Will block until Stop is called.
+	nx.Start()
 }
