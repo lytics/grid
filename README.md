@@ -1,7 +1,7 @@
 grid
 ====
 
-Grid is a library to build distributed processes. A library in contrast to being a container. 
+Grid is a library to build distributed processes. A library in contrast to being a container.
 It is  simple to use and provides the basic building blocks for distributed processing:
 
  1. Passing messages, which in grid is done via [NATS](http://nats.io/).
@@ -24,7 +24,7 @@ g.StartActor(grid.NewActorDef("hello"))
 Scheduled units of work are called actors, which are made by user code implementing the ActorMaker interface:
 ```go
 func (m *actormaker) MakeActor(def grid.ActorDef) (Actor, error) {
-    swtich def.Type {
+    switch def.Type {
     case "hello":
         return &HelloActor{def}, nil
     case "other":
@@ -101,7 +101,7 @@ message sending tasks for divide and conquer, [ring](ring/).
 
 ### Sender and Receiver
 
-Though NATS can be used directly, two interface are available for convenience. 
+Though NATS can be used directly, two interface are available for convenience.
 `Sender` provides a buffered sender with ack requests and resends. `Receiver`
 provides a receiver that acks, and can start multiple subscriber go-routines
 internally to read incoming messages.
@@ -130,5 +130,5 @@ Very little error checking is done but the basics are all there.
 
 The [flowgrid](example/flowgrid/) example is much more involved, but more realistic as it deals with
 coordination using the [condition](condition/) library and [ring](ring/) library. It also adds random
-failure to each actor to simulate how dealing with such failures can be dealt with using the 
+failure to each actor to simulate how dealing with such failures can be dealt with using the
 [dfa](http://github.com/lytics/dfa) library.
