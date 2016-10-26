@@ -96,7 +96,6 @@ func (co *Coordinator) StartHeartbeat() (context.Context, error) {
 				_, err := co.lease.KeepAliveOnce(timeout, co.leaseID)
 				cancel()
 				if err != nil {
-					fmt.Printf("keep alive error: %v\n", err)
 					errCnt++
 				}
 				if errCnt < keepAlivesPerLeaseDuration-1 {

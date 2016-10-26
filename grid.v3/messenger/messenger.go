@@ -187,7 +187,7 @@ func (nx *Nexus) Request(c context.Context, namespace, receiver string, msg inte
 		return nil, err
 	}
 
-	client, err := nx.client(c, key)
+	client, err := nx.wireClient(c, key)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +267,7 @@ func (nx *Nexus) subscription(namespace, receiver string) (*Subscription, error)
 	return sub, nil
 }
 
-func (nx *Nexus) client(c context.Context, key string) (WireClient, error) {
+func (nx *Nexus) wireClient(c context.Context, key string) (WireClient, error) {
 	nx.mu.Lock()
 	defer nx.mu.Unlock()
 
