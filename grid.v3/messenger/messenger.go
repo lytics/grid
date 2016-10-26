@@ -172,6 +172,7 @@ func (nx *Nexus) Process(c context.Context, req *Gram) (*Gram, error) {
 	}
 }
 
+// Request a response for the given message. The response is in the returned envelope.
 func (nx *Nexus) Request(c context.Context, namespace, receiver string, msg interface{}) (*Envelope, error) {
 	env := &Envelope{
 		Msg: msg,
@@ -222,6 +223,7 @@ func (nx *Nexus) Request(c context.Context, namespace, receiver string, msg inte
 	return env, nil
 }
 
+// Subscribe for requests under the given namespace and receiver name.
 func (nx *Nexus) Subscribe(c context.Context, namespace, receiver string, mailboxSize int) (*Subscription, error) {
 	nx.mu.Lock()
 	defer nx.mu.Unlock()

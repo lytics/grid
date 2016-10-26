@@ -64,6 +64,7 @@ func TestFoo(t *testing.T) {
 			for {
 				select {
 				case <-localCtx.Done():
+					fmt.Printf("sender-%v: msg/sec: %.2f\n", id, float64(cnt)/time.Now().Sub(start).Seconds())
 					return
 				default:
 					msg := &FooReqMsg{Cnt: cnt}

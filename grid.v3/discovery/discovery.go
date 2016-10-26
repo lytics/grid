@@ -10,7 +10,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-const keepAlivesPerDuration = 6
+const keepAlivesPerLeaseDuration = 6
 
 var (
 	ErrUnknownAddress            = fmt.Errorf("unknown address")
@@ -26,6 +26,7 @@ type regRec struct {
 	Address string `json:"address"`
 }
 
+// Coordinator for discovery of receivers' host addresses.
 type Coordinator struct {
 	mu            sync.Mutex
 	done          chan bool
@@ -59,6 +60,9 @@ func New(address string, servers []string) (*Coordinator, error) {
 	}, nil
 }
 
+// StartHeartbeat. The returned context should be used by everyone
+// associated with this coordinator, and they should "shutdown"
+// if the context is "done".
 func (co *Coordinator) StartHeartbeat() (context.Context, error) {
 	co.mu.Lock()
 	defer co.mu.Unlock()
@@ -74,7 +78,7 @@ func (co *Coordinator) StartHeartbeat() (context.Context, error) {
 
 	c, finalize := context.WithCancel(context.Background())
 	go func() {
-		ticker := time.NewTicker(co.LeaseDuration / keepAlivesPerDuration)
+		ticker := time.NewTicker(co.LeaseDuration / keepAlivesPerLeaseDuration)
 		defer ticker.Stop()
 		errCnt := 0
 		for {
@@ -95,7 +99,7 @@ func (co *Coordinator) StartHeartbeat() (context.Context, error) {
 					fmt.Printf("keep alive error: %v\n", err)
 					errCnt++
 				}
-				if errCnt < keepAlivesPerDuration-1 {
+				if errCnt < keepAlivesPerLeaseDuration-1 {
 					continue
 				}
 				// Finialize, ie: DIE.
@@ -108,10 +112,12 @@ func (co *Coordinator) StartHeartbeat() (context.Context, error) {
 	return c, nil
 }
 
+// StopHeartbeat.
 func (co *Coordinator) StopHeartbeat() {
 	close(co.done)
 }
 
+// FindAddress associated with the given key.
 func (co *Coordinator) FindAddress(c context.Context, key string) (string, error) {
 	co.mu.Lock()
 	defer co.mu.Unlock()
@@ -140,6 +146,8 @@ func (co *Coordinator) FindAddress(c context.Context, key string) (string, error
 	return rec.Address, nil
 }
 
+// RegisterReceiver under the given key. Once registered, senders can find
+// the host address of the receiver with FindAddress.
 func (co *Coordinator) RegisterReceiver(c context.Context, key string) error {
 	co.mu.Lock()
 	defer co.mu.Unlock()
@@ -181,6 +189,7 @@ func (co *Coordinator) RegisterReceiver(c context.Context, key string) error {
 	return nil
 }
 
+// DeregisterReceiver under the given key.
 func (co *Coordinator) DeregisterReceiver(c context.Context, key string) error {
 	co.mu.Lock()
 	defer co.mu.Unlock()
