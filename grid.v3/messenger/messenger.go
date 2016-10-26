@@ -3,14 +3,13 @@ package messenger
 import (
 	"bytes"
 	"encoding/gob"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
 
-	etcdv3 "github.com/coreos/etcd/clientv3"
+	"github.com/lytics/grid/grid.v3/discovery"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -18,19 +17,13 @@ import (
 const Ack = "__ACK__"
 
 var (
-	ErrInvalidAddress        = fmt.Errorf("invalid hostname")
-	ErrContextFinished       = fmt.Errorf("context finished")
-	ErrReceiverBusy          = fmt.Errorf("receiver busy")
-	ErrAlreadySubscribed     = fmt.Errorf("already subscribed")
-	ErrUnknownHost           = fmt.Errorf("unknown host")
-	ErrUnknownReceiver       = fmt.Errorf("unknown receiver")
-	ErrInvalidRegistration   = fmt.Errorf("invalid registration")
-	ErrInvalidDeregistration = fmt.Errorf("invalid deregistration")
+	ErrInvalidAddress    = fmt.Errorf("invalid hostname")
+	ErrContextFinished   = fmt.Errorf("context finished")
+	ErrReceiverBusy      = fmt.Errorf("receiver busy")
+	ErrAlreadySubscribed = fmt.Errorf("already subscribed")
+	ErrUnknownHost       = fmt.Errorf("unknown host")
+	ErrUnknownReceiver   = fmt.Errorf("unknown receiver")
 )
-
-type receiverRecord struct {
-	Address string `json:"address"`
-}
 
 type clientAndConn struct {
 	conn   *grpc.ClientConn
@@ -89,25 +82,12 @@ func (s *Subscription) Unsubscribe(c context.Context) error {
 	return s.cleanup(c)
 }
 
-func New(address string, etcdServers []string) (*Nexus, error) {
-	if address == "" {
-		return nil, ErrInvalidAddress
-	}
-	cfg := etcdv3.Config{
-		Endpoints: etcdServers,
-	}
-	etcd, err := etcdv3.New(cfg)
-	if err != nil {
-		return nil, err
-	}
+func New(co *discovery.Coordinator) (*Nexus, error) {
 	server := grpc.NewServer()
 	nx := &Nexus{
 		mu:              sync.Mutex{},
-		etcd:            etcd,
-		kv:              etcdv3.NewKV(etcd),
+		co:              co,
 		server:          server,
-		address:         address,
-		addresses:       make(map[string]string),
 		listeners:       make(map[string]*Subscription),
 		clientsAndConns: make(map[string]*clientAndConn),
 	}
@@ -117,17 +97,14 @@ func New(address string, etcdServers []string) (*Nexus, error) {
 
 type Nexus struct {
 	mu              sync.Mutex
-	etcd            *etcdv3.Client
-	kv              etcdv3.KV
+	co              *discovery.Coordinator
 	server          *grpc.Server
-	address         string
-	addresses       map[string]string
 	listeners       map[string]*Subscription
 	clientsAndConns map[string]*clientAndConn
 }
 
-func (nx *Nexus) Start() error {
-	listener, err := net.Listen("tcp", nx.address)
+func (nx *Nexus) Start(address string) error {
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
 	}
@@ -143,7 +120,6 @@ func (nx *Nexus) Stop() {
 	}
 
 	nx.server.Stop()
-	nx.etcd.Close()
 }
 
 func (nx *Nexus) Process(c context.Context, req *Gram) (*Gram, error) {
@@ -254,7 +230,7 @@ func (nx *Nexus) Subscribe(c context.Context, namespace, receiver string, mailbo
 
 	_, ok := nx.listeners[key]
 	if !ok {
-		err := nx.register(c, key)
+		err := nx.co.RegisterReceiver(c, key)
 		if err != nil {
 			return nil, err
 		}
@@ -263,14 +239,13 @@ func (nx *Nexus) Subscribe(c context.Context, namespace, receiver string, mailbo
 			nx.mu.Lock()
 			defer nx.mu.Unlock()
 			delete(nx.listeners, key)
-			return nx.deregister(c, key)
+			return nx.co.DeregisterReceiver(c, key)
 		}
 		sub := &Subscription{
 			mailbox: mailbox,
 			cleanup: cleanup,
 		}
 		nx.listeners[key] = sub
-		nx.addresses[key] = nx.address
 		return sub, nil
 	}
 
@@ -294,13 +269,9 @@ func (nx *Nexus) client(c context.Context, key string) (WireClient, error) {
 	nx.mu.Lock()
 	defer nx.mu.Unlock()
 
-	address, ok := nx.addresses[key]
-	if !ok {
-		address, err := nx.discover(c, key)
-		if err != nil {
-			return nil, err
-		}
-		nx.addresses[key] = address
+	address, err := nx.co.FindAddress(c, key)
+	if err != nil {
+		return nil, err
 	}
 
 	cc, ok := nx.clientsAndConns[address]
@@ -317,90 +288,6 @@ func (nx *Nexus) client(c context.Context, key string) (WireClient, error) {
 		nx.clientsAndConns[address] = cc
 	}
 	return cc.client, nil
-}
-
-func (nx *Nexus) discover(c context.Context, key string) (string, error) {
-	res, err := nx.kv.Get(c, key)
-	if err != nil {
-		return "", err
-	}
-	if res == nil || len(res.Kvs) == 0 {
-		return "", ErrUnknownReceiver
-	}
-	if len(res.Kvs) > 1 {
-		return "", ErrInvalidRegistration
-	}
-	rec := &receiverRecord{}
-	err = json.Unmarshal(res.Kvs[0].Value, rec)
-	if err != nil {
-		return "", err
-	}
-	return rec.Address, nil
-}
-
-func (nx *Nexus) register(c context.Context, key string) error {
-	getRes, err := nx.kv.Get(c, key)
-	if err != nil {
-		return err
-	}
-	if getRes != nil && len(getRes.Kvs) == 1 {
-		rec := &receiverRecord{}
-		err = json.Unmarshal(getRes.Kvs[0].Value, rec)
-		if err != nil {
-			return err
-		}
-		// Already registered, did we crash a recover?
-		if rec.Address == nx.address {
-			return nil
-		}
-	}
-	value, err := json.Marshal(&receiverRecord{Address: nx.address})
-	if err != nil {
-		return err
-	}
-	txnRes, err := nx.kv.Txn(c).
-		If(etcdv3.Compare(etcdv3.Version(key), "=", 0)).
-		Then(etcdv3.OpPut(key, string(value))).
-		Commit()
-	if err != nil {
-		return err
-	}
-	if !txnRes.Succeeded {
-		return ErrInvalidRegistration
-	}
-	return nil
-}
-
-func (nx *Nexus) deregister(c context.Context, key string) error {
-	var version int64
-	getRes, err := nx.kv.Get(c, key)
-	if err != nil {
-		return err
-	}
-	if getRes != nil && len(getRes.Kvs) == 1 {
-		version = getRes.Kvs[0].Version
-	} else {
-		return ErrInvalidRegistration
-	}
-	rec := &receiverRecord{}
-	err = json.Unmarshal(getRes.Kvs[0].Value, rec)
-	if err != nil {
-		return err
-	}
-	if rec.Address != nx.address {
-		return ErrInvalidDeregistration
-	}
-	txnRes, err := nx.kv.Txn(c).
-		If(etcdv3.Compare(etcdv3.Version(key), "=", version)).
-		Then(etcdv3.OpDelete(key)).
-		Commit()
-	if err != nil {
-		return err
-	}
-	if !txnRes.Succeeded {
-		return ErrInvalidDeregistration
-	}
-	return nil
 }
 
 func makeKey(namespace, receiver string) string {

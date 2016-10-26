@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lytics/grid/grid.v3/discovery"
 )
 
 type FooReqMsg struct {
@@ -24,18 +26,29 @@ func init() {
 }
 
 func TestFoo(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	hostname, err := os.Hostname()
 	if err != nil {
 		t.Fatal(err)
 	}
 	address := fmt.Sprintf("%v:7777", hostname)
-	nx, err := New(address, []string{"http://localhost:2379"})
+
+	co, err := discovery.New(address, []string{"http://localhost:2379"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, err := nx.Subscribe(ctx, "testing", "r0", 100)
+
+	ctx, err := co.StartHeartbeat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	localCtx, cancel := context.WithCancel(ctx)
+
+	nx, err := New(co)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sub, err := nx.Subscribe(localCtx, "testing", "r0", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +63,7 @@ func TestFoo(t *testing.T) {
 			var start time.Time
 			for {
 				select {
-				case <-ctx.Done():
+				case <-localCtx.Done():
 					return
 				default:
 					msg := &FooReqMsg{Cnt: cnt}
@@ -97,5 +110,8 @@ func TestFoo(t *testing.T) {
 	}()
 
 	// Will block until Stop is called.
-	nx.Start()
+	nx.Start(address)
+
+	// Stop the discovery coordinator.
+	co.StopHeartbeat()
 }
