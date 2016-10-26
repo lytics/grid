@@ -36,6 +36,7 @@ type Coordinator struct {
 	client        *etcdv3.Client
 	address       string
 	addresses     map[string]string
+	context       context.Context
 	Timeout       time.Duration
 	LeaseDuration time.Duration
 }
@@ -63,7 +64,7 @@ func New(address string, servers []string) (*Coordinator, error) {
 // StartHeartbeat. The returned context should be used by everyone
 // associated with this coordinator, and they should "shutdown"
 // if the context is "done".
-func (co *Coordinator) StartHeartbeat() (context.Context, error) {
+func (co *Coordinator) StartHeartbeat() error {
 	co.mu.Lock()
 	defer co.mu.Unlock()
 
@@ -72,11 +73,13 @@ func (co *Coordinator) StartHeartbeat() (context.Context, error) {
 
 	res, err := co.lease.Grant(timeout, int64(co.LeaseDuration.Seconds()))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	co.leaseID = res.ID
 
 	c, finalize := context.WithCancel(context.Background())
+	co.context = c
+
 	go func() {
 		ticker := time.NewTicker(co.LeaseDuration / keepAlivesPerLeaseDuration)
 		defer ticker.Stop()
@@ -108,12 +111,16 @@ func (co *Coordinator) StartHeartbeat() (context.Context, error) {
 		}
 	}()
 
-	return c, nil
+	return nil
 }
 
 // StopHeartbeat.
 func (co *Coordinator) StopHeartbeat() {
 	close(co.done)
+}
+
+func (co *Coordinator) Context() context.Context {
+	return co.context
 }
 
 // FindAddress associated with the given key.
@@ -145,9 +152,8 @@ func (co *Coordinator) FindAddress(c context.Context, key string) (string, error
 	return rec.Address, nil
 }
 
-// RegisterReceiver under the given key. Once registered, senders can find
-// the host address of the receiver with FindAddress.
-func (co *Coordinator) RegisterReceiver(c context.Context, key string) error {
+// Register under the given key.
+func (co *Coordinator) Register(c context.Context, key string) error {
 	co.mu.Lock()
 	defer co.mu.Unlock()
 
@@ -188,8 +194,8 @@ func (co *Coordinator) RegisterReceiver(c context.Context, key string) error {
 	return nil
 }
 
-// DeregisterReceiver under the given key.
-func (co *Coordinator) DeregisterReceiver(c context.Context, key string) error {
+// Deregister under the given key.
+func (co *Coordinator) Deregister(c context.Context, key string) error {
 	co.mu.Lock()
 	defer co.mu.Unlock()
 

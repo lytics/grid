@@ -1,26 +1,27 @@
 package grid
 
 import (
+	cryptorand "crypto/rand"
 	"encoding/binary"
-	"hash/fnv"
+	"fmt"
 	"math/rand"
-	"time"
 )
 
-// NewSeededRand creates a *math/rand.Rand with a seed generated
-// by NewSeed.
-func NewSeededRand() *rand.Rand {
-	return rand.New(rand.NewSource(NewSeed()))
-}
-
-// NewSeed generate a seed by running time.Now().UnixNano()
-// through 1,000 rounds of an FNV hash.
-func NewSeed() int64 {
-	h := fnv.New64()
-	for i := 0; i < 1000; i++ {
-		b := make([]byte, binary.MaxVarintLen64)
-		binary.PutVarint(b, time.Now().UnixNano())
-		h.Write(b)
+// NewSeededRand creates a new math/rand with a strong
+// seed from cyrpto/rand.
+func NewSeededRand() (*rand.Rand, error) {
+	bytes := make([]byte, 8)
+	n, err := cryptorand.Read(bytes)
+	if err != nil {
+		return nil, err
 	}
-	return int64(h.Sum64())
+	if n != 8 {
+		return nil, fmt.Errorf("insufficient entropy")
+	}
+	seed, n := binary.Varint(bytes)
+	if n != 8 {
+		return nil, fmt.Errorf("failed to parse seed")
+	}
+
+	return rand.New(rand.NewSource(seed))
 }
