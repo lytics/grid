@@ -23,5 +23,5 @@ func NewSeededRand() (*rand.Rand, error) {
 		return nil, fmt.Errorf("failed to parse seed")
 	}
 
-	return rand.New(rand.NewSource(seed))
+	return rand.New(rand.NewSource(seed)), nil
 }

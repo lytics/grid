@@ -1,13 +1,13 @@
 package discovery
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
-	"golang.org/x/net/context"
 )
 
 const keepAlivesPerLeaseDuration = 6

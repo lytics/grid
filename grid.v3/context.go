@@ -1,33 +1,46 @@
 package grid
 
 import (
+	"context"
+
 	"github.com/lytics/grid/grid.v3/discovery"
-	"github.com/lytics/grid/grid.v3/messenger"
-	"golang.org/x/net/context"
+	"github.com/lytics/grid/grid.v3/message"
 )
+
+func ContextActorID(c context.Context) (string, error) {
+	v := c.Value(contextKey)
+	if v == nil {
+		return "", ErrInvalidContext
+	}
+	cv, ok := v.(*contextVal)
+	if !ok {
+		return "", ErrInvalidContext
+	}
+	return cv.r.g.Namespace(), nil
+}
 
 func ContextNamespace(c context.Context) (string, error) {
 	v := c.Value(contextKey)
 	if v == nil {
 		return "", ErrInvalidContext
 	}
-	r, ok := c.(*registration)
+	cv, ok := v.(*contextVal)
 	if !ok {
 		return "", ErrInvalidContext
 	}
-	return r.g.Namespace
+	return cv.r.g.Namespace(), nil
 }
 
-func ContextMessenger(c context.Context) (*messenger.Nexus, error) {
+func ContextMessenger(c context.Context) (*message.Messenger, error) {
 	v := c.Value(contextKey)
 	if v == nil {
 		return nil, ErrInvalidContext
 	}
-	r, ok := c.(*registration)
+	cv, ok := v.(*contextVal)
 	if !ok {
 		return nil, ErrInvalidContext
 	}
-	return r.nx
+	return cv.r.mm, nil
 }
 
 func ContextCoordinator(c context.Context) (*discovery.Coordinator, error) {
@@ -35,9 +48,9 @@ func ContextCoordinator(c context.Context) (*discovery.Coordinator, error) {
 	if v == nil {
 		return nil, ErrInvalidContext
 	}
-	r, ok := c.(*registration)
+	cv, ok := v.(*contextVal)
 	if !ok {
 		return nil, ErrInvalidContext
 	}
-	return r.co
+	return cv.r.co, nil
 }

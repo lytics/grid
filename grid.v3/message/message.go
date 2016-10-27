@@ -2,6 +2,7 @@ package message
 
 import (
 	"bytes"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -10,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lytics/grid/grid.v3/discovery"
-	"golang.org/x/net/context"
+	netcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
@@ -84,15 +85,15 @@ func (s *Subscription) Unsubscribe(c context.Context) error {
 
 func New(co *discovery.Coordinator) (*Messenger, error) {
 	server := grpc.NewServer()
-	nx := &Messenger{
+	m := &Messenger{
 		mu:              sync.Mutex{},
 		co:              co,
 		server:          server,
 		listeners:       make(map[string]*Subscription),
 		clientsAndConns: make(map[string]*clientAndConn),
 	}
-	RegisterWireServer(server, nx)
-	return nx, nil
+	RegisterWireServer(server, m)
+	return m, nil
 }
 
 type Messenger struct {
@@ -122,7 +123,7 @@ func (me *Messenger) Stop() {
 	me.server.Stop()
 }
 
-func (me *Messenger) Process(c context.Context, req *Gram) (*Gram, error) {
+func (me *Messenger) Process(c netcontext.Context, req *Gram) (*Gram, error) {
 	sub, err := me.subscription(req.Namespace, req.Receiver)
 	if err != nil {
 		return nil, err
@@ -232,7 +233,7 @@ func (me *Messenger) Subscribe(c context.Context, namespace, receiver string, ma
 
 	_, ok := me.listeners[key]
 	if !ok {
-		err := me.co.RegisterReceiver(c, key)
+		err := me.co.Register(c, key)
 		if err != nil {
 			return nil, err
 		}
@@ -241,7 +242,7 @@ func (me *Messenger) Subscribe(c context.Context, namespace, receiver string, ma
 			me.mu.Lock()
 			defer me.mu.Unlock()
 			delete(me.listeners, key)
-			return me.co.DeregisterReceiver(c, key)
+			return me.co.Deregister(c, key)
 		}
 		sub := &Subscription{
 			mailbox: mailbox,

@@ -1,6 +1,7 @@
 package grid
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -11,12 +12,16 @@ import (
 
 	"github.com/lytics/grid/grid.v3/discovery"
 	"github.com/lytics/grid/grid.v3/message"
-	"golang.org/x/net/context"
 )
 
 const (
 	contextKey = "grid-context-data"
 )
+
+type contextVal struct {
+	r       *registration
+	actorID string
+}
 
 var (
 	ErrInvalidContext        = errors.New("invalid context")
@@ -48,7 +53,7 @@ func init() {
 type registration struct {
 	id string
 	g  Grid
-	nx *messenger.Nexus
+	mm *message.Messenger
 	co *discovery.Coordinator
 }
 
@@ -62,7 +67,7 @@ type ResponseMsg struct {
 }
 
 func (m *ResponseMsg) GetError() error {
-	if !m.succeeded && m.Error != "" {
+	if !m.Succeeded && m.Error != "" {
 		return errors.New(m.Error)
 	}
 	return nil
@@ -73,11 +78,11 @@ type Grid interface {
 	MakeActor(def *ActorDef) (Actor, error)
 }
 
-func RegisterGrid(co *discovery.Coordinator, nx *message.Messenger, g Grid) error {
+func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	r, ok := registry[g.Namespace]
+	r, ok := registry[g.Namespace()]
 	if ok {
 		return ErrGridAlreadyRegistered
 	}
@@ -100,8 +105,8 @@ func RegisterGrid(co *discovery.Coordinator, nx *message.Messenger, g Grid) erro
 		return err
 	}
 
-	timeout, cancel := context.WithTimeout(co.Context(), 10*time.Second)
-	sub, err := nx.Subscribe(co, g.Namespace(), hostname, 10)
+	timeout, cancel = context.WithTimeout(co.Context(), 10*time.Second)
+	sub, err := mm.Subscribe(co.Context(), g.Namespace(), hostname, 10)
 	cancel()
 	if err != nil {
 		return err
@@ -151,14 +156,14 @@ func StartActor(def *ActorDef) error {
 		return ErrInvalidNamespace
 	}
 
-	c := context.WithValue(r.co.Context(), contextKey, r)
+	c := context.WithValue(r.co.Context(), contextKey, &contextVal{r: r, actorID: def.ID()})
 	actor, err := r.g.MakeActor(def)
 	if err != nil {
 		return err
 	}
 
 	timeout, cancel := context.WithTimeout(r.co.Context(), 10*time.Second)
-	err = r.co.Register(timeout, actor.ID())
+	err = r.co.Register(timeout, def.ID())
 	cancel()
 	if err != nil {
 		return err
@@ -174,7 +179,7 @@ func StartActor(def *ActorDef) error {
 		}()
 		defer func() {
 			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err = r.co.Deregister(timeout, actor.ID())
+			err = r.co.Deregister(timeout, def.ID())
 			cancel()
 		}()
 		actor.Act(c)

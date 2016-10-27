@@ -37,11 +37,11 @@ func TestFoo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, err := co.StartHeartbeat()
+	err = co.StartHeartbeat()
 	if err != nil {
 		t.Fatal(err)
 	}
-	localCtx, cancel := context.WithCancel(ctx)
+	localCtx, cancel := context.WithCancel(co.Context())
 
 	nx, err := New(co)
 	if err != nil {
