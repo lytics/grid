@@ -1,4 +1,4 @@
-package messenger
+package message
 
 import (
 	"bytes"
@@ -52,7 +52,7 @@ func (env *Envelope) Respond(msg interface{}) error {
 	}
 
 	// Encode the message here, eg: in the Envelope, rather
-	// than in Nexus, because it should be done by the
+	// than in Messenger, because it should be done by the
 	// receiver's go-routine, otherwise there is a risk
 	// that pointers in the message might actuall need
 	// locking to be read-safe.
@@ -82,9 +82,9 @@ func (s *Subscription) Unsubscribe(c context.Context) error {
 	return s.cleanup(c)
 }
 
-func New(co *discovery.Coordinator) (*Nexus, error) {
+func New(co *discovery.Coordinator) (*Messenger, error) {
 	server := grpc.NewServer()
-	nx := &Nexus{
+	nx := &Messenger{
 		mu:              sync.Mutex{},
 		co:              co,
 		server:          server,
@@ -95,7 +95,7 @@ func New(co *discovery.Coordinator) (*Nexus, error) {
 	return nx, nil
 }
 
-type Nexus struct {
+type Messenger struct {
 	mu              sync.Mutex
 	co              *discovery.Coordinator
 	server          *grpc.Server
@@ -103,27 +103,27 @@ type Nexus struct {
 	clientsAndConns map[string]*clientAndConn
 }
 
-func (nx *Nexus) Start(address string) error {
+func (me *Messenger) Start(address string) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
 	}
-	return nx.server.Serve(listener)
+	return me.server.Serve(listener)
 }
 
-func (nx *Nexus) Stop() {
-	nx.mu.Lock()
-	defer nx.mu.Unlock()
+func (me *Messenger) Stop() {
+	me.mu.Lock()
+	defer me.mu.Unlock()
 
-	for _, cc := range nx.clientsAndConns {
+	for _, cc := range me.clientsAndConns {
 		cc.conn.Close()
 	}
 
-	nx.server.Stop()
+	me.server.Stop()
 }
 
-func (nx *Nexus) Process(c context.Context, req *Gram) (*Gram, error) {
-	sub, err := nx.subscription(req.Namespace, req.Receiver)
+func (me *Messenger) Process(c context.Context, req *Gram) (*Gram, error) {
+	sub, err := me.subscription(req.Namespace, req.Receiver)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (nx *Nexus) Process(c context.Context, req *Gram) (*Gram, error) {
 }
 
 // Request a response for the given message. The response is in the returned envelope.
-func (nx *Nexus) Request(c context.Context, namespace, receiver string, msg interface{}) (*Envelope, error) {
+func (me *Messenger) Request(c context.Context, namespace, receiver string, msg interface{}) (*Envelope, error) {
 	env := &Envelope{
 		Msg: msg,
 	}
@@ -187,7 +187,7 @@ func (nx *Nexus) Request(c context.Context, namespace, receiver string, msg inte
 		return nil, err
 	}
 
-	client, err := nx.wireClient(c, key)
+	client, err := me.wireClient(c, key)
 	if err != nil {
 		return nil, err
 	}
@@ -224,59 +224,59 @@ func (nx *Nexus) Request(c context.Context, namespace, receiver string, msg inte
 }
 
 // Subscribe for requests under the given namespace and receiver name.
-func (nx *Nexus) Subscribe(c context.Context, namespace, receiver string, mailboxSize int) (*Subscription, error) {
-	nx.mu.Lock()
-	defer nx.mu.Unlock()
+func (me *Messenger) Subscribe(c context.Context, namespace, receiver string, mailboxSize int) (*Subscription, error) {
+	me.mu.Lock()
+	defer me.mu.Unlock()
 
 	key := makeKey(namespace, receiver)
 
-	_, ok := nx.listeners[key]
+	_, ok := me.listeners[key]
 	if !ok {
-		err := nx.co.RegisterReceiver(c, key)
+		err := me.co.RegisterReceiver(c, key)
 		if err != nil {
 			return nil, err
 		}
 		mailbox := make(chan *Envelope, mailboxSize)
 		cleanup := func(c context.Context) error {
-			nx.mu.Lock()
-			defer nx.mu.Unlock()
-			delete(nx.listeners, key)
-			return nx.co.DeregisterReceiver(c, key)
+			me.mu.Lock()
+			defer me.mu.Unlock()
+			delete(me.listeners, key)
+			return me.co.DeregisterReceiver(c, key)
 		}
 		sub := &Subscription{
 			mailbox: mailbox,
 			cleanup: cleanup,
 		}
-		nx.listeners[key] = sub
+		me.listeners[key] = sub
 		return sub, nil
 	}
 
 	return nil, ErrAlreadySubscribed
 }
 
-func (nx *Nexus) subscription(namespace, receiver string) (*Subscription, error) {
-	nx.mu.Lock()
-	defer nx.mu.Unlock()
+func (me *Messenger) subscription(namespace, receiver string) (*Subscription, error) {
+	me.mu.Lock()
+	defer me.mu.Unlock()
 
 	key := makeKey(namespace, receiver)
 
-	sub, ok := nx.listeners[key]
+	sub, ok := me.listeners[key]
 	if !ok {
 		return nil, ErrUnknownReceiver
 	}
 	return sub, nil
 }
 
-func (nx *Nexus) wireClient(c context.Context, key string) (WireClient, error) {
-	nx.mu.Lock()
-	defer nx.mu.Unlock()
+func (me *Messenger) wireClient(c context.Context, key string) (WireClient, error) {
+	me.mu.Lock()
+	defer me.mu.Unlock()
 
-	address, err := nx.co.FindAddress(c, key)
+	address, err := me.co.FindAddress(c, key)
 	if err != nil {
 		return nil, err
 	}
 
-	cc, ok := nx.clientsAndConns[address]
+	cc, ok := me.clientsAndConns[address]
 	if !ok {
 		conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(1*time.Minute), grpc.WithBlock())
 		if err != nil {
@@ -287,7 +287,7 @@ func (nx *Nexus) wireClient(c context.Context, key string) (WireClient, error) {
 			conn:   conn,
 			client: client,
 		}
-		nx.clientsAndConns[address] = cc
+		me.clientsAndConns[address] = cc
 	}
 	return cc.client, nil
 }

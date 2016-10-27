@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package messenger;
+package message;
 
 message Gram {
     enum Ver {

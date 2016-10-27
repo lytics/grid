@@ -1,4 +1,4 @@
-package messenger
+package message
 
 import (
 	"context"

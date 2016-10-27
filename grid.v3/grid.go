@@ -101,6 +101,11 @@ func RegisterGrid(co *discovery.Coordinator, nx *messenger.Nexus, g Grid) error 
 				cancel()
 			case e := <-sub.Mailbox():
 				switch msg := e.Msg.(type) {
+				case ActorDef:
+					err := StartActor(&msg)
+					if err != nil {
+						e.Respond()
+					}
 				}
 			}
 		}
