@@ -24,9 +24,9 @@ type contextVal struct {
 }
 
 var (
-	ErrInvalidContext        = errors.New("invalid context")
-	ErrInvalidNamespace      = errors.New("invalid namespace")
-	ErrGridAlreadyRegistered = errors.New("grid already registered")
+	ErrInvalidContext    = errors.New("invalid context")
+	ErrInvalidNamespace  = errors.New("invalid namespace")
+	ErrAlreadyRegistered = errors.New("already registered")
 )
 
 var (
@@ -66,7 +66,7 @@ type ResponseMsg struct {
 	Error     string
 }
 
-func (m *ResponseMsg) GetError() error {
+func (m *ResponseMsg) Err() error {
 	if !m.Succeeded && m.Error != "" {
 		return errors.New(m.Error)
 	}
@@ -84,7 +84,7 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) erro
 
 	r, ok := registry[g.Namespace()]
 	if ok {
-		return ErrGridAlreadyRegistered
+		return ErrAlreadyRegistered
 	}
 
 	hostname, err := os.Hostname()
@@ -96,6 +96,7 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) erro
 		id: fmt.Sprintf("/%v/registration/%v", g.Namespace(), hostname),
 		g:  g,
 		co: co,
+		mm: mm,
 	}
 
 	timeout, cancel := context.WithTimeout(co.Context(), 10*time.Second)
