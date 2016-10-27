@@ -3,13 +3,14 @@ package grid
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/lytics/grid/grid.v3/discovery"
-	"github.com/lytics/grid/grid.v3/messenger"
+	"github.com/lytics/grid/grid.v3/message"
 	"golang.org/x/net/context"
 )
 
@@ -21,6 +22,10 @@ var (
 	ErrInvalidContext        = errors.New("invalid context")
 	ErrInvalidNamespace      = errors.New("invalid namespace")
 	ErrGridAlreadyRegistered = errors.New("grid already registered")
+)
+
+var (
+	Logger *log.Logger
 )
 
 var (
@@ -51,12 +56,24 @@ func (r *registration) ID() string {
 	return r.id
 }
 
+type ResponseMsg struct {
+	Succeeded bool
+	Error     string
+}
+
+func (m *ResponseMsg) GetError() error {
+	if !m.succeeded && m.Error != "" {
+		return errors.New(m.Error)
+	}
+	return nil
+}
+
 type Grid interface {
 	Namespace() string
 	MakeActor(def *ActorDef) (Actor, error)
 }
 
-func RegisterGrid(co *discovery.Coordinator, nx *messenger.Nexus, g Grid) error {
+func RegisterGrid(co *discovery.Coordinator, nx *message.Messenger, g Grid) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -104,7 +121,14 @@ func RegisterGrid(co *discovery.Coordinator, nx *messenger.Nexus, g Grid) error 
 				case ActorDef:
 					err := StartActor(&msg)
 					if err != nil {
-						e.Respond()
+						e.Respond(&ResponseMsg{
+							Succeeded: false,
+							Error:     err.Error(),
+						})
+					} else {
+						e.Respond(&ResponseMsg{
+							Succeeded: true,
+						})
 					}
 				}
 			}
@@ -114,6 +138,10 @@ func RegisterGrid(co *discovery.Coordinator, nx *messenger.Nexus, g Grid) error 
 	return nil
 }
 
+// StartActor in the current process. This method does not
+// communicate or RPC with another system to choose where
+// to run the actor. Calling this method will start the
+// actor in the current process.
 func StartActor(def *ActorDef) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -137,6 +165,13 @@ func StartActor(def *ActorDef) error {
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if Logger != nil {
+					log.Printf("panic in actor: %v, recovered with: %v", def.ID(), r)
+				}
+			}
+		}()
 		defer func() {
 			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			err = r.co.Deregister(timeout, actor.ID())
