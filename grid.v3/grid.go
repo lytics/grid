@@ -61,21 +61,9 @@ func (r *registration) ID() string {
 	return r.id
 }
 
-type ResponseMsg struct {
-	Succeeded bool
-	Error     string
-}
-
-func (m *ResponseMsg) Err() error {
-	if !m.Succeeded && m.Error != "" {
-		return errors.New(m.Error)
-	}
-	return nil
-}
-
 type Grid interface {
 	Namespace() string
-	MakeActor(def *ActorDef) (Actor, error)
+	MakeActor(def *ActorDefMsg) (Actor, error)
 }
 
 func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) error {
@@ -124,7 +112,7 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) erro
 				cancel()
 			case e := <-sub.Mailbox():
 				switch msg := e.Msg.(type) {
-				case ActorDef:
+				case ActorDefMsg:
 					err := StartActor(&msg)
 					if err != nil {
 						e.Respond(&ResponseMsg{
@@ -148,7 +136,7 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) erro
 // communicate or RPC with another system to choose where
 // to run the actor. Calling this method will start the
 // actor in the current process.
-func StartActor(def *ActorDef) error {
+func StartActor(def *ActorDefMsg) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -172,16 +160,16 @@ func StartActor(def *ActorDef) error {
 
 	go func() {
 		defer func() {
+			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err = r.co.Deregister(timeout, def.ID())
+			cancel()
+		}()
+		defer func() {
 			if r := recover(); r != nil {
 				if Logger != nil {
 					log.Printf("panic in actor: %v, recovered with: %v", def.ID(), r)
 				}
 			}
-		}()
-		defer func() {
-			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err = r.co.Deregister(timeout, def.ID())
-			cancel()
 		}()
 		actor.Act(c)
 	}()
