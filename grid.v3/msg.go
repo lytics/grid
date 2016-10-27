@@ -6,42 +6,46 @@ import (
 	"fmt"
 )
 
-func NewActorDefMsg(namespace, name string) (*ActorDefMsg, error) {
-	if !isNameValid(name) {
-		return nil, ErrInvalidActorName
-	}
-	if !isNameValid(namespace) {
-		return nil, ErrInvalidActorNamespace
-	}
-	return &ActorDefMsg{
+var (
+	ErrInvalidActorType      = errors.New("invalid actor type")
+	ErrInvalidActorName      = errors.New("invalid actor name")
+	ErrInvalidActorNamespace = errors.New("invalid actor namespace")
+)
+
+func NewActorDef(namespace, name string) *ActorDef {
+	return &ActorDef{
 		Type:      name,
 		Name:      name,
 		Namespace: namespace,
-	}, nil
+	}
 }
 
-type ActorDefMsg struct {
+type ActorDef struct {
 	id        string
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	Type      string
+	Name      string
+	Namespace string
 }
 
-// ID of the actor, in format of /<namespace>/<name>
-func (a *ActorDefMsg) ID() string {
+// ID of the actor, in format of <namespace> . <name> all without whitespace.
+func (a *ActorDef) ID() string {
 	if a.id == "" {
-		a.id = fmt.Sprintf("/%v/%v", a.Namespace, a.Name)
+		a.id = fmt.Sprintf("%v.%v", a.Namespace, a.Name)
 	}
 	return a.id
 }
 
-// DefineType defaults to actor name. Commonly used by the ActorMaker
-// to switch on Type. This method is called if there are many actors
-// with names like "consumer-0", "consumer-1", "consumer-2", etc.
-// But all of them are really of "consumer" type.
-func (a *ActorDefMsg) DefineType(t string) *ActorDefMsg {
-	a.Type = t
-	return a
+func ValidateActorDef(def *ActorDef) error {
+	if !isNameValid(def.Name) {
+		return ErrInvalidActorType
+	}
+	if !isNameValid(def.Name) {
+		return ErrInvalidActorName
+	}
+	if !isNameValid(def.Namespace) {
+		return ErrInvalidActorNamespace
+	}
+	return nil
 }
 
 type ResponseMsg struct {
@@ -58,5 +62,5 @@ func (m *ResponseMsg) Err() error {
 
 func init() {
 	gob.Register(&ResponseMsg{})
-	gob.Register(&ActorDefMsg{})
+	gob.Register(&ActorDef{})
 }

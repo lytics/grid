@@ -16,7 +16,19 @@ func ContextActorID(c context.Context) (string, error) {
 	if !ok {
 		return "", ErrInvalidContext
 	}
-	return cv.r.g.Namespace(), nil
+	return cv.actorID, nil
+}
+
+func ContextActorName(c context.Context) (string, error) {
+	v := c.Value(contextKey)
+	if v == nil {
+		return "", ErrInvalidContext
+	}
+	cv, ok := v.(*contextVal)
+	if !ok {
+		return "", ErrInvalidContext
+	}
+	return cv.actorName, nil
 }
 
 func ContextNamespace(c context.Context) (string, error) {
@@ -28,7 +40,7 @@ func ContextNamespace(c context.Context) (string, error) {
 	if !ok {
 		return "", ErrInvalidContext
 	}
-	return cv.r.g.Namespace(), nil
+	return cv.r.namespace, nil
 }
 
 func ContextMessenger(c context.Context) (*message.Messenger, error) {

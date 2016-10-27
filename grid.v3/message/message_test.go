@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
-	"os"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
 
+	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/discovery"
 )
 
@@ -26,13 +27,16 @@ func init() {
 }
 
 func TestFoo(t *testing.T) {
-	hostname, err := os.Hostname()
+	cfg := etcdv3.Config{
+		Endpoints: []string{"localhost:2379"},
+	}
+	client, err := etcdv3.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	address := fmt.Sprintf("%v:7777", hostname)
 
-	co, err := discovery.New(address, []string{"http://localhost:2379"})
+	address := fmt.Sprintf("localhost:%v", 2000+rand.Intn(2000))
+	co, err := discovery.New(address, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +52,7 @@ func TestFoo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sub, err := nx.Subscribe(localCtx, "testing", "r0", 100)
+	sub, err := nx.Subscribe(localCtx, "testing.r0", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +74,7 @@ func TestFoo(t *testing.T) {
 					msg := &FooReqMsg{Cnt: cnt}
 
 					timeout, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-					_, err := nx.Request(timeout, "testing", "r0", msg)
+					_, err := nx.Request(timeout, "testing.r0", msg)
 					cancel()
 
 					if err != nil {

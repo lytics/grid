@@ -3,7 +3,7 @@ package discovery
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -13,13 +13,14 @@ import (
 const keepAlivesPerLeaseDuration = 6
 
 var (
-	ErrUnknownAddress            = fmt.Errorf("unknown address")
-	ErrInvalidRegistration       = fmt.Errorf("invalid registration")
-	ErrAlreadyDeregistered       = fmt.Errorf("already deregistered")
-	ErrInvalidDeregistration     = fmt.Errorf("invalid deregistration")
-	ErrReceiverAlreadyExists     = fmt.Errorf("receiver already exists")
-	ErrInvalidReceiverOwnership  = fmt.Errorf("invalid receiver ownership")
-	ErrInvalidRegistrationRecord = fmt.Errorf("invalid registration record set")
+	ErrInvalidAddress            = errors.New("invalid address")
+	ErrUnknownAddress            = errors.New("unknown address")
+	ErrInvalidRegistration       = errors.New("invalid registration")
+	ErrAlreadyDeregistered       = errors.New("already deregistered")
+	ErrInvalidDeregistration     = errors.New("invalid deregistration")
+	ErrAlreadyRegistered         = errors.New("receiver already exists")
+	ErrInvalidReceiverOwnership  = errors.New("invalid receiver ownership")
+	ErrInvalidRegistrationRecord = errors.New("invalid registration record set")
 )
 
 type regRec struct {
@@ -41,13 +42,9 @@ type Coordinator struct {
 	LeaseDuration time.Duration
 }
 
-func New(address string, servers []string) (*Coordinator, error) {
-	cfg := etcdv3.Config{
-		Endpoints: servers,
-	}
-	client, err := etcdv3.New(cfg)
-	if err != nil {
-		return nil, err
+func New(address string, client *etcdv3.Client) (*Coordinator, error) {
+	if address == "" {
+		return nil, ErrInvalidAddress
 	}
 	return &Coordinator{
 		done:          make(chan bool),
@@ -122,6 +119,27 @@ func (co *Coordinator) Context() context.Context {
 	return co.context
 }
 
+// FindAddresses associated with the prefix.
+func (co *Coordinator) FindAddresses(c context.Context, prefix string) ([][]string, error) {
+	co.mu.Lock()
+	defer co.mu.Unlock()
+
+	res, err := co.kv.Get(c, prefix)
+	if err != nil {
+		return nil, err
+	}
+	addresses := make([][]string, len(res.Kvs))
+	for _, kv := range res.Kvs {
+		rec := &regRec{}
+		err = json.Unmarshal(kv.Value, rec)
+		if err != nil {
+			return nil, err
+		}
+		addresses = append(addresses, []string{string(kv.Key), rec.Address})
+	}
+	return addresses, nil
+}
+
 // FindAddress associated with the given key.
 func (co *Coordinator) FindAddress(c context.Context, key string) (string, error) {
 	co.mu.Lock()
@@ -172,7 +190,7 @@ func (co *Coordinator) Register(c context.Context, key string) error {
 		if rec.Address == co.address {
 			return nil
 		} else {
-			return ErrReceiverAlreadyExists
+			return ErrAlreadyRegistered
 		}
 	}
 

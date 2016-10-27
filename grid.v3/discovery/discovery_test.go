@@ -5,12 +5,21 @@ import (
 	"math/rand"
 	"testing"
 	"time"
+
+	etcdv3 "github.com/coreos/etcd/clientv3"
 )
 
 func TestStartStop(t *testing.T) {
-	address := fmt.Sprintf("localhost:%v", 2000+rand.Intn(2000))
+	cfg := etcdv3.Config{
+		Endpoints: []string{"localhost:2379"},
+	}
+	client, err := etcdv3.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	co, err := New(address, []string{"localhost:2379"})
+	address := fmt.Sprintf("localhost:%v", 2000+rand.Intn(2000))
+	co, err := New(address, client)
 	if err != nil {
 		t.Fatal(err)
 	}

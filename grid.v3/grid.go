@@ -19,12 +19,14 @@ const (
 )
 
 type contextVal struct {
-	r       *registration
-	actorID string
+	r         *registration
+	actorID   string
+	actorName string
 }
 
 var (
 	ErrInvalidContext    = errors.New("invalid context")
+	ErrUnknownResponse   = errors.New("unknown response")
 	ErrInvalidNamespace  = errors.New("invalid namespace")
 	ErrAlreadyRegistered = errors.New("already registered")
 )
@@ -51,10 +53,11 @@ func init() {
 }
 
 type registration struct {
-	id string
-	g  Grid
-	mm *message.Messenger
-	co *discovery.Coordinator
+	id        string
+	g         Grid
+	mm        *message.Messenger
+	co        *discovery.Coordinator
+	namespace string
 }
 
 func (r *registration) ID() string {
@@ -62,15 +65,14 @@ func (r *registration) ID() string {
 }
 
 type Grid interface {
-	Namespace() string
-	MakeActor(def *ActorDefMsg) (Actor, error)
+	MakeActor(def *ActorDef) (Actor, error)
 }
 
-func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) error {
+func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, namespace string, g Grid) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	r, ok := registry[g.Namespace()]
+	r, ok := registry[namespace]
 	if ok {
 		return ErrAlreadyRegistered
 	}
@@ -81,10 +83,11 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) erro
 	}
 
 	r = &registration{
-		id: fmt.Sprintf("/%v/registration/%v", g.Namespace(), hostname),
-		g:  g,
-		co: co,
-		mm: mm,
+		id:        fmt.Sprintf("/%v/grid/%v", namespace, hostname),
+		g:         g,
+		co:        co,
+		mm:        mm,
+		namespace: namespace,
 	}
 
 	timeout, cancel := context.WithTimeout(co.Context(), 10*time.Second)
@@ -95,13 +98,13 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) erro
 	}
 
 	timeout, cancel = context.WithTimeout(co.Context(), 10*time.Second)
-	sub, err := mm.Subscribe(co.Context(), g.Namespace(), hostname, 10)
+	sub, err := mm.Subscribe(co.Context(), r.ID(), 10)
 	cancel()
 	if err != nil {
 		return err
 	}
 
-	registry[g.Namespace()] = r
+	registry[namespace] = r
 
 	go func() {
 		for {
@@ -112,8 +115,8 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) erro
 				cancel()
 			case e := <-sub.Mailbox():
 				switch msg := e.Msg.(type) {
-				case ActorDefMsg:
-					err := StartActor(&msg)
+				case ActorDef:
+					err := startActor(e.Context(), &msg)
 					if err != nil {
 						e.Respond(&ResponseMsg{
 							Succeeded: false,
@@ -132,32 +135,65 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, g Grid) erro
 	return nil
 }
 
-// StartActor in the current process. This method does not
-// communicate or RPC with another system to choose where
-// to run the actor. Calling this method will start the
-// actor in the current process.
-func StartActor(def *ActorDefMsg) error {
+func RequestActorStart(c context.Context, target string, def *ActorDef) error {
 	mu.Lock()
 	defer mu.Unlock()
+
+	if err := ValidateActorDef(def); err != nil {
+		return err
+	}
 
 	r, ok := registry[def.Namespace]
 	if !ok {
 		return ErrInvalidNamespace
 	}
 
-	c := context.WithValue(r.co.Context(), contextKey, &contextVal{r: r, actorID: def.ID()})
+	e, err := r.mm.Request(c, target, def)
+	if err != nil {
+		return err
+	}
+	switch msg := e.Msg.(type) {
+	case ResponseMsg:
+		return msg.Err()
+	default:
+		return ErrUnknownResponse
+	}
+}
+
+// startActor in the current process. This method does not
+// communicate or RPC with another system to choose where
+// to run the actor. Calling this method will start the
+// actor in the current process.
+func startActor(c context.Context, def *ActorDef) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if err := ValidateActorDef(def); err != nil {
+		return err
+	}
+
+	r, ok := registry[def.Namespace]
+	if !ok {
+		return ErrInvalidNamespace
+	}
+
 	actor, err := r.g.MakeActor(def)
 	if err != nil {
 		return err
 	}
 
-	timeout, cancel := context.WithTimeout(r.co.Context(), 10*time.Second)
+	timeout, cancel := context.WithTimeout(c, 10*time.Second)
 	err = r.co.Register(timeout, def.ID())
 	cancel()
 	if err != nil {
 		return err
 	}
 
+	actorCtx := context.WithValue(r.co.Context(), contextKey, &contextVal{
+		r:         r,
+		actorID:   def.ID(),
+		actorName: def.Name,
+	})
 	go func() {
 		defer func() {
 			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -165,13 +201,13 @@ func StartActor(def *ActorDefMsg) error {
 			cancel()
 		}()
 		defer func() {
-			if r := recover(); r != nil {
+			if err := recover(); err != nil {
 				if Logger != nil {
-					log.Printf("panic in actor: %v, recovered with: %v", def.ID(), r)
+					log.Printf("panic in actor: %v, recovered with: %v", def.ID(), err)
 				}
 			}
 		}()
-		actor.Act(c)
+		actor.Act(actorCtx)
 	}()
 
 	return nil

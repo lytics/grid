@@ -1,15 +1,9 @@
 package grid
 
 import (
-	"errors"
 	"regexp"
 
 	"golang.org/x/net/context"
-)
-
-var (
-	ErrInvalidActorName      = errors.New("invalid actor name")
-	ErrInvalidActorNamespace = errors.New("invalid actor namespace")
 )
 
 type Actor interface {

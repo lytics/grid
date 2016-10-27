@@ -33,12 +33,20 @@ type clientAndConn struct {
 
 type Envelope struct {
 	Msg      interface{}
+	context  context.Context
 	response chan []byte
+}
+
+func (env *Envelope) Context() context.Context {
+	if env.response == nil {
+		panic("only received envelopes may call context")
+	}
+	return env.context
 }
 
 func (env *Envelope) Ack() {
 	if env.response == nil {
-		panic("onlyreceived envelopes may call ack")
+		panic("only received envelopes may call ack")
 	}
 	env.Respond(Ack)
 }
@@ -124,7 +132,7 @@ func (me *Messenger) Stop() {
 }
 
 func (me *Messenger) Process(c netcontext.Context, req *Gram) (*Gram, error) {
-	sub, err := me.subscription(req.Namespace, req.Receiver)
+	sub, err := me.subscription(req.Receiver)
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +156,7 @@ func (me *Messenger) Process(c netcontext.Context, req *Gram) (*Gram, error) {
 	if err != nil {
 		return nil, err
 	}
+	env.context = context.WithValue(c, "", "")
 	env.response = make(chan []byte)
 
 	// Send the filled envelope to the actual
@@ -174,12 +183,10 @@ func (me *Messenger) Process(c netcontext.Context, req *Gram) (*Gram, error) {
 }
 
 // Request a response for the given message. The response is in the returned envelope.
-func (me *Messenger) Request(c context.Context, namespace, receiver string, msg interface{}) (*Envelope, error) {
+func (me *Messenger) Request(c context.Context, receiver string, msg interface{}) (*Envelope, error) {
 	env := &Envelope{
 		Msg: msg,
 	}
-
-	key := makeKey(namespace, receiver)
 
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -188,17 +195,16 @@ func (me *Messenger) Request(c context.Context, namespace, receiver string, msg 
 		return nil, err
 	}
 
-	client, err := me.wireClient(c, key)
+	client, err := me.wireClient(c, receiver)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &Gram{
-		Ver:       Gram_V1,
-		Enc:       Gram_Gob,
-		Data:      buf.Bytes(),
-		Receiver:  receiver,
-		Namespace: namespace,
+		Ver:      Gram_V1,
+		Enc:      Gram_Gob,
+		Data:     buf.Bytes(),
+		Receiver: receiver,
 	}
 	res, err := client.Process(c, req)
 	if err != nil {
@@ -224,16 +230,14 @@ func (me *Messenger) Request(c context.Context, namespace, receiver string, msg 
 	return env, nil
 }
 
-// Subscribe for requests under the given namespace and receiver name.
-func (me *Messenger) Subscribe(c context.Context, namespace, receiver string, mailboxSize int) (*Subscription, error) {
+// Subscribe for requests under the given receiver name.
+func (me *Messenger) Subscribe(c context.Context, receiver string, mailboxSize int) (*Subscription, error) {
 	me.mu.Lock()
 	defer me.mu.Unlock()
 
-	key := makeKey(namespace, receiver)
-
-	_, ok := me.listeners[key]
+	_, ok := me.listeners[receiver]
 	if !ok {
-		err := me.co.Register(c, key)
+		err := me.co.Register(c, receiver)
 		if err != nil {
 			return nil, err
 		}
@@ -241,38 +245,36 @@ func (me *Messenger) Subscribe(c context.Context, namespace, receiver string, ma
 		cleanup := func(c context.Context) error {
 			me.mu.Lock()
 			defer me.mu.Unlock()
-			delete(me.listeners, key)
-			return me.co.Deregister(c, key)
+			delete(me.listeners, receiver)
+			return me.co.Deregister(c, receiver)
 		}
 		sub := &Subscription{
 			mailbox: mailbox,
 			cleanup: cleanup,
 		}
-		me.listeners[key] = sub
+		me.listeners[receiver] = sub
 		return sub, nil
 	}
 
 	return nil, ErrAlreadySubscribed
 }
 
-func (me *Messenger) subscription(namespace, receiver string) (*Subscription, error) {
+func (me *Messenger) subscription(receiver string) (*Subscription, error) {
 	me.mu.Lock()
 	defer me.mu.Unlock()
 
-	key := makeKey(namespace, receiver)
-
-	sub, ok := me.listeners[key]
+	sub, ok := me.listeners[receiver]
 	if !ok {
 		return nil, ErrUnknownReceiver
 	}
 	return sub, nil
 }
 
-func (me *Messenger) wireClient(c context.Context, key string) (WireClient, error) {
+func (me *Messenger) wireClient(c context.Context, receiver string) (WireClient, error) {
 	me.mu.Lock()
 	defer me.mu.Unlock()
 
-	address, err := me.co.FindAddress(c, key)
+	address, err := me.co.FindAddress(c, receiver)
 	if err != nil {
 		return nil, err
 	}
@@ -291,8 +293,4 @@ func (me *Messenger) wireClient(c context.Context, key string) (WireClient, erro
 		me.clientsAndConns[address] = cc
 	}
 	return cc.client, nil
-}
-
-func makeKey(namespace, receiver string) string {
-	return fmt.Sprintf("/%v/%v", namespace, receiver)
 }
