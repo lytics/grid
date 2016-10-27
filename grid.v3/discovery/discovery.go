@@ -69,9 +69,8 @@ func (co *Coordinator) StartHeartbeat() error {
 	defer co.mu.Unlock()
 
 	timeout, cancel := context.WithTimeout(context.Background(), co.Timeout)
-	defer cancel()
-
 	res, err := co.lease.Grant(timeout, int64(co.LeaseDuration.Seconds()))
+	cancel()
 	if err != nil {
 		return err
 	}
