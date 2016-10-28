@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"hash/fnv"
 )
 
 var (
@@ -27,7 +28,7 @@ type ActorDef struct {
 	Namespace string
 }
 
-// ID of the actor, in format of <namespace> . <name> all without whitespace.
+// ID of the actor, in format of <namespace> . <name> but without whitespace.
 func (a *ActorDef) ID() string {
 	if a.id == "" {
 		a.id = fmt.Sprintf("%v.%v", a.Namespace, a.Name)
@@ -35,8 +36,17 @@ func (a *ActorDef) ID() string {
 	return a.id
 }
 
+func (a *ActorDef) regID() string {
+	h := fnv.New64()
+	_, err := h.Write([]byte(a.ID()))
+	if err != nil {
+		panic("failed hashing actor id")
+	}
+	return fmt.Sprintf("%v-%v", a.ID(), h.Sum64())
+}
+
 func ValidateActorDef(def *ActorDef) error {
-	if !isNameValid(def.Name) {
+	if !isNameValid(def.Type) {
 		return ErrInvalidActorType
 	}
 	if !isNameValid(def.Name) {
