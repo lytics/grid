@@ -20,7 +20,7 @@ var (
 	ErrNotOwner                    = errors.New("not owner")
 	ErrNotStarted                  = errors.New("not started")
 	ErrInvalidAddress              = errors.New("invalid address")
-	ErrUnknownAddress              = errors.New("unknown address")
+	ErrUnknownKey                  = errors.New("unknown address")
 	ErrFailedRegistration          = errors.New("failed registration")
 	ErrFailedDeregistration        = errors.New("failed deregistration")
 	ErrAlreadyRegistered           = errors.New("already registered")
@@ -164,7 +164,7 @@ func (co *Coordinator) FindRegistrations(c context.Context, prefix string) ([]*R
 	if err != nil {
 		return nil, err
 	}
-	registrations := make([]*Registration, len(getRes.Kvs))
+	registrations := make([]*Registration, 0, len(getRes.Kvs))
 	for _, kv := range getRes.Kvs {
 		reg := &Registration{}
 		err = json.Unmarshal(kv.Value, reg)
@@ -186,7 +186,7 @@ func (co *Coordinator) FindRegistration(c context.Context, key string) (*Registr
 		return nil, err
 	}
 	if getRes.Count == 0 {
-		return nil, ErrUnknownAddress
+		return nil, ErrUnknownKey
 	}
 	reg := &Registration{}
 	err = json.Unmarshal(getRes.Kvs[0].Value, reg)
@@ -217,7 +217,7 @@ func (co *Coordinator) Register(c context.Context, key string, options ...Option
 		// The keys mach, so check if the caller has
 		// allowed multiple registrations from the
 		// same address.
-		if len(options) > 0 && options[0] == OpAllowReentrantRegistrations {
+		if len(options) == 0 {
 			return ErrAlreadyRegistered
 		}
 		// The call HAS allowed multiple registrations
@@ -278,7 +278,6 @@ func (co *Coordinator) Deregister(c context.Context, key string) error {
 	default:
 	}
 
-	var version int64
 	getRes, err := co.kv.Get(c, key, etcdv3.WithLimit(1))
 	if err != nil {
 		return err
@@ -295,7 +294,7 @@ func (co *Coordinator) Deregister(c context.Context, key string) error {
 		}
 
 		txnRes, err := co.kv.Txn(c).
-			If(etcdv3.Compare(etcdv3.Version(key), "=", version)).
+			If(etcdv3.Compare(etcdv3.Version(key), "=", kv.Version)).
 			Then(etcdv3.OpDelete(key)).
 			Commit()
 		if err != nil {

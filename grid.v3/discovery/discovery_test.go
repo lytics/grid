@@ -195,7 +195,74 @@ func TestStopHeartbeat(t *testing.T) {
 }
 
 func TestFindRegistration(t *testing.T) {
+	client, co := bootstrap(t, start)
+	defer client.Close()
+	defer co.StopHeartbeat()
 
+	timeout, cancel := timeoutContext()
+	err := co.Register(timeout, "test-registration-a")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	timeout, cancel = timeoutContext()
+	err = co.Register(timeout, "test-registration-aa")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	timeout, cancel = timeoutContext()
+	reg, err := co.FindRegistration(timeout, "test-registration-a")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reg.Key != "test-registration-a" {
+		t.Fatal("got wrong key")
+	}
+}
+
+func TestFindRegistrations(t *testing.T) {
+	client, co := bootstrap(t, start)
+	defer client.Close()
+	defer co.StopHeartbeat()
+
+	timeout, cancel := timeoutContext()
+	err := co.Register(timeout, "test-registration-a")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	timeout, cancel = timeoutContext()
+	err = co.Register(timeout, "test-registration-aa")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	timeout, cancel = timeoutContext()
+	regs, err := co.FindRegistrations(timeout, "test-registration-a")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(regs) != 2 {
+		t.Fatal("failed to find number of expected registrations")
+	}
+
+	expected := map[string]bool{
+		"test-registration-a":  true,
+		"test-registration-aa": true,
+	}
+	for _, reg := range regs {
+		delete(expected, reg.Key)
+	}
+	if len(expected) != 0 {
+		t.Fatal("failed to find all expected registrations")
+	}
 }
 
 func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Coordinator) {
