@@ -5,7 +5,7 @@ import (
 	"hash/fnv"
 	"math/rand"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid.v3"
 )
 
 type MultiRing interface {
@@ -21,10 +21,10 @@ type multi struct {
 	rings         []Ring
 }
 
-func NewMultiRing(name string, members, totalRings, reservedRings int) MultiRing {
+func NewMultiRing(namespace, name string, members, totalRings, reservedRings int) MultiRing {
 	rings := make([]Ring, totalRings)
 	for i := 0; i < totalRings; i++ {
-		r := New(fmt.Sprintf("%v-%v", name, i), members)
+		r := New(namespace, fmt.Sprintf("%v-%v", name, i), members)
 		r.(*ring).actortype = name
 		rings[i] = r
 	}

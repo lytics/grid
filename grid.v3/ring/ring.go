@@ -6,7 +6,7 @@ import (
 	"hash/fnv"
 	"math/rand"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid.v3"
 )
 
 // Ring represents a set of actor members used to divide a data
@@ -26,12 +26,19 @@ type Ring interface {
 type ring struct {
 	dice      *rand.Rand
 	name      string
+	namespace string
 	actortype string
 	n         int
 }
 
-func New(name string, n int) Ring {
-	return &ring{dice: grid.NewSeededRand(), name: name, actortype: name, n: n}
+func New(namespace, name string, n int) Ring {
+	return &ring{
+		n:         n,
+		dice:      grid.NewSeededRand(),
+		name:      name,
+		namespace: namespace,
+		actortype: name,
+	}
 }
 
 func (r *ring) ID() string {
@@ -135,8 +142,8 @@ func (r *ring) ByHashedUint64(key uint64) string {
 }
 
 func (r *ring) actorDef(i int) *grid.ActorDef {
-	a := grid.NewActorDef(r.actorName(i))
-	a.DefineType(r.actortype)
+	a := grid.NewActorDef(r.namespace, r.actorName(i))
+	a.Type = r.actortype
 	return a
 }
 

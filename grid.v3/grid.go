@@ -42,13 +42,8 @@ var (
 
 func init() {
 	mu = &sync.Mutex{}
+	dice = NewSeededRand()
 	registry = make(map[string]*registration)
-
-	r, err := NewSeededRand()
-	if err != nil {
-		panic(err.Error())
-	}
-	dice = r
 }
 
 type registration struct {

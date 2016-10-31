@@ -11,7 +11,7 @@ import (
 	"flag"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
-	grid "github.com/lytics/grid/grid.v3"
+	"github.com/lytics/grid/grid.v3"
 	"github.com/lytics/grid/grid.v3/discovery"
 	"github.com/lytics/grid/grid.v3/message"
 )
