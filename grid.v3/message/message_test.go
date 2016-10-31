@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +28,8 @@ func init() {
 }
 
 func TestFoo(t *testing.T) {
+	runtime.GOMAXPROCS(8)
+
 	cfg := etcdv3.Config{
 		Endpoints: []string{"localhost:2379"},
 	}

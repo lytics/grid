@@ -274,10 +274,11 @@ func (me *Messenger) wireClient(c context.Context, receiver string) (WireClient,
 	me.mu.Lock()
 	defer me.mu.Unlock()
 
-	address, err := me.co.FindAddress(c, receiver)
+	reg, err := me.co.FindRegistration(c, receiver)
 	if err != nil {
 		return nil, err
 	}
+	address := reg.Address
 
 	cc, ok := me.clientsAndConns[address]
 	if !ok {
