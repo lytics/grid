@@ -265,6 +265,30 @@ func TestFindRegistrations(t *testing.T) {
 	}
 }
 
+func TestKeepAlive(t *testing.T) {
+	client, co := bootstrap(t, dontStart)
+	defer client.Close()
+
+	// Change the minimum for sake of testing quickly.
+	minLeaseDuration = 1 * time.Second
+
+	// Use the minimum.
+	co.LeaseDuration = 1 * time.Second
+	err := co.StartHeartbeat()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check that the number of heartbeats matching some reasonable
+	// expected minimum. Keep in mind that each lease duration
+	// should produce "hearbratsPerLeaseDuration" heartbeats.
+	time.Sleep(5 * time.Second)
+	co.StopHeartbeat()
+	if float64(co.keepAliveStats.success) < float64(heartbeatsPerLeaseDuration)*5*0.9 {
+		t.Fatal("too few keep alive heartbeats")
+	}
+}
+
 func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Coordinator) {
 	cfg := etcdv3.Config{
 		Endpoints: []string{"localhost:2379"},

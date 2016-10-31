@@ -4,17 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"sync"
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
 )
 
+var Logger *log.Logger
+
 type Option int
 
-const OpAllowReentrantRegistrations Option = 0
-
-const keepAlivesPerLeaseDuration = 6
+const (
+	OpAllowReentrantRegistrations Option = 0
+)
 
 var (
 	ErrNotOwner                    = errors.New("not owner")
@@ -28,6 +31,11 @@ var (
 	ErrLeaseDurationTooShort       = errors.New("lease duration too short")
 	ErrInvalidRegistrationRecord   = errors.New("invalid registration record")
 	ErrMultipleRegistrationRecords = errors.New("multiple registration records")
+)
+
+var (
+	minLeaseDuration           = 10 * time.Second
+	heartbeatsPerLeaseDuration = 6
 )
 
 // Registration information.
@@ -49,6 +57,8 @@ type Coordinator struct {
 	context       context.Context
 	Timeout       time.Duration
 	LeaseDuration time.Duration
+	// Testing hook.
+	keepAliveStats *keepAliveStats
 }
 
 // New coordinator.
@@ -76,7 +86,7 @@ func (co *Coordinator) StartHeartbeat() error {
 	co.mu.Lock()
 	defer co.mu.Unlock()
 
-	if co.LeaseDuration < 10*time.Second {
+	if co.LeaseDuration < minLeaseDuration {
 		return ErrLeaseDurationTooShort
 	}
 
@@ -102,9 +112,15 @@ func (co *Coordinator) StartHeartbeat() error {
 	//        lease repeatedly, in which case it will cancel
 	//        its context and exit.
 	go func() {
-		ticker := time.NewTicker(co.LeaseDuration / keepAlivesPerLeaseDuration)
+		ticker := time.NewTicker(co.LeaseDuration / time.Duration(heartbeatsPerLeaseDuration))
 		defer ticker.Stop()
 		defer close(co.exited)
+
+		stats := &keepAliveStats{}
+		defer func() {
+			co.keepAliveStats = stats
+		}()
+
 		errCnt := 0
 		for {
 			select {
@@ -120,11 +136,14 @@ func (co *Coordinator) StartHeartbeat() error {
 				_, err := co.lease.KeepAliveOnce(timeout, co.leaseID)
 				cancel()
 				if err != nil {
+					stats.failure++
 					errCnt++
+					logPrintf("failed keep-alive heartbeat, total error count: %v, current error: %v", errCnt, err)
 				} else {
+					stats.success++
 					errCnt = 0
 				}
-				if errCnt < keepAlivesPerLeaseDuration-1 {
+				if errCnt < heartbeatsPerLeaseDuration-1 {
 					continue
 				}
 				// Finialize, ie: DIE.
@@ -305,4 +324,15 @@ func (co *Coordinator) Deregister(c context.Context, key string) error {
 		}
 	}
 	return nil
+}
+
+type keepAliveStats struct {
+	success int
+	failure int
+}
+
+func logPrintf(format string, v ...interface{}) {
+	if Logger != nil {
+		Logger.Printf(format, v...)
+	}
 }
