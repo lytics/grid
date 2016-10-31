@@ -47,7 +47,7 @@ func (env *Envelope) Context() context.Context {
 }
 
 // Ack envelope delivery, same as responding with Respond
-// and constant Ack type.
+// and constant "Ack".
 func (env *Envelope) Ack() {
 	if env.response == nil {
 		panic("only received envelopes may call ack")
