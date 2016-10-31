@@ -97,6 +97,7 @@ func New(co *discovery.Coordinator) (*Messenger, error) {
 		mu:              sync.Mutex{},
 		co:              co,
 		server:          server,
+		addresses:       make(map[string]string),
 		listeners:       make(map[string]*Subscription),
 		clientsAndConns: make(map[string]*clientAndConn),
 	}
@@ -108,6 +109,7 @@ type Messenger struct {
 	mu              sync.Mutex
 	co              *discovery.Coordinator
 	server          *grpc.Server
+	addresses       map[string]string
 	listeners       map[string]*Subscription
 	clientsAndConns map[string]*clientAndConn
 }
@@ -274,11 +276,15 @@ func (me *Messenger) wireClient(c context.Context, receiver string) (WireClient,
 	me.mu.Lock()
 	defer me.mu.Unlock()
 
-	reg, err := me.co.FindRegistration(c, receiver)
-	if err != nil {
-		return nil, err
+	address, ok := me.addresses[receiver]
+	if !ok {
+		reg, err := me.co.FindRegistration(c, receiver)
+		if err != nil {
+			return nil, err
+		}
+		address = reg.Address
+		me.addresses[receiver] = address
 	}
-	address := reg.Address
 
 	cc, ok := me.clientsAndConns[address]
 	if !ok {
