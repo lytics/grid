@@ -125,9 +125,9 @@ type Messenger struct {
 	clientsAndConns map[string]*clientAndConn
 }
 
-// Start the messenger.
-func (me *Messenger) Start(address string) error {
-	listener, err := net.Listen("tcp", address)
+// Serve the messenger listener.
+func (me *Messenger) Serve() error {
+	listener, err := net.Listen("tcp", me.co.Address())
 	if err != nil {
 		return err
 	}

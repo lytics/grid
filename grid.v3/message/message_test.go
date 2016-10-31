@@ -37,6 +37,7 @@ func TestFoo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.Close()
 
 	address := fmt.Sprintf("localhost:%v", 2000+rand.Intn(2000))
 	co, err := discovery.New(address, client)
@@ -44,18 +45,18 @@ func TestFoo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = co.StartHeartbeat()
+	err = co.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
 	localCtx, cancel := context.WithCancel(co.Context())
 
-	nx, err := New(co)
+	mm, err := New(co)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	sub, err := nx.Subscribe(localCtx, "testing.r0", 100)
+	sub, err := mm.Subscribe(localCtx, "testing.r0", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestFoo(t *testing.T) {
 					msg := &FooReqMsg{Cnt: cnt}
 
 					timeout, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-					_, err := nx.Request(timeout, "testing.r0", msg)
+					_, err := mm.Request(timeout, "testing.r0", msg)
 					cancel()
 
 					if err != nil {
@@ -114,12 +115,12 @@ func TestFoo(t *testing.T) {
 		if err != nil {
 			fmt.Printf("unsub error: %v\n", err)
 		}
-		nx.Stop()
+		mm.Stop()
 	}()
 
 	// Will block until Stop is called.
-	nx.Start(address)
+	mm.Serve()
 
 	// Stop the discovery coordinator.
-	co.StopHeartbeat()
+	co.Stop()
 }

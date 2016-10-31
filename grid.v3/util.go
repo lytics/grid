@@ -19,7 +19,7 @@ func NewSeededRand() (*rand.Rand, error) {
 		return nil, fmt.Errorf("insufficient entropy")
 	}
 	seed, n := binary.Varint(bytes)
-	if n != 8 {
+	if n == 0 {
 		return nil, fmt.Errorf("failed to parse seed")
 	}
 

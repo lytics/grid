@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
 	"sync"
 	"time"
 
@@ -64,38 +63,58 @@ func (r *registration) ID() string {
 	return r.id
 }
 
+// Grid of actors.
 type Grid interface {
+	Namespace() string
 	MakeActor(def *ActorDef) (Actor, error)
 }
 
-func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, namespace string, g Grid) error {
+// Peers in the given namespace. The names can be used in
+// RequestActorStart to start actors on a peer.
+func Peers(c context.Context, namespace string) ([]string, error) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	r, ok := registry[namespace]
+	if !ok {
+		return nil, ErrInvalidNamespace
+	}
+
+	regs, err := r.co.FindRegistrations(c, "grid-"+namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	peers := make([]string, 0)
+	for _, reg := range regs {
+		peers = append(peers, reg.Key)
+	}
+
+	return peers, nil
+}
+
+// Register the grid.
+func Register(co *discovery.Coordinator, mm *message.Messenger, g Grid) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	r, ok := registry[g.Namespace()]
 	if ok {
 		return ErrAlreadyRegistered
 	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		return err
-	}
-
 	r = &registration{
-		id:        fmt.Sprintf("%v.grid-head-%v", namespace, hostname),
-		g:         g,
-		co:        co,
-		mm:        mm,
-		namespace: namespace,
+		id: fmt.Sprintf("grid-%v-%v", g.Namespace(), co.Address()),
+		g:  g,
+		co: co,
+		mm: mm,
 	}
+	registry[g.Namespace()] = r
 
 	sub, err := mm.Subscribe(co.Context(), r.ID(), 10)
 	if err != nil {
 		return err
 	}
-
-	registry[namespace] = r
 
 	go func() {
 		for {
@@ -106,8 +125,8 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, namespace st
 				cancel()
 			case e := <-sub.Mailbox():
 				switch msg := e.Msg.(type) {
-				case ActorDef:
-					err := startActor(e.Context(), &msg)
+				case *ActorDef:
+					err := startActor(e.Context(), msg)
 					if err != nil {
 						e.Respond(&ResponseMsg{
 							Succeeded: false,
@@ -126,25 +145,24 @@ func RegisterGrid(co *discovery.Coordinator, mm *message.Messenger, namespace st
 	return nil
 }
 
-func RequestActorStart(c context.Context, target string, def *ActorDef) error {
-	mu.Lock()
-	defer mu.Unlock()
-
+// RequestActorStart with the actor definition on the peer.
+func RequestActorStart(c context.Context, peer string, def *ActorDef) error {
 	if err := ValidateActorDef(def); err != nil {
 		return err
 	}
 
-	r, ok := registry[def.Namespace]
-	if !ok {
-		return ErrInvalidNamespace
-	}
-
-	e, err := r.mm.Request(c, target, def)
+	r, err := getRegistry(def.Namespace)
 	if err != nil {
 		return err
 	}
+
+	e, err := r.mm.Request(c, peer, def)
+	if err != nil {
+		return err
+	}
+
 	switch msg := e.Msg.(type) {
-	case ResponseMsg:
+	case *ResponseMsg:
 		return msg.Err()
 	default:
 		return ErrUnknownResponse
@@ -156,16 +174,13 @@ func RequestActorStart(c context.Context, target string, def *ActorDef) error {
 // to run the actor. Calling this method will start the
 // actor on the current host in the current process.
 func startActor(c context.Context, def *ActorDef) error {
-	mu.Lock()
-	defer mu.Unlock()
-
 	if err := ValidateActorDef(def); err != nil {
 		return err
 	}
 
-	r, ok := registry[def.Namespace]
-	if !ok {
-		return ErrInvalidNamespace
+	r, err := getRegistry(def.Namespace)
+	if err != nil {
+		return err
 	}
 
 	actor, err := r.g.MakeActor(def)
@@ -210,4 +225,16 @@ func startActor(c context.Context, def *ActorDef) error {
 	}()
 
 	return nil
+}
+
+func getRegistry(namespace string) (*registration, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	r, ok := registry[namespace]
+	if !ok {
+		return nil, ErrInvalidNamespace
+	}
+
+	return r, nil
 }

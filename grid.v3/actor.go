@@ -1,9 +1,8 @@
 package grid
 
 import (
+	"context"
 	"regexp"
-
-	"golang.org/x/net/context"
 )
 
 type Actor interface {

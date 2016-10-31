@@ -79,10 +79,8 @@ func New(address string, client *etcdv3.Client) (*Coordinator, error) {
 	}, nil
 }
 
-// StartHeartbeat of coordinator. The returned context should be used by
-// everyone associated with this coordinator, and they should "shutdown"
-// if the context signals done.
-func (co *Coordinator) StartHeartbeat() error {
+// Start coordinator.
+func (co *Coordinator) Start() error {
 	co.mu.Lock()
 	defer co.mu.Unlock()
 
@@ -156,13 +154,18 @@ func (co *Coordinator) StartHeartbeat() error {
 	return nil
 }
 
-// StopHeartbeat of coordinator.
-func (co *Coordinator) StopHeartbeat() {
+// Stop coordinator.
+func (co *Coordinator) Stop() {
 	if co.leaseID < 0 {
 		return
 	}
 	close(co.done)
 	<-co.exited
+}
+
+// Address of registered keys.
+func (co *Coordinator) Address() string {
+	return co.address
 }
 
 // Context of the coordinator. When the coordinator is stopped

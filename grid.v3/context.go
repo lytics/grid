@@ -40,7 +40,7 @@ func ContextNamespace(c context.Context) (string, error) {
 	if !ok {
 		return "", ErrInvalidContext
 	}
-	return cv.r.namespace, nil
+	return cv.r.g.Namespace(), nil
 }
 
 func ContextMessenger(c context.Context) (*message.Messenger, error) {
