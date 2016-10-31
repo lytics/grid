@@ -31,12 +31,14 @@ type clientAndConn struct {
 	client WireClient
 }
 
+// Envelope for delivered request and response messages.
 type Envelope struct {
 	Msg      interface{}
 	context  context.Context
 	response chan []byte
 }
 
+// Context of envelope's request.
 func (env *Envelope) Context() context.Context {
 	if env.response == nil {
 		panic("only received envelopes may call context")
@@ -44,6 +46,8 @@ func (env *Envelope) Context() context.Context {
 	return env.context
 }
 
+// Ack envelope delivery, same as responding with Respond
+// and constant Ack type.
 func (env *Envelope) Ack() {
 	if env.response == nil {
 		panic("only received envelopes may call ack")
@@ -51,6 +55,7 @@ func (env *Envelope) Ack() {
 	env.Respond(Ack)
 }
 
+// Respond to envelope delivery with a message.
 func (env *Envelope) Respond(msg interface{}) error {
 	if env.response == nil {
 		panic("only received envelopes may call respond")
@@ -78,19 +83,23 @@ func (env *Envelope) Respond(msg interface{}) error {
 	return nil
 }
 
+// Subscription for message on a particular topic name.
 type Subscription struct {
 	mailbox chan *Envelope
 	cleanup func(c context.Context) error
 }
 
+// Mailbox of incoming requests for this subscription.
 func (s *Subscription) Mailbox() <-chan *Envelope {
 	return s.mailbox
 }
 
+// Unsubscribe from this subscription.
 func (s *Subscription) Unsubscribe(c context.Context) error {
 	return s.cleanup(c)
 }
 
+// New messenger.
 func New(co *discovery.Coordinator) (*Messenger, error) {
 	server := grpc.NewServer()
 	m := &Messenger{
@@ -105,6 +114,8 @@ func New(co *discovery.Coordinator) (*Messenger, error) {
 	return m, nil
 }
 
+// Messenger is a bi-directional request and reply client
+// and server.
 type Messenger struct {
 	mu              sync.Mutex
 	co              *discovery.Coordinator
@@ -114,6 +125,7 @@ type Messenger struct {
 	clientsAndConns map[string]*clientAndConn
 }
 
+// Start the messenger.
 func (me *Messenger) Start(address string) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -122,6 +134,7 @@ func (me *Messenger) Start(address string) error {
 	return me.server.Serve(listener)
 }
 
+// Stop the messanger.
 func (me *Messenger) Stop() {
 	me.mu.Lock()
 	defer me.mu.Unlock()
@@ -133,6 +146,8 @@ func (me *Messenger) Stop() {
 	me.server.Stop()
 }
 
+// Process a request and return a response. Implements the interface for
+// gRPC definition of the wire service.
 func (me *Messenger) Process(c netcontext.Context, req *Gram) (*Gram, error) {
 	sub, err := me.subscription(req.Receiver)
 	if err != nil {
