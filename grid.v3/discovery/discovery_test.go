@@ -43,7 +43,7 @@ func TestStartStop(t *testing.T) {
 		}
 	}()
 
-	co.StopHeartbeat()
+	co.Stop()
 	isFinished := <-finished
 	if !isFinished {
 		t.Fatal("coordinator failed to finish")
@@ -53,7 +53,7 @@ func TestStartStop(t *testing.T) {
 func TestRegister(t *testing.T) {
 	client, co := bootstrap(t, start)
 	defer client.Close()
-	defer co.StopHeartbeat()
+	defer co.Stop()
 
 	timeout, cancel := timeoutContext()
 	err := co.Register(timeout, "test-registration")
@@ -80,7 +80,7 @@ func TestRegister(t *testing.T) {
 func TestDeregistration(t *testing.T) {
 	client, co := bootstrap(t, start)
 	defer client.Close()
-	defer co.StopHeartbeat()
+	defer co.Stop()
 
 	timeout, cancel := timeoutContext()
 	err := co.Register(timeout, "test-registration")
@@ -126,7 +126,7 @@ func TestDeregistration(t *testing.T) {
 func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 	client, co := bootstrap(t, dontStart)
 	defer client.Close()
-	defer co.StopHeartbeat()
+	defer co.Stop()
 
 	timeout, cancel := timeoutContext()
 	err := co.Register(timeout, "test-registration")
@@ -146,11 +146,11 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 func TestRegisterTwiceAllowed(t *testing.T) {
 	client, co := bootstrap(t, start)
 	defer client.Close()
-	defer co.StopHeartbeat()
+	defer co.Stop()
 
 	for i := 0; i < 2; i++ {
 		timeout, cancel := timeoutContext()
-		err := co.Register(timeout, "test-registration-twice", OpAllowReentrantRegistrations)
+		err := co.Register(timeout, "test-registration-twice", OpAllowReentrantRegistration)
 		cancel()
 		if i > 0 && err == ErrAlreadyRegistered {
 			t.Fatal("not allowed to register twice")
@@ -161,7 +161,7 @@ func TestRegisterTwiceAllowed(t *testing.T) {
 func TestRegisterTwiceNotAllowed(t *testing.T) {
 	client, co := bootstrap(t, start)
 	defer client.Close()
-	defer co.StopHeartbeat()
+	defer co.Stop()
 
 	for i := 0; i < 2; i++ {
 		timeout, cancel := timeoutContext()
@@ -173,7 +173,7 @@ func TestRegisterTwiceNotAllowed(t *testing.T) {
 	}
 }
 
-func TestStopHeartbeat(t *testing.T) {
+func TestStop(t *testing.T) {
 	client, co := bootstrap(t, start)
 	defer client.Close()
 
@@ -183,7 +183,7 @@ func TestStopHeartbeat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	co.StopHeartbeat()
+	co.Stop()
 	res, err := client.Get(timeout, "test-registration")
 	cancel()
 	if err != nil {
@@ -197,7 +197,7 @@ func TestStopHeartbeat(t *testing.T) {
 func TestFindRegistration(t *testing.T) {
 	client, co := bootstrap(t, start)
 	defer client.Close()
-	defer co.StopHeartbeat()
+	defer co.Stop()
 
 	timeout, cancel := timeoutContext()
 	err := co.Register(timeout, "test-registration-a")
@@ -227,7 +227,7 @@ func TestFindRegistration(t *testing.T) {
 func TestFindRegistrations(t *testing.T) {
 	client, co := bootstrap(t, start)
 	defer client.Close()
-	defer co.StopHeartbeat()
+	defer co.Stop()
 
 	timeout, cancel := timeoutContext()
 	err := co.Register(timeout, "test-registration-a")
@@ -274,7 +274,7 @@ func TestKeepAlive(t *testing.T) {
 
 	// Use the minimum.
 	co.LeaseDuration = 1 * time.Second
-	err := co.StartHeartbeat()
+	err := co.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestKeepAlive(t *testing.T) {
 	// expected minimum. Keep in mind that each lease duration
 	// should produce "hearbratsPerLeaseDuration" heartbeats.
 	time.Sleep(5 * time.Second)
-	co.StopHeartbeat()
+	co.Stop()
 	if float64(co.keepAliveStats.success) < float64(heartbeatsPerLeaseDuration)*5*0.9 {
 		t.Fatal("too few keep alive heartbeats")
 	}
@@ -306,7 +306,7 @@ func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Coordinator) {
 	co.LeaseDuration = 10 * time.Second
 
 	if shouldStart {
-		err = co.StartHeartbeat()
+		err = co.Start()
 		if err != nil {
 			t.Fatal(err)
 		}

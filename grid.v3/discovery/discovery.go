@@ -16,21 +16,18 @@ var Logger *log.Logger
 type Option int
 
 const (
-	OpAllowReentrantRegistrations Option = 0
+	OpAllowReentrantRegistration Option = 0
 )
 
 var (
-	ErrNotOwner                    = errors.New("not owner")
-	ErrNotStarted                  = errors.New("not started")
-	ErrInvalidAddress              = errors.New("invalid address")
-	ErrUnknownKey                  = errors.New("unknown address")
-	ErrFailedRegistration          = errors.New("failed registration")
-	ErrFailedDeregistration        = errors.New("failed deregistration")
-	ErrAlreadyRegistered           = errors.New("already registered")
-	ErrAlreadyDeregistered         = errors.New("already deregistered")
-	ErrLeaseDurationTooShort       = errors.New("lease duration too short")
-	ErrInvalidRegistrationRecord   = errors.New("invalid registration record")
-	ErrMultipleRegistrationRecords = errors.New("multiple registration records")
+	ErrNotOwner              = errors.New("not owner")
+	ErrNotStarted            = errors.New("not started")
+	ErrInvalidAddress        = errors.New("invalid address")
+	ErrUnknownKey            = errors.New("unknown address")
+	ErrFailedRegistration    = errors.New("failed registration")
+	ErrFailedDeregistration  = errors.New("failed deregistration")
+	ErrAlreadyRegistered     = errors.New("already registered")
+	ErrLeaseDurationTooShort = errors.New("lease duration too short")
 )
 
 var (
