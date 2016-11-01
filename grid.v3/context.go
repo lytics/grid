@@ -3,6 +3,7 @@ package grid
 import (
 	"context"
 
+	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/discovery"
 	"github.com/lytics/grid/grid.v3/message"
 )
@@ -41,6 +42,18 @@ func ContextNamespace(c context.Context) (string, error) {
 		return "", ErrInvalidContext
 	}
 	return cv.r.g.Namespace(), nil
+}
+
+func ContextEtcd(c context.Context) (*etcdv3.Client, error) {
+	v := c.Value(contextKey)
+	if v == nil {
+		return nil, ErrInvalidContext
+	}
+	cv, ok := v.(*contextVal)
+	if !ok {
+		return nil, ErrInvalidContext
+	}
+	return cv.r.etcd, nil
 }
 
 func ContextMessenger(c context.Context) (*message.Messenger, error) {

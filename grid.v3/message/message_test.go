@@ -56,7 +56,7 @@ func TestFoo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sub, err := mm.Subscribe(localCtx, "testing.r0", 100)
+	sub, err := mm.Subscribe("testing.r0", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,13 +75,9 @@ func TestFoo(t *testing.T) {
 					fmt.Printf("sender-%v: msg/sec: %.2f\n", id, float64(cnt)/time.Now().Sub(start).Seconds())
 					return
 				default:
-					msg := &FooReqMsg{Cnt: cnt}
-
-					timeout, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-					_, err := mm.Request(timeout, "testing.r0", msg)
-					cancel()
-
-					if err != nil {
+					if _, err := mm.Request(1*time.Second, "testing.r0", &FooReqMsg{
+						Cnt: cnt,
+					}); err != nil {
 						fmt.Printf("error: %v\n", err)
 					}
 					if cnt == 0 {
@@ -111,7 +107,7 @@ func TestFoo(t *testing.T) {
 		time.Sleep(20 * time.Second)
 		cancel()
 		wg.Wait()
-		err := sub.Unsubscribe(context.Background())
+		err := sub.Unsubscribe()
 		if err != nil {
 			fmt.Printf("unsub error: %v\n", err)
 		}

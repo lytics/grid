@@ -10,10 +10,7 @@ import (
 
 	"flag"
 
-	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3"
-	"github.com/lytics/grid/grid.v3/discovery"
-	"github.com/lytics/grid/grid.v3/message"
 )
 
 const mailboxSize = 10
@@ -34,11 +31,9 @@ func (a *EchoActor) Act(c context.Context) {
 	successOrDie(err)
 
 	// Subscribe to message send to the actor's ID.
-	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	sub, err := mm.Subscribe(timeout, id, mailboxSize)
-	cancel()
+	sub, err := mm.Subscribe(id, mailboxSize)
 	successOrDie(err)
-	defer sub.Unsubscribe(c)
+	defer sub.Unsubscribe()
 
 	// Listen and respond to requests.
 	fmt.Println("hello")
@@ -75,54 +70,13 @@ func (e Echo) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
 }
 
 func main() {
-	address := flag.String("address", "", "bind address for gRPC listener")
+	address := flag.String("address", "", "bind address for gRPC")
 	flag.Parse()
 
-	etcd, err := etcdv3.New(etcdv3.Config{
-		Endpoints: []string{"localhost:2379"},
-	})
-	successOrDie(err)
-	defer etcd.Close()
-
-	dc, err := discovery.New(*address, etcd)
-	successOrDie(err)
-	defer dc.Stop()
-
-	err = dc.Start()
-	successOrDie(err)
-
-	mm, err := message.New(dc)
-	successOrDie(err)
-	defer mm.Stop()
-
 	echo := Echo("echo")
-	err = grid.Register(dc, mm, echo)
-	successOrDie(err)
+	go detectNewPeersAndStartActors(echo)
 
-	go func() {
-		existing := make(map[string]bool)
-		for {
-			time.Sleep(2 * time.Second)
-			timeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			peers, err := grid.Peers(timeout, echo.Namespace())
-			cancel()
-			successOrDie(err)
-			for _, peer := range peers {
-				if !existing[peer] {
-					existing[peer] = true
-					def := grid.NewActorDef(echo.Namespace(), "echo-actor")
-					timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					err = grid.RequestActorStart(timeout, peer, def)
-					cancel()
-					if err != nil {
-						fmt.Printf("actor start request failed for peer: %v, error: %v\n", peer, err)
-					}
-				}
-			}
-		}
-	}()
-
-	err = mm.Serve()
+	err := grid.Serve(*address, []string{"localhost:2379"}, echo)
 	successOrDie(err)
 }
 
@@ -130,5 +84,37 @@ func successOrDie(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v", err)
 		os.Exit(1)
+	}
+}
+
+func detectNewPeersAndStartActors(g grid.Grid) {
+	existing := make(map[string]bool)
+	for {
+		time.Sleep(2 * time.Second)
+
+		// Ask for current peers.
+		timeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		peers, err := grid.Peers(timeout, g.Namespace())
+		cancel()
+		successOrDie(err)
+
+		// Loop over result and check is any peers are new.
+		for _, peer := range peers {
+			if existing[peer] {
+				continue
+			}
+
+			// Define an actor.
+			existing[peer] = true
+			def := grid.NewActorDef(g.Namespace(), "echo-actor")
+
+			// On new peer, start an actor.
+			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err = grid.RequestActorStart(timeout, peer, def)
+			cancel()
+			if err != nil {
+				fmt.Printf("actor start request failed for peer: %v, error: %v\n", peer, err)
+			}
+		}
 	}
 }

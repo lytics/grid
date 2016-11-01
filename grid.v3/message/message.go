@@ -18,12 +18,13 @@ import (
 const Ack = "__ACK__"
 
 var (
-	ErrInvalidAddress    = fmt.Errorf("invalid hostname")
-	ErrContextFinished   = fmt.Errorf("context finished")
-	ErrReceiverBusy      = fmt.Errorf("receiver busy")
-	ErrAlreadySubscribed = fmt.Errorf("already subscribed")
-	ErrUnknownHost       = fmt.Errorf("unknown host")
-	ErrUnknownReceiver   = fmt.Errorf("unknown receiver")
+	ErrInvalidAddress      = fmt.Errorf("invalid hostname")
+	ErrContextFinished     = fmt.Errorf("context finished")
+	ErrReceiverBusy        = fmt.Errorf("receiver busy")
+	ErrAlreadySubscribed   = fmt.Errorf("already subscribed")
+	ErrUnknownHost         = fmt.Errorf("unknown host")
+	ErrUnknownSubscription = fmt.Errorf("unknown receiver")
+	ErrMessengerStopping   = fmt.Errorf("messenger stopping")
 )
 
 type clientAndConn struct {
@@ -86,7 +87,7 @@ func (env *Envelope) Respond(msg interface{}) error {
 // Subscription for message on a particular topic name.
 type Subscription struct {
 	mailbox chan *Envelope
-	cleanup func(c context.Context) error
+	cleanup func() error
 }
 
 // Mailbox of incoming requests for this subscription.
@@ -95,8 +96,8 @@ func (s *Subscription) Mailbox() <-chan *Envelope {
 }
 
 // Unsubscribe from this subscription.
-func (s *Subscription) Unsubscribe(c context.Context) error {
-	return s.cleanup(c)
+func (s *Subscription) Unsubscribe() error {
+	return s.cleanup()
 }
 
 // New messenger.
@@ -106,8 +107,9 @@ func New(co *discovery.Coordinator) (*Messenger, error) {
 		mu:              sync.Mutex{},
 		co:              co,
 		server:          server,
+		stopped:         make(chan struct{}),
 		addresses:       make(map[string]string),
-		listeners:       make(map[string]*Subscription),
+		subscriptions:   make(map[string]*Subscription),
 		clientsAndConns: make(map[string]*clientAndConn),
 	}
 	RegisterWireServer(server, m)
@@ -120,8 +122,10 @@ type Messenger struct {
 	mu              sync.Mutex
 	co              *discovery.Coordinator
 	server          *grpc.Server
+	stopped         chan struct{}
+	stopping        bool
 	addresses       map[string]string
-	listeners       map[string]*Subscription
+	subscriptions   map[string]*Subscription
 	clientsAndConns map[string]*clientAndConn
 }
 
@@ -131,18 +135,19 @@ func (me *Messenger) Serve() error {
 	if err != nil {
 		return err
 	}
+
 	return me.server.Serve(listener)
 }
 
 // Stop the messanger.
 func (me *Messenger) Stop() {
-	me.mu.Lock()
-	defer me.mu.Unlock()
+	func() {
+		me.mu.Lock()
+		defer me.mu.Unlock()
+		me.stopping = true
+	}()
 
-	for _, cc := range me.clientsAndConns {
-		cc.conn.Close()
-	}
-
+	<-me.stopped
 	me.server.Stop()
 }
 
@@ -200,7 +205,14 @@ func (me *Messenger) Process(c netcontext.Context, req *Gram) (*Gram, error) {
 }
 
 // Request a response for the given message. The response is in the returned envelope.
-func (me *Messenger) Request(c context.Context, receiver string, msg interface{}) (*Envelope, error) {
+func (me *Messenger) Request(timeout time.Duration, receiver string, msg interface{}) (*Envelope, error) {
+	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return me.RequestC(timeoutC, receiver, msg)
+}
+
+// RequestC a response for the given message. The response is in the returned envelope.
+func (me *Messenger) RequestC(c context.Context, receiver string, msg interface{}) (*Envelope, error) {
 	env := &Envelope{
 		Msg: msg,
 	}
@@ -248,41 +260,65 @@ func (me *Messenger) Request(c context.Context, receiver string, msg interface{}
 }
 
 // Subscribe for requests under the given receiver name.
-func (me *Messenger) Subscribe(c context.Context, receiver string, mailboxSize int) (*Subscription, error) {
+func (me *Messenger) Subscribe(name string, mailboxSize int) (*Subscription, error) {
 	me.mu.Lock()
 	defer me.mu.Unlock()
 
-	_, ok := me.listeners[receiver]
+	if me.stopping {
+		return nil, ErrMessengerStopping
+	}
+
+	_, ok := me.subscriptions[name]
 	if !ok {
-		err := me.co.Register(c, receiver)
+		timeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := me.co.Register(timeout, name)
+		cancel()
 		if err != nil {
 			return nil, err
 		}
+
 		mailbox := make(chan *Envelope, mailboxSize)
-		cleanup := func(c context.Context) error {
+		cleanup := func() error {
 			me.mu.Lock()
 			defer me.mu.Unlock()
-			delete(me.listeners, receiver)
-			return me.co.Deregister(c, receiver)
+
+			// Immediately delete the subscription so that no one
+			// can send to it, at least from this host.
+			delete(me.subscriptions, name)
+
+			// Deregister the name.
+			timeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := me.co.Deregister(timeout, name)
+			cancel()
+
+			// Check if this was actually the very last subscription
+			// to be cleaned up when stopping. If it is the last then
+			// the messenger can be considered stopped.
+			if me.stopping && len(me.subscriptions) == 0 {
+				close(me.stopped)
+			}
+
+			// Return any error from the deregister call.
+			return err
 		}
 		sub := &Subscription{
 			mailbox: mailbox,
 			cleanup: cleanup,
 		}
-		me.listeners[receiver] = sub
+		me.subscriptions[name] = sub
 		return sub, nil
 	}
 
 	return nil, ErrAlreadySubscribed
 }
 
-func (me *Messenger) subscription(receiver string) (*Subscription, error) {
+func (me *Messenger) subscription(name string) (*Subscription, error) {
 	me.mu.Lock()
 	defer me.mu.Unlock()
 
-	sub, ok := me.listeners[receiver]
+	sub, ok := me.subscriptions[name]
 	if !ok {
-		return nil, ErrUnknownReceiver
+		return nil, ErrUnknownSubscription
 	}
 	return sub, nil
 }

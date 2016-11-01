@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/discovery"
 	"github.com/lytics/grid/grid.v3/message"
 )
@@ -47,11 +48,14 @@ func init() {
 }
 
 type registration struct {
-	id        string
-	g         Grid
-	mm        *message.Messenger
-	co        *discovery.Coordinator
-	namespace string
+	id         string
+	g          Grid
+	mm         *message.Messenger
+	co         *discovery.Coordinator
+	etcd       *etcdv3.Client
+	ctx        context.Context
+	cancel     func()
+	actorCount int
 }
 
 func (r *registration) ID() string {
@@ -88,8 +92,51 @@ func Peers(c context.Context, namespace string) ([]string, error) {
 	return peers, nil
 }
 
-// Register the grid.
-func Register(co *discovery.Coordinator, mm *message.Messenger, g Grid) error {
+// Serve the grid, blocking indefinitely.
+func Serve(g Grid, address string, etcdEndpoints []string) error {
+	etcd, err := etcdv3.New(etcdv3.Config{
+		Endpoints: etcdEndpoints,
+	})
+	if err != nil {
+		return err
+	}
+	defer etcd.Close()
+
+	dc, err := discovery.New(address, etcd)
+	if err != nil {
+		return err
+	}
+	defer dc.Stop()
+	err = dc.Start()
+	if err != nil {
+		return err
+	}
+
+	mm, err := message.New(dc)
+	if err != nil {
+		return err
+	}
+
+	err = register(etcd, dc, mm, g)
+	if err != nil {
+		return err
+	}
+
+	return mm.Serve()
+}
+
+func Stop(g Grid) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	r, ok := registry[g.Namespace()]
+	if !ok {
+		return
+	}
+	r.cancel()
+}
+
+func register(etcd *etcdv3.Client, co *discovery.Coordinator, mm *message.Messenger, g Grid) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -98,26 +145,29 @@ func Register(co *discovery.Coordinator, mm *message.Messenger, g Grid) error {
 		return ErrAlreadyRegistered
 	}
 
+	ctx, cancel := context.WithCancel(co.Context())
 	r = &registration{
-		id: fmt.Sprintf("grid-%v-%v", g.Namespace(), co.Address()),
-		g:  g,
-		co: co,
-		mm: mm,
+		id:     fmt.Sprintf("grid-%v-%v", g.Namespace(), co.Address()),
+		g:      g,
+		co:     co,
+		mm:     mm,
+		etcd:   etcd,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 	registry[g.Namespace()] = r
 
-	sub, err := mm.Subscribe(co.Context(), r.ID(), 10)
+	sub, err := mm.Subscribe(r.ID(), 10)
 	if err != nil {
 		return err
 	}
 
 	go func() {
+		defer sub.Unsubscribe()
 		for {
 			select {
-			case <-co.Context().Done():
-				timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				sub.Unsubscribe(timeout)
-				cancel()
+			case <-ctx.Done():
+				return
 			case e := <-sub.Mailbox():
 				switch msg := e.Msg.(type) {
 				case *ActorDef:
@@ -140,8 +190,14 @@ func Register(co *discovery.Coordinator, mm *message.Messenger, g Grid) error {
 	return nil
 }
 
-// RequestActorStart with the actor definition on the peer.
-func RequestActorStart(c context.Context, peer string, def *ActorDef) error {
+func RequestActorStart(timeout time.Duration, peer string, def *ActorDef) error {
+	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return RequestActorStartC(timeoutC, peer, def)
+}
+
+// RequestActorStartC with the actor definition on the peer.
+func RequestActorStartC(c context.Context, peer string, def *ActorDef) error {
 	if err := ValidateActorDef(def); err != nil {
 		return err
 	}
@@ -151,7 +207,7 @@ func RequestActorStart(c context.Context, peer string, def *ActorDef) error {
 		return err
 	}
 
-	e, err := r.mm.Request(c, peer, def)
+	e, err := r.mm.RequestC(c, peer, def)
 	if err != nil {
 		return err
 	}
@@ -195,7 +251,7 @@ func startActor(c context.Context, def *ActorDef) error {
 
 	// The actor's context contains its full id, it's name and the
 	// full registration, which contains the actors namespace.
-	actorCtx := context.WithValue(r.co.Context(), contextKey, &contextVal{
+	actorCtx := context.WithValue(r.ctx, contextKey, &contextVal{
 		r:         r,
 		actorID:   def.ID(),
 		actorName: def.Name,
@@ -206,7 +262,7 @@ func startActor(c context.Context, def *ActorDef) error {
 	go func() {
 		defer func() {
 			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err = r.co.Deregister(timeout, def.ID())
+			r.co.Deregister(timeout, def.ID())
 			cancel()
 		}()
 		defer func() {
