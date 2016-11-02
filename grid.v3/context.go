@@ -4,8 +4,6 @@ import (
 	"context"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
-	"github.com/lytics/grid/grid.v3/discovery"
-	"github.com/lytics/grid/grid.v3/message"
 )
 
 func ContextActorID(c context.Context) (string, error) {
@@ -41,7 +39,7 @@ func ContextNamespace(c context.Context) (string, error) {
 	if !ok {
 		return "", ErrInvalidContext
 	}
-	return cv.r.g.Namespace(), nil
+	return cv.server.namespace, nil
 }
 
 func ContextEtcd(c context.Context) (*etcdv3.Client, error) {
@@ -53,10 +51,10 @@ func ContextEtcd(c context.Context) (*etcdv3.Client, error) {
 	if !ok {
 		return nil, ErrInvalidContext
 	}
-	return cv.r.etcd, nil
+	return cv.server.etcd, nil
 }
 
-func ContextMessenger(c context.Context) (*message.Messenger, error) {
+func contextServer(c context.Context) (*Server, error) {
 	v := c.Value(contextKey)
 	if v == nil {
 		return nil, ErrInvalidContext
@@ -65,17 +63,5 @@ func ContextMessenger(c context.Context) (*message.Messenger, error) {
 	if !ok {
 		return nil, ErrInvalidContext
 	}
-	return cv.r.mm, nil
-}
-
-func ContextCoordinator(c context.Context) (*discovery.Coordinator, error) {
-	v := c.Value(contextKey)
-	if v == nil {
-		return nil, ErrInvalidContext
-	}
-	cv, ok := v.(*contextVal)
-	if !ok {
-		return nil, ErrInvalidContext
-	}
-	return cv.r.co, nil
+	return cv.server, nil
 }

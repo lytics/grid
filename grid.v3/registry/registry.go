@@ -1,4 +1,4 @@
-package discovery
+package registry
 
 import (
 	"context"
@@ -22,7 +22,7 @@ const (
 var (
 	ErrNotOwner              = errors.New("not owner")
 	ErrNotStarted            = errors.New("not started")
-	ErrInvalidAddress        = errors.New("invalid address")
+	ErrInvalidEtcd           = errors.New("invalid etcd")
 	ErrUnknownKey            = errors.New("unknown address")
 	ErrFailedRegistration    = errors.New("failed registration")
 	ErrFailedDeregistration  = errors.New("failed deregistration")
@@ -41,8 +41,8 @@ type Registration struct {
 	Address string `json:"address"`
 }
 
-// Coordinator for discovery of receivers' host registrations.
-type Coordinator struct {
+// Registry for discovery.
+type Registry struct {
 	mu            sync.Mutex
 	done          chan bool
 	exited        chan bool
@@ -50,85 +50,84 @@ type Coordinator struct {
 	lease         etcdv3.Lease
 	leaseID       etcdv3.LeaseID
 	client        *etcdv3.Client
-	address       string
 	context       context.Context
+	Address       string
 	Timeout       time.Duration
 	LeaseDuration time.Duration
 	// Testing hook.
 	keepAliveStats *keepAliveStats
 }
 
-// New coordinator.
-func New(address string, client *etcdv3.Client) (*Coordinator, error) {
-	if address == "" {
-		return nil, ErrInvalidAddress
+// New Registry.
+func New(client *etcdv3.Client) (*Registry, error) {
+	if client == nil {
+		return nil, ErrInvalidEtcd
 	}
-	return &Coordinator{
+	return &Registry{
 		done:          make(chan bool),
 		exited:        make(chan bool),
 		kv:            etcdv3.NewKV(client),
 		lease:         etcdv3.NewLease(client),
 		leaseID:       -1,
 		client:        client,
-		address:       address,
 		Timeout:       10 * time.Second,
 		LeaseDuration: 60 * time.Second,
 	}, nil
 }
 
-// Start coordinator.
-func (co *Coordinator) Start() error {
-	co.mu.Lock()
-	defer co.mu.Unlock()
+// Start Registry.
+func (rr *Registry) Start() error {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
 
-	if co.LeaseDuration < minLeaseDuration {
+	if rr.LeaseDuration < minLeaseDuration {
 		return ErrLeaseDurationTooShort
 	}
 
-	timeout, cancel := context.WithTimeout(context.Background(), co.Timeout)
-	res, err := co.lease.Grant(timeout, int64(co.LeaseDuration.Seconds()))
+	timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
+	res, err := rr.lease.Grant(timeout, int64(rr.LeaseDuration.Seconds()))
 	cancel()
 	if err != nil {
 		return err
 	}
-	co.leaseID = res.ID
+	rr.leaseID = res.ID
 
-	// Everyone using the coordinator for discovery will use
+	// Everyone using the Registry for discovery will use
 	// the context below to monitor its Done channel. If
-	// the coordinator closes all users of the coordinator
+	// the Registry closes all users of the Registry
 	// will get notified.
 	c, finalize := context.WithCancel(context.Background())
-	co.context = c
+	rr.context = c
 
-	// There are two ways the coordinator can exit:
+	// There are two ways the Registry can exit:
 	//     1) Someone calls StopHeartbeat, in which case it will
 	//        cancel its context and exit.
-	//     2) The coordinator fails to signal keep-alive on it
+	//     2) The Registry fails to signal keep-alive on it
 	//        lease repeatedly, in which case it will cancel
 	//        its context and exit.
 	go func() {
-		ticker := time.NewTicker(co.LeaseDuration / time.Duration(heartbeatsPerLeaseDuration))
+		ticker := time.NewTicker(rr.LeaseDuration / time.Duration(heartbeatsPerLeaseDuration))
 		defer ticker.Stop()
-		defer close(co.exited)
+		defer close(rr.exited)
 
 		stats := &keepAliveStats{}
 		defer func() {
-			co.keepAliveStats = stats
+			rr.keepAliveStats = stats
 		}()
 
 		errCnt := 0
 		for {
 			select {
-			case <-co.done:
-				timeout, cancel := context.WithTimeout(context.Background(), co.Timeout)
-				co.lease.Revoke(timeout, co.leaseID)
+			case <-rr.done:
+				timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
+				rr.lease.Revoke(timeout, rr.leaseID)
 				cancel()
 				// Finialize, ie: DIE.
 				finalize()
 				return
 			case <-ticker.C:
-				timeout, cancel := context.WithTimeout(context.Background(), co.Timeout)
-				_, err := co.lease.KeepAliveOnce(timeout, co.leaseID)
+				timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
+				_, err := rr.lease.KeepAliveOnce(timeout, rr.leaseID)
 				cancel()
 				if err != nil {
 					stats.failure++
@@ -151,35 +150,30 @@ func (co *Coordinator) Start() error {
 	return nil
 }
 
-// Stop coordinator.
-func (co *Coordinator) Stop() {
-	if co.leaseID < 0 {
+// Stop Registry.
+func (rr *Registry) Stop() {
+	if rr.leaseID < 0 {
 		return
 	}
-	close(co.done)
-	<-co.exited
+	close(rr.done)
+	<-rr.exited
 }
 
-// Address of registered keys.
-func (co *Coordinator) Address() string {
-	return co.address
-}
-
-// Context of the coordinator. When the coordinator is stopped
+// Context of the Registry. When the Registry is stopped
 // or fails, the context will signal done. Depending on the
-// user's use of the coordinator, the user may also need to
+// user's use of the Registry, the user may also need to
 // exit if it cannot function correctly without the use of
-// the coordinator.
-func (co *Coordinator) Context() context.Context {
-	return co.context
+// the Registry.
+func (rr *Registry) Context() context.Context {
+	return rr.context
 }
 
 // FindRegistrations associated with the prefix.
-func (co *Coordinator) FindRegistrations(c context.Context, prefix string) ([]*Registration, error) {
-	co.mu.Lock()
-	defer co.mu.Unlock()
+func (rr *Registry) FindRegistrations(c context.Context, prefix string) ([]*Registration, error) {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
 
-	getRes, err := co.kv.Get(c, prefix, etcdv3.WithPrefix())
+	getRes, err := rr.kv.Get(c, prefix, etcdv3.WithPrefix())
 	if err != nil {
 		return nil, err
 	}
@@ -196,11 +190,11 @@ func (co *Coordinator) FindRegistrations(c context.Context, prefix string) ([]*R
 }
 
 // FindRegistration associated with the given key.
-func (co *Coordinator) FindRegistration(c context.Context, key string) (*Registration, error) {
-	co.mu.Lock()
-	defer co.mu.Unlock()
+func (rr *Registry) FindRegistration(c context.Context, key string) (*Registration, error) {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
 
-	getRes, err := co.kv.Get(c, key, etcdv3.WithLimit(1))
+	getRes, err := rr.kv.Get(c, key, etcdv3.WithLimit(1))
 	if err != nil {
 		return nil, err
 	}
@@ -218,15 +212,15 @@ func (co *Coordinator) FindRegistration(c context.Context, key string) (*Registr
 // Register under the given key. A registration can happen only
 // once, and registering more than once will return an error.
 // Hence, registration can be used for mutual-exclusion.
-func (co *Coordinator) Register(c context.Context, key string, options ...Option) error {
-	co.mu.Lock()
-	defer co.mu.Unlock()
+func (rr *Registry) Register(c context.Context, key string, options ...Option) error {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
 
-	if co.leaseID < 0 {
+	if rr.leaseID < 0 {
 		return ErrNotStarted
 	}
 
-	getRes, err := co.kv.Get(c, key, etcdv3.WithLimit(1))
+	getRes, err := rr.kv.Get(c, key, etcdv3.WithLimit(1))
 	if err != nil {
 		return err
 	}
@@ -250,7 +244,7 @@ func (co *Coordinator) Register(c context.Context, key string, options ...Option
 		// The caller is already registered and they
 		// have allowed just multi-registration, so
 		// return.
-		if reg.Address == co.address {
+		if reg.Address == rr.Address {
 			return nil
 		}
 		// The caller is regestering a key that is
@@ -260,14 +254,14 @@ func (co *Coordinator) Register(c context.Context, key string, options ...Option
 
 	value, err := json.Marshal(&Registration{
 		Key:     key,
-		Address: co.address,
+		Address: rr.Address,
 	})
 	if err != nil {
 		return err
 	}
-	txnRes, err := co.kv.Txn(c).
+	txnRes, err := rr.kv.Txn(c).
 		If(etcdv3.Compare(etcdv3.Version(key), "=", 0)).
-		Then(etcdv3.OpPut(key, string(value), etcdv3.WithLease(co.leaseID))).
+		Then(etcdv3.OpPut(key, string(value), etcdv3.WithLease(rr.leaseID))).
 		Commit()
 	if err != nil {
 		return err
@@ -279,25 +273,25 @@ func (co *Coordinator) Register(c context.Context, key string, options ...Option
 }
 
 // Deregister under the given key.
-func (co *Coordinator) Deregister(c context.Context, key string) error {
-	co.mu.Lock()
-	defer co.mu.Unlock()
+func (rr *Registry) Deregister(c context.Context, key string) error {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
 
-	if co.leaseID < 0 {
+	if rr.leaseID < 0 {
 		return ErrNotStarted
 	}
 
 	select {
-	case <-co.done:
-		// Nothing to unregister, coordinator is already
+	case <-rr.done:
+		// Nothing to unregister, Registry is already
 		// shutdown. "Deregistration" will be done by
 		// Etcd deleting all keys associated with the
-		// coordinator's lease.
+		// Registry's lease.
 		return nil
 	default:
 	}
 
-	getRes, err := co.kv.Get(c, key, etcdv3.WithLimit(1))
+	getRes, err := rr.kv.Get(c, key, etcdv3.WithLimit(1))
 	if err != nil {
 		return err
 	}
@@ -308,11 +302,11 @@ func (co *Coordinator) Deregister(c context.Context, key string) error {
 		if err != nil {
 			return err
 		}
-		if rec.Address != co.address {
+		if rec.Address != rr.Address {
 			return ErrNotOwner
 		}
 
-		txnRes, err := co.kv.Txn(c).
+		txnRes, err := rr.kv.Txn(c).
 			If(etcdv3.Compare(etcdv3.Version(key), "=", kv.Version)).
 			Then(etcdv3.OpDelete(key)).
 			Commit()

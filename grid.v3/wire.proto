@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package message;
+package grid;
 
-message Gram {
+message Delivery {
     enum Ver {
         V1 = 0;
     }
@@ -16,5 +16,5 @@ message Gram {
 }
 
 service wire {
-    rpc Process(Gram) returns (Gram) {}
+    rpc Process(Delivery) returns (Delivery) {}
 }

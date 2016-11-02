@@ -8,6 +8,9 @@ import (
 )
 
 var (
+	ErrReceiverBusy          = errors.New("receiver busy")
+	ErrUnknownMailbox        = errors.New("unknown mailbox")
+	ErrContextFinished       = errors.New("context finished")
 	ErrInvalidActorType      = errors.New("invalid actor type")
 	ErrInvalidActorName      = errors.New("invalid actor name")
 	ErrInvalidActorNamespace = errors.New("invalid actor namespace")
@@ -16,11 +19,10 @@ var (
 // NewActorDef with given namespace and name. The caller
 // should set the Type, the default is to make it the
 // same as the name.
-func NewActorDef(namespace, name string) *ActorDef {
+func NewActorDef(name string) *ActorDef {
 	return &ActorDef{
-		Type:      name,
-		Name:      name,
-		Namespace: namespace,
+		Type: name,
+		Name: name,
 	}
 }
 
@@ -29,7 +31,15 @@ type ActorDef struct {
 	id        string
 	Type      string
 	Name      string
-	Namespace string
+	namespace string
+}
+
+// ID of the actor, in format of <namespace> . <name> but without whitespace.
+func (a *ActorDef) ID() string {
+	if a.id == "" {
+		a.id = fmt.Sprintf("%v.%v", a.namespace, a.Name)
+	}
+	return a.id
 }
 
 func (a *ActorDef) regID() string {
@@ -41,14 +51,6 @@ func (a *ActorDef) regID() string {
 	return fmt.Sprintf("%v-%v", a.ID(), h.Sum64())
 }
 
-// ID of the actor, in format of <namespace> . <name> but without whitespace.
-func (a *ActorDef) ID() string {
-	if a.id == "" {
-		a.id = fmt.Sprintf("%v.%v", a.Namespace, a.Name)
-	}
-	return a.id
-}
-
 // ValidateActorDef components, such as name and namespace.
 func ValidateActorDef(def *ActorDef) error {
 	if !isNameValid(def.Type) {
@@ -57,7 +59,7 @@ func ValidateActorDef(def *ActorDef) error {
 	if !isNameValid(def.Name) {
 		return ErrInvalidActorName
 	}
-	if !isNameValid(def.Namespace) {
+	if !isNameValid(def.namespace) {
 		return ErrInvalidActorNamespace
 	}
 	return nil
