@@ -22,11 +22,11 @@ const (
 var (
 	ErrNotOwner              = errors.New("not owner")
 	ErrNotStarted            = errors.New("not started")
+	ErrUnknownKey            = errors.New("unknown key")
 	ErrInvalidEtcd           = errors.New("invalid etcd")
-	ErrUnknownKey            = errors.New("unknown address")
+	ErrAlreadyRegistered     = errors.New("already registered")
 	ErrFailedRegistration    = errors.New("failed registration")
 	ErrFailedDeregistration  = errors.New("failed deregistration")
-	ErrAlreadyRegistered     = errors.New("already registered")
 	ErrLeaseDurationTooShort = errors.New("lease duration too short")
 )
 
