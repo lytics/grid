@@ -32,13 +32,22 @@ func NewClient(namespace string, etcd *etcdv3.Client) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		registry:  r,
-		namespace: namespace,
+		registry:        r,
+		namespace:       namespace,
+		addresses:       make(map[string]string),
+		clientsAndConns: make(map[string]*clientAndConn),
 	}, nil
 }
 
-func (c *Client) Close() {
+func (c *Client) Close() error {
 	c.registry.Stop()
+
+	var err error
+	for _, cc := range c.clientsAndConns {
+		err = cc.conn.Close()
+	}
+
+	return err
 }
 
 func (c *Client) Peers(timeout time.Duration) ([]string, error) {

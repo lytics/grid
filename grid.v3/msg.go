@@ -37,7 +37,7 @@ type ActorDef struct {
 // ID of the actor, in format of <namespace> . <name> but without whitespace.
 func (a *ActorDef) ID() string {
 	if a.id == "" {
-		a.id = fmt.Sprintf("%v.%v", a.namespace, a.Name)
+		a.id = fmt.Sprintf("%v-%v", a.namespace, a.Name)
 	}
 	return a.id
 }

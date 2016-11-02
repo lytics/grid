@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
+	"strings"
 
 	"time"
 
@@ -30,10 +32,12 @@ type contextVal struct {
 }
 
 var (
-	ErrInvalidContext    = errors.New("invalid context")
-	ErrUnknownResponse   = errors.New("unknown response")
-	ErrInvalidNamespace  = errors.New("invalid namespace")
-	ErrAlreadyRegistered = errors.New("already registered")
+	ErrInvalidEtcd        = errors.New("invalid etcd")
+	ErrInvalidContext     = errors.New("invalid context")
+	ErrUnknownResponse    = errors.New("unknown response")
+	ErrInvalidNamespace   = errors.New("invalid namespace")
+	ErrAlreadyRegistered  = errors.New("already registered")
+	ErrInvalidMailboxName = errors.New("invalid mailbox name")
 )
 
 var (
@@ -55,17 +59,18 @@ type Server struct {
 
 // NewServer for the grid.
 func NewServer(namespace string, etcd *etcdv3.Client, g Grid) (*Server, error) {
-	if isNameValid(namespace) {
+	if !isNameValid(namespace) {
 		return nil, ErrInvalidNamespace
 	}
 	if etcd == nil {
-		return nil, ErrInvalidNamespace
+		return nil, ErrInvalidEtcd
 	}
 	return &Server{
 		g:         g,
 		etcd:      etcd,
 		grpc:      grpc.NewServer(),
 		namespace: namespace,
+		mailboxes: make(map[string]*Mailbox),
 	}, nil
 }
 
@@ -77,12 +82,24 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 	s.registry = r
 	s.registry.Address = lis.Addr().String()
+	err = s.registry.Start()
+	if err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	ctx = context.WithValue(ctx, contextKey, &contextVal{
+		server: s,
+	})
 	s.ctx = ctx
 	s.cancel = cancel
 
-	mailbox, err := NewMailbox(nil, "", 10)
+	name := fmt.Sprintf("grid-%v-%v", s.namespace, s.registry.Address)
+	name = strings.Replace(name, ":", "-", -1)
+	name = strings.Replace(name, ".", "-", -1)
+	name = strings.Replace(name, "/", "", -1)
+
+	mailbox, err := NewMailbox(s.ctx, name, 10)
 	if err != nil {
 		return err
 	}
@@ -241,6 +258,7 @@ func (s *Server) startActor(c context.Context, def *ActorDef) error {
 
 // Mailbox for receiving messages.
 type Mailbox struct {
+	name    string
 	C       <-chan *Envelope
 	c       chan *Envelope
 	cleanup func() error
@@ -251,8 +269,16 @@ func (box *Mailbox) Close() error {
 	return box.cleanup()
 }
 
+func (box *Mailbox) String() string {
+	return box.name
+}
+
 // NewMailbox for requests under the given receiver name.
 func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
+	if !isNameValid(name) {
+		return nil, ErrInvalidMailboxName
+	}
+
 	s, err := contextServer(c)
 	if err != nil {
 		return nil, err
@@ -288,6 +314,7 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	}
 	boxC := make(chan *Envelope, size)
 	box := &Mailbox{
+		name:    name,
 		C:       boxC,
 		c:       boxC,
 		cleanup: cleanup,

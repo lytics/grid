@@ -50,7 +50,6 @@ type Registry struct {
 	lease         etcdv3.Lease
 	leaseID       etcdv3.LeaseID
 	client        *etcdv3.Client
-	context       context.Context
 	Address       string
 	Timeout       time.Duration
 	LeaseDuration time.Duration
@@ -92,13 +91,6 @@ func (rr *Registry) Start() error {
 	}
 	rr.leaseID = res.ID
 
-	// Everyone using the Registry for discovery will use
-	// the context below to monitor its Done channel. If
-	// the Registry closes all users of the Registry
-	// will get notified.
-	c, finalize := context.WithCancel(context.Background())
-	rr.context = c
-
 	// There are two ways the Registry can exit:
 	//     1) Someone calls StopHeartbeat, in which case it will
 	//        cancel its context and exit.
@@ -122,8 +114,6 @@ func (rr *Registry) Start() error {
 				timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
 				rr.lease.Revoke(timeout, rr.leaseID)
 				cancel()
-				// Finialize, ie: DIE.
-				finalize()
 				return
 			case <-ticker.C:
 				timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
@@ -140,8 +130,6 @@ func (rr *Registry) Start() error {
 				if errCnt < heartbeatsPerLeaseDuration-1 {
 					continue
 				}
-				// Finialize, ie: DIE.
-				finalize()
 				return
 			}
 		}
@@ -157,15 +145,6 @@ func (rr *Registry) Stop() {
 	}
 	close(rr.done)
 	<-rr.exited
-}
-
-// Context of the Registry. When the Registry is stopped
-// or fails, the context will signal done. Depending on the
-// user's use of the Registry, the user may also need to
-// exit if it cannot function correctly without the use of
-// the Registry.
-func (rr *Registry) Context() context.Context {
-	return rr.context
 }
 
 // FindRegistrations associated with the prefix.
