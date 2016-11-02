@@ -111,9 +111,23 @@ func (s *Server) Serve(lis net.Listener) error {
 
 // Stop the server.
 func (s *Server) Stop() {
+	s.cancel()
+
+	zeroMailboxes := func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.mailboxes) == 0
+	}
+
+	for {
+		time.Sleep(200 * time.Millisecond)
+		if zeroMailboxes() {
+			break
+		}
+	}
+
 	s.registry.Stop()
 	s.grpc.Stop()
-	s.cancel()
 }
 
 // Process a request and return a response. Implements the interface for

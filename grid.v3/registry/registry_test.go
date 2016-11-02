@@ -30,23 +30,11 @@ func TestStartStop(t *testing.T) {
 	client, r := bootstrap(t, start)
 	defer client.Close()
 
-	finished := make(chan bool, 1)
-	go func() {
-		defer close(finished)
-		select {
-		case <-time.After(10 * time.Second):
-			finished <- false
-			return
-		case <-r.Context().Done():
-			finished <- true
-			return
-		}
-	}()
-
 	r.Stop()
-	isFinished := <-finished
-	if !isFinished {
-		t.Fatal("Registry failed to finish")
+	select {
+	case <-r.done:
+	default:
+		t.Fatal("registry failed to stop")
 	}
 }
 
@@ -72,7 +60,7 @@ func TestRegister(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reg.Address != r.address {
+	if reg.Address != r.Address {
 		t.Fatal("wrong address")
 	}
 }
@@ -101,7 +89,7 @@ func TestDeregistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reg.Address != r.address {
+	if reg.Address != r.Address {
 		t.Fatal("wrong address")
 	}
 
@@ -298,11 +286,11 @@ func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry) {
 		t.Fatal(err)
 	}
 
-	address := fmt.Sprintf("localhost:%v", 2000+rand.Intn(2000))
-	r, err := New(address, client)
+	r, err := New(client)
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.Address = fmt.Sprintf("localhost:%v", 2000+rand.Intn(2000))
 	r.LeaseDuration = 10 * time.Second
 
 	if shouldStart {
