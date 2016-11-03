@@ -8,6 +8,9 @@ package grid
 //        Type: "leader",
 //    }
 //
+// This leader actor is special and will automatically
+// get started, as a singleton, when anyone calls the
+// grid's Serve method.
 type Grid interface {
 	MakeActor(def *ActorDef) (Actor, error)
 }

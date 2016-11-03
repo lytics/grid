@@ -199,6 +199,9 @@ func (s *Server) Process(c netcontext.Context, req *Delivery) (*Delivery, error)
 	if err != nil {
 		return nil, err
 	}
+	// This actually converts between the "context" and
+	// golang.org/x/net/context types of Context so
+	// that method signatures are satisfied.
 	env.context = context.WithValue(c, "", "")
 	env.response = make(chan []byte)
 
@@ -327,11 +330,13 @@ func (box *Mailbox) Close() error {
 	return box.cleanup()
 }
 
+// String of mailbox name.
 func (box *Mailbox) String() string {
 	return box.name
 }
 
-// NewMailbox for requests under the given receiver name.
+// NewMailbox for requests addressed to name. Size will be the mailbox's
+// channel size.
 func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	if !isNameValid(name) {
 		return nil, ErrInvalidMailboxName

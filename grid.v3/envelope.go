@@ -6,6 +6,8 @@ import (
 	"encoding/gob"
 )
 
+// Ack is the message sent back when the Ack() method of an
+// Envelope is called.
 const Ack = "__ACK__"
 
 // Envelope for delivered request and response messages.

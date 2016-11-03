@@ -6,6 +6,8 @@ import (
 	etcdv3 "github.com/coreos/etcd/clientv3"
 )
 
+// ContextActorID returns an ID that is a concatenation of the context
+// namespace and the actor name associated with this context.
 func ContextActorID(c context.Context) (string, error) {
 	v := c.Value(contextKey)
 	if v == nil {
@@ -18,6 +20,8 @@ func ContextActorID(c context.Context) (string, error) {
 	return cv.actorID, nil
 }
 
+// ContextActorName returns just the actor name, ie: no namespace, associated
+// with this context.
 func ContextActorName(c context.Context) (string, error) {
 	v := c.Value(contextKey)
 	if v == nil {
@@ -30,6 +34,8 @@ func ContextActorName(c context.Context) (string, error) {
 	return cv.actorName, nil
 }
 
+// ContextNamespace returns the namespace of the grid this actor
+// is associated with.
 func ContextNamespace(c context.Context) (string, error) {
 	v := c.Value(contextKey)
 	if v == nil {
@@ -42,6 +48,8 @@ func ContextNamespace(c context.Context) (string, error) {
 	return cv.server.namespace, nil
 }
 
+// ContextEtcd returns the etcd client for the grid this actor
+// is associated with.
 func ContextEtcd(c context.Context) (*etcdv3.Client, error) {
 	v := c.Value(contextKey)
 	if v == nil {
@@ -54,6 +62,8 @@ func ContextEtcd(c context.Context) (*etcdv3.Client, error) {
 	return cv.server.etcd, nil
 }
 
+// ContextClient returns the grid client for the grid this actor
+// is associated with.
 func ContextClient(c context.Context) (*Client, error) {
 	v := c.Value(contextKey)
 	if v == nil {
@@ -66,6 +76,7 @@ func ContextClient(c context.Context) (*Client, error) {
 	return cv.server.client, nil
 }
 
+// contextServer extracts the server from the context.
 func contextServer(c context.Context) (*Server, error) {
 	v := c.Value(contextKey)
 	if v == nil {

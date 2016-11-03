@@ -18,6 +18,7 @@ type clientAndConn struct {
 	client WireClient
 }
 
+// Client for non-actors to talk with grid actors.
 type Client struct {
 	mu              sync.Mutex
 	registry        *registry.Registry
@@ -26,6 +27,7 @@ type Client struct {
 	clientsAndConns map[string]*clientAndConn
 }
 
+// NewClient withing namespace and using the etcd client.
 func NewClient(etcd *etcdv3.Client, namespace string) (*Client, error) {
 	r, err := registry.New(etcd)
 	if err != nil {
@@ -39,6 +41,7 @@ func NewClient(etcd *etcdv3.Client, namespace string) (*Client, error) {
 	}, nil
 }
 
+// Close all outbound connections of this client immediately.
 func (c *Client) Close() error {
 	c.registry.Stop()
 
@@ -50,14 +53,16 @@ func (c *Client) Close() error {
 	return err
 }
 
+// Peers in this client's namespace. A peer is any process that called
+// the grid Server Serve method.
 func (c *Client) Peers(timeout time.Duration) ([]string, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.PeersC(timeoutC)
 }
 
-// Peers in the given namespace. The names can be used in
-// RequestActorStart to start actors on a peer.
+// PeersC in this client's namespace. A peer is any process that called
+// the grid Server Serve method.
 func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -75,14 +80,14 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 	return peers, nil
 }
 
-// Request a response for the given message. The response is in the returned envelope.
+// Request a response for the message. The response message is in the returned envelope.
 func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}) (*Envelope, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.RequestC(timeoutC, receiver, msg)
 }
 
-// RequestC a response for the given message. The response is in the returned envelope.
+// RequestC a response for the message. The response message is in the returned envelope.
 func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (*Envelope, error) {
 	env := &Envelope{
 		Msg: msg,
@@ -130,6 +135,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	return env, nil
 }
 
+// getWireClient to the address of the receiver.
 func (c *Client) getWireClient(ctx context.Context, receiver string) (WireClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
