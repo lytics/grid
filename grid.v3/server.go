@@ -59,7 +59,7 @@ type Server struct {
 }
 
 // NewServer for the grid.
-func NewServer(namespace string, etcd *etcdv3.Client, g Grid) (*Server, error) {
+func NewServer(etcd *etcdv3.Client, namespace string, g Grid) (*Server, error) {
 	if !isNameValid(namespace) {
 		return nil, ErrInvalidNamespace
 	}
@@ -88,7 +88,7 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 
-	client, err := NewClient(s.namespace, s.etcd)
+	client, err := NewClient(s.etcd, s.namespace)
 	if err != nil {
 		return err
 	}

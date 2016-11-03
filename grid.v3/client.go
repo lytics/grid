@@ -26,7 +26,7 @@ type Client struct {
 	clientsAndConns map[string]*clientAndConn
 }
 
-func NewClient(namespace string, etcd *etcdv3.Client) (*Client, error) {
+func NewClient(etcd *etcdv3.Client, namespace string) (*Client, error) {
 	r, err := registry.New(etcd)
 	if err != nil {
 		return nil, err

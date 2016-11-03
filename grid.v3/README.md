@@ -1,8 +1,9 @@
 grid
 ====
 
-Grid is a library for doing distributed processing, it's main goal is to help
-in scheduling fine-grain stateful computations, which grid calls actors.
+Grid is a library for doing distributed processing. It's main goal is to help
+in scheduling fine-grain stateful computations, which grid calls actors, and
+message sending between them.
 
 ## Grid
 Anything that implements the `Grid` interface is a grid. In grid an actor
@@ -16,10 +17,16 @@ type Grid interface {
 ```
 
 ## Example Grid
-Below is a basic example of starting you grid application. Error checking and
+Below is a basic example of starting your grid application. Error checking and
 full parameters are omitted with "..." placeholders.
 
 ```go
+type MyApp struct {
+    MakeActor(def *grid.ActorDef) (grid.Actor, error) {
+        ...
+    }
+}
+
 func main() {
     etcd, err := etcdv3.New(...)
     ...
@@ -54,6 +61,8 @@ processes are participating in the grid, only one leader actor is started, it
 is a singleton.
 
 ```go
+const timeout = 2 * time.Second
+
 type leader struct {
     ...
 }
@@ -62,10 +71,11 @@ func (a *leader) Act(c context.Context) {
     client, err := grid.ContextClient(c)
     ...
 
-    const timeout = 2 * time.Second
+    peers, err := client.Peers(...)
+    ...
 
     i := 0
-    for _, peer := range client.Peers(...) {
+    for _, peer := range peers {
         // Actor names are unique, registered in etcd.
         // There can never be more than one actor with
         // a given name. When an actor exits or panics
@@ -91,13 +101,13 @@ is used to register the name and guarantee that only one such mailbox
 exists.
 
 ```go
+const size = 10
+
 type worker struct {
     ...
 }
 
 func (a *worker) Act(c context.Context) {
-    const size = 10
-
     id, err := grid.ContextActorID(c)
     ...
 

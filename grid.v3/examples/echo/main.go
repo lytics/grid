@@ -104,7 +104,7 @@ func main() {
 	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
 	successOrDie(err)
 
-	g, err := grid.NewServer("echo", etcd, Echo{})
+	g, err := grid.NewServer(etcd, "echo", Echo{})
 	successOrDie(err)
 
 	// Check for exit signals.
