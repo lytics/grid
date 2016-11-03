@@ -3,7 +3,7 @@ grid
 
 Grid is a library for doing distributed processing. It's main goal is to help
 in scheduling fine-grain stateful computations, which grid calls actors, and
-message sending between them.
+sending data between them.
 
 ## Grid
 Anything that implements the `Grid` interface is a grid. In grid an actor
