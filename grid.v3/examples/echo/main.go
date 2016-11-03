@@ -20,93 +20,12 @@ import (
 
 const mailboxSize = 10
 
-type StartMsg string
+type HelloMsg struct{}
 
-type StopMsg struct{}
+type Leader struct{}
 
-type EchoMsg string
-
-type EchoActor struct{}
-
-func (a *EchoActor) Act(ctx context.Context) {
-	id, err := grid.ContextActorID(ctx)
-	successOrDie(err)
-
-	// Subscribe to message sent to the actor's ID.
-	mailbox, err := grid.NewMailbox(ctx, id, mailboxSize)
-	successOrDie(err)
-	defer mailbox.Close()
-
-	// Listen and respond to requests.
-	fmt.Println("hello")
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("goodbye...")
-			return
-		case e := <-mailbox.C:
-			switch msg := e.Msg.(type) {
-			case StopMsg:
-				e.Ack()
-				return
-			case EchoMsg:
-				e.Respond(msg)
-			}
-		}
-	}
-}
-
-// Echo grid, anything that can make actors is a node in the grid.
-type Echo struct{}
-
-// MakeActor for the grid.
-func (e Echo) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
-	switch def.Type {
-	case "echo-actor":
-		return &EchoActor{}, nil
-	default:
-		return nil, errors.New("unknown actor type")
-	}
-}
-
-func main() {
-	address := flag.String("address", "", "bind address for gRPC")
-	flag.Parse()
-
-	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
-	successOrDie(err)
-
-	echo := Echo{}
-	go detectNewPeersAndStartActors("echo", etcd)
-
-	g, err := grid.NewServer("echo", etcd, echo)
-	successOrDie(err)
-
-	// Check for exit signals.
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-		<-sig
-		fmt.Println("shutting down...")
-		g.Stop()
-		fmt.Println("shutdown complete")
-	}()
-
-	lis, err := net.Listen("tcp", *address)
-	successOrDie(err)
-
-	g.Serve(lis)
-}
-
-func successOrDie(err error, context ...string) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v, context: %v\n", err, context)
-		os.Exit(1)
-	}
-}
-
-func detectNewPeersAndStartActors(namespace string, etcd *etcdv3.Client) {
-	client, err := grid.NewClient(namespace, etcd)
+func (a *Leader) Act(c context.Context) {
+	client, err := grid.ContextClient(c)
 	successOrDie(err)
 
 	existing := make(map[string]bool)
@@ -125,13 +44,89 @@ func detectNewPeersAndStartActors(namespace string, etcd *etcdv3.Client) {
 
 			// Define an actor.
 			existing[peer] = true
-			def := grid.NewActorDef("echo-actor")
+			def := grid.NewActorDef(fmt.Sprintf("worker-%v", len(existing)))
+			def.Type = "worker"
 
 			// On new peer, start an actor.
 			_, err := client.Request(2*time.Second, peer, def)
-			if err != nil {
-				fmt.Printf("actor start request failed for peer: %v, error: %v\n", peer, err)
+			successOrDie(err)
+		}
+	}
+}
+
+type Worker struct{}
+
+func (a *Worker) Act(ctx context.Context) {
+	id, err := grid.ContextActorID(ctx)
+	successOrDie(err)
+
+	// Subscribe to message sent to the actor's ID.
+	mailbox, err := grid.NewMailbox(ctx, id, mailboxSize)
+	successOrDie(err)
+	defer mailbox.Close()
+
+	// Listen and respond to requests.
+	fmt.Println("hello")
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("goodbye...")
+			return
+		case e := <-mailbox.C:
+			switch e.Msg.(type) {
+			case HelloMsg:
+				e.Ack()
+				fmt.Printf("%v: hi", id)
 			}
 		}
+	}
+}
+
+// Echo grid, anything that can make actors is a node in the grid.
+type Echo struct{}
+
+// MakeActor for the grid.
+func (e Echo) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
+	switch def.Type {
+	case "leader":
+		return &Leader{}, nil
+	case "worker":
+		return &Worker{}, nil
+	default:
+		return nil, errors.New("unknown actor type")
+	}
+}
+
+func main() {
+	address := flag.String("address", "", "bind address for gRPC")
+	flag.Parse()
+
+	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
+	successOrDie(err)
+
+	g, err := grid.NewServer("echo", etcd, Echo{})
+	successOrDie(err)
+
+	// Check for exit signals.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		fmt.Println("shutting down...")
+		g.Stop()
+		fmt.Println("shutdown complete")
+	}()
+
+	lis, err := net.Listen("tcp", *address)
+	successOrDie(err)
+
+	err = g.Serve(lis)
+	successOrDie(err)
+}
+
+func successOrDie(err error, context ...string) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v, context: %v\n", err, context)
+		os.Exit(1)
 	}
 }

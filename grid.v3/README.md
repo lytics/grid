@@ -11,7 +11,6 @@ computation.
 
 ```go
 type Grid interface {
-    Master() *ActorDef
     MakeActor(def *ActorDef) (Actor, error)
 }
 ```
@@ -21,7 +20,6 @@ Below is a basic example of starting you grid application. Error checking and
 full parameters are omitted with "..." placeholders.
 
 ```go
-
 func main() {
     etcd, err := etcdv3.New(...)
     ...
@@ -49,7 +47,11 @@ type Actor interface {
 
 ## Example Actor, Part 1
 Below is an actor that starts other actors, this is a typical way of structuring
-an application with grid, to have a "leader" or "scheduling" actor.
+an application with grid. In particular grid reqires that the implementor of
+the `Grid` interface knows how to make an actor of name and type "leader", it
+is started when the `Serve` method is called on the server. No matter how many
+processes are participating in the grid, only one leader actor is started, it
+is a singleton.
 
 ```go
 type leader struct {
@@ -68,12 +70,13 @@ func (a *leader) Act(c context.Context) {
         // There can never be more than one actor with
         // a given name. When an actor exits or panics
         // its record is removed from etcd.
-        def := grid.NewActor("worker"+i)
+        def := grid.NewActorDef("worker"+i)
         def.Type = "worker"
 
         // Start a new actor on the given peer.
         res, err := client.Request(timeout, peer, def)
         ...
+        i++
     }
 
     ...
@@ -82,8 +85,10 @@ func (a *leader) Act(c context.Context) {
 
 ## Example Actor, Part 2
 An actor will typically need to receive data to work on. This may come
-from the filesystem of database, but it can also come from messages
-sent to a mailbox.
+from the filesystem or a database, but it can also come from messages
+sent to a mailbox. Just like actors a mailbox is unique by name. Etcd
+is used to register the name and guarantee that only one such mailbox
+exists.
 
 ```go
 type worker struct {

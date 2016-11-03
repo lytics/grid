@@ -114,8 +114,33 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 	go s.runMailbox(mailbox)
 
+	boot := make(chan error, 1)
+	go func() {
+		def := NewActorDef("leader")
+		for i := 0; i < 6; i++ {
+			time.Sleep(1 * time.Second)
+			err := s.StartActor(9*time.Second, def)
+			if err == nil || (err != nil && strings.Contains(err.Error(), "already registered")) {
+				return
+			}
+		}
+		boot <- fmt.Errorf("leader start failed: %v", err)
+	}()
+
 	RegisterWireServer(s.grpc, s)
-	return s.grpc.Serve(lis)
+	err = s.grpc.Serve(lis)
+	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+		return err
+	} else {
+		err = nil
+	}
+
+	select {
+	case err = <-boot:
+	default:
+	}
+
+	return err
 }
 
 // Stop the server, blocking until all mailboxes registered with
@@ -210,7 +235,7 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 		case e := <-mailbox.C:
 			switch msg := e.Msg.(type) {
 			case *ActorDef:
-				err := s.startActor(e.Context(), msg)
+				err := s.StartActorC(e.Context(), msg)
 				if err != nil {
 					e.Respond(&ResponseMsg{
 						Succeeded: false,
@@ -226,10 +251,19 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 	}
 }
 
-// startActor in the current process. This method does not communicate with another
+// StartActor in the current process. This method does not communicate with another
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
-func (s *Server) startActor(c context.Context, def *ActorDef) error {
+func (s *Server) StartActor(timeout time.Duration, def *ActorDef) error {
+	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return s.StartActorC(timeoutC, def)
+}
+
+// StartActorC in the current process. This method does not communicate with another
+// system to choose where to run the actor. Calling this method will start the
+// actor on the current host in the current process.
+func (s *Server) StartActorC(c context.Context, def *ActorDef) error {
 	def.namespace = s.namespace
 
 	if err := ValidateActorDef(def); err != nil {
