@@ -33,7 +33,7 @@ func (a *Leader) Act(c context.Context) {
 		peers, err := client.Peers(2 * time.Second)
 		successOrDie(err)
 
-		// Loop over result and check is any peers are new.
+		// Loop over result and check if any peers are new.
 		for _, peer := range peers {
 			if existing[peer] {
 				continue
@@ -44,7 +44,7 @@ func (a *Leader) Act(c context.Context) {
 			def := grid.NewActorDef(fmt.Sprintf("worker-%v", len(existing)))
 			def.Type = "worker"
 
-			// On new peer, start an actor.
+			// On new peers start a worker.
 			_, err := client.Request(2*time.Second, peer, def)
 			successOrDie(err)
 		}
@@ -54,16 +54,17 @@ func (a *Leader) Act(c context.Context) {
 type Worker struct{}
 
 func (a *Worker) Act(ctx context.Context) {
+	fmt.Println("hello")
+
 	id, err := grid.ContextActorID(ctx)
 	successOrDie(err)
 
-	// Subscribe to message sent to the actor's ID.
+	// Subscribe to messages sent to the actor's ID.
 	mailbox, err := grid.NewMailbox(ctx, id, mailboxSize)
 	successOrDie(err)
 	defer mailbox.Close()
 
 	// Listen and respond to requests.
-	fmt.Println("hello")
 	for {
 		select {
 		case <-ctx.Done():
