@@ -53,6 +53,7 @@ type Server struct {
 	registry  *registry.Registry
 	namespace string
 	mailboxes map[string]*Mailbox
+	client    *Client
 	ctx       context.Context
 	cancel    func()
 }
@@ -87,6 +88,12 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 
+	client, err := NewClient(s.namespace, s.etcd)
+	if err != nil {
+		return err
+	}
+	s.client = client
+
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = context.WithValue(ctx, contextKey, &contextVal{
 		server: s,
@@ -98,6 +105,8 @@ func (s *Server) Serve(lis net.Listener) error {
 	name = strings.Replace(name, ":", "-", -1)
 	name = strings.Replace(name, ".", "-", -1)
 	name = strings.Replace(name, "/", "", -1)
+	name = strings.TrimSpace(name)
+	name = strings.Trim(name, "~\\!@#$%^&*()<>")
 
 	mailbox, err := NewMailbox(s.ctx, name, 10)
 	if err != nil {
@@ -109,7 +118,8 @@ func (s *Server) Serve(lis net.Listener) error {
 	return s.grpc.Serve(lis)
 }
 
-// Stop the server.
+// Stop the server, blocking until all mailboxes registered with
+// this server have called their close method.
 func (s *Server) Stop() {
 	s.cancel()
 

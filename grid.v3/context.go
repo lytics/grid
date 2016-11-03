@@ -54,6 +54,18 @@ func ContextEtcd(c context.Context) (*etcdv3.Client, error) {
 	return cv.server.etcd, nil
 }
 
+func ContextClient(c context.Context) (*Client, error) {
+	v := c.Value(contextKey)
+	if v == nil {
+		return nil, ErrInvalidContext
+	}
+	cv, ok := v.(*contextVal)
+	if !ok {
+		return nil, ErrInvalidContext
+	}
+	return cv.server.client, nil
+}
+
 func contextServer(c context.Context) (*Server, error) {
 	v := c.Value(contextKey)
 	if v == nil {
