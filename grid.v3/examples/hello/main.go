@@ -76,17 +76,17 @@ func (a *Worker) Act(ctx context.Context) {
 			switch e.Msg.(type) {
 			case HelloMsg:
 				e.Ack()
-				fmt.Printf("%v: hi", id)
+				fmt.Println("hi from", id)
 			}
 		}
 	}
 }
 
-// Echo grid, anything that can make actors is a node in the grid.
-type Echo struct{}
+// Hello grid.
+type Hello struct{}
 
-// MakeActor for the grid.
-func (e Echo) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
+// MakeActor given the definition.
+func (e Hello) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
 	switch def.Type {
 	case "leader":
 		return &Leader{}, nil
@@ -104,7 +104,7 @@ func main() {
 	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
 	successOrDie(err)
 
-	g, err := grid.NewServer(etcd, "echo", Echo{})
+	g, err := grid.NewServer(etcd, "hello", Hello{})
 	successOrDie(err)
 
 	// Check for exit signals.
@@ -124,9 +124,9 @@ func main() {
 	successOrDie(err)
 }
 
-func successOrDie(err error, context ...string) {
+func successOrDie(err error) {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v, context: %v\n", err, context)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
