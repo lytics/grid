@@ -1,134 +1,156 @@
 grid
 ====
 
-Grid is a library to build distributed processes. A library in contrast to being a container. 
-It is  simple to use and provides the basic building blocks for distributed processing:
+Grid is a library for doing distributed processing, it's main goal is to help
+in scheduling fine-grain stateful computations, which grid calls actors.
 
- 1. Passing messages, which in grid is done via [NATS](http://nats.io/).
- 1. Coordinating task instances, which in grid is done via [ETCD](https://github.com/coreos/etcd).
- 1. Scheduling tasks across the processes, which in grid is done via [METAFORA](https://github.com/lytics/metafora).
+## Grid
+Anything that implements the `Grid` interface is a grid. In grid an actor
+is typically just a go-routin or set of go-routines performing some stateful
+computation.
 
-### Quick Introduction
-
-Configuring and starting are done in two lines:
 ```go
-g := grid.New(name, etcdservers, natsservers, actormaker)
-g.Start()
-```
-
-Scheduling work is done by calling StartActor:
-```go
-g.StartActor(grid.NewActorDef("hello"))
-```
-
-Scheduled units of work are called actors, which are made by user code implementing the ActorMaker interface:
-```go
-func (m *actormaker) MakeActor(def grid.ActorDef) (Actor, error) {
-    swtich def.Type {
-    case "hello":
-        return &HelloActor{def}, nil
-    case "other":
-        return &OtherActor{def}, nil
-    }
+type Grid interface {
+    Master() *ActorDef
+    MakeActor(def *ActorDef) (Actor, error)
 }
 ```
 
-An actor is any Go type that implements the two methods of the Actor interface:
+## Example Grid
+Below is a basic example of starting you grid application. Error checking and
+full parameters are omitted with "..." placeholders.
+
+```go
+
+func main() {
+    etcd, err := etcdv3.New(...)
+    ...
+
+    g, err := grid.NewServer(etcd, "myapp", MyApp{})
+    ...
+
+    lis, err := net.Listen("tcp", ...)
+    ...
+
+    g.Serve(lis)
+}
+
+```
+
+## Actor
+Anything that implements the `Actor` interface is an actor. Actors typically
+represent the central work of you application.
+
 ```go
 type Actor interface {
-    ID() {
-    Act(g grid.Grid, exit <-chan bool) bool {
+    Act(c context.Context)
 }
 ```
 
-An actor can communicate with any other actor it knows the name of:
+## Example Actor, Part 1
+Below is an actor that starts other actors, this is a typical way of structuring
+an application with grid, to have a "leader" or "scheduling" actor.
+
 ```go
-func (a *helloactor) Act(g grid.Grid, exit <-chan bool) bool {
-    tx, _ := grid.NewSender(g.Nats(), ...)
-    tx.Send("other", "hello")
-    return true
+type leader struct {
+    ...
 }
 
-func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
-    rx, _ := grid.NewReceiver(g.Nats(), ...)
+func (a *leader) Act(c context.Context) {
+    client, err := grid.ContextClient(c)
+    ...
+
+    const timeout = 2 * time.Second
+
+    i := 0
+    for _, peer := range client.Peers(...) {
+        // Actor names are unique, registered in etcd.
+        // There can never be more than one actor with
+        // a given name. When an actor exits or panics
+        // its record is removed from etcd.
+        def := grid.NewActor("worker"+i)
+        def.Type = "worker"
+
+        // Start a new actor on the given peer.
+        res, err := client.Request(timeout, peer, def)
+        ...
+    }
+
+    ...
+}
+```
+
+## Example Actor, Part 2
+An actor will typically need to receive data to work on. This may come
+from the filesystem of database, but it can also come from messages
+sent to a mailbox.
+
+```go
+type worker struct {
+    ...
+}
+
+func (a *worker) Act(c context.Context) {
+    const size = 10
+
+    id, err := grid.ContextActorID(c)
+    ...
+
+    mailbox, err := grid.NewMailbox(c, id, size)
+    ...
+    defer mailbox.Close()
+
     for {
         select {
-        case <-exit:
-            return true
-        case m := <-rx.Msgs():
-            log.Printf("got message: %v", m)
-            return true
+        case <-c.Done():
+            return
+        case envelope := <-mailbox.C:
+            switch msg := envelope.Msg.(type) {
+            ... do some work ...
+            }
         }
     }
 }
 ```
 
-An actor can schedule other actors:
+## Kubernetes + Grid
+The examples above are meant to give some intuative sense of what the grid
+library does. Howevery what it does not do is:
+
+ 1. Package up your congifuration and binaries
+ 1. Start your VMs
+ 1. Start your processes on those VMs
+ 1. Autoscale your VMs when resource run low
+ 1. Reschedule crashed processes
+ 1. etc...
+
+This is intentional as other tools already do these things. At the top of
+our list is Kubernetes and Docker, which between the two perform all of the
+above.
+
+Grid comes into the picture once you start building out your application logic
+and need things like coordination and messaging, which under the hood in grid
+is done with Etcd and gRPC - taking care of some boilerplate code for you.
+
+## Client
+There are times you will need to talk to grid actors from non-actors, the
+`Client` can be used in such a case.
+
 ```go
-func (a *leaderactor) Act(g grid.Grid, exit <-chan bool) bool {
-    for i:= 0; i<10; i++ {
-        name := fmt.Sprintf("follower-%d", i)
-        g.StartActor(grid.NewActorDef(name).DefineType("follower"))
-    }
-    return true
-}
-```
 
-Each actor has access to Etcd for state and coordination:
-```go
-func (a *statefulactor) Act(g grid.Grid, exit <-chan bool) bool {
-    ttl := uint64(30)
-    loc := strings.Join([]string{g.Name(), "state", a.ID()}, "/")
-    etc := g.Etcd()
-    etc.Create(loc, "state", ttl)
-    return true
-}
-```
-
-Each actor can use the Sender and Receiver interfaces for communication, but it
-can also use Nats directly:
-```go
-func (a *otheractor) Act(g grid.Grid, exit <-chan bool) bool {
-    g.Nats().Publish("announce", "hello")
-    return true
-}
-```
-
-### Ring and Condition
-
-Two helper libraries are included to help with coordination tasks, [condition](condition/), and
-message sending tasks for divide and conquer, [ring](ring/).
-
-### Sender and Receiver
-
-Though NATS can be used directly, two interface are available for convenience. 
-`Sender` provides a buffered sender with ack requests and resends. `Receiver`
-provides a receiver that acks, and can start multiple subscriber go-routines
-internally to read incoming messages.
-
-### Getting Started With Examples
-
-Running the examples requires Etcd and Nats services running on `localhost`. Do the following to
-get both running on your system:
-
-Etcd, get and run:
-
-    $ go get -u github.com/coreos/etcd
-    $ etcd
-    2015/08/31 11:06:08 etcdmain: listening for client requests on http://localhost:2379
+func SomeExternalCode() {
+    etcd, err := etcdv3.New(...)
     ...
 
-Nats, get and run:
-
-    $ go get -u github.com/nats-io/gnatsd
-    $ gnatsd
-    2015/08/31 11:07:19.925048 [INF] Listening for client connections on 0.0.0.0:4222
+    client, err := grid.NewClient("myapp", etcd)
     ...
 
-The [firstgrid](example/firstgrid/) example is the simplest. It starts two actors and they pass messages.
-Very little error checking is done but the basics are all there.
+    const timeout = 2 * time.Second
 
-The [flowgrid](example/flowgrid/) example is much more involved, but more realistic as it deals with
-coordination using the [condition](condition/) library and [ring](ring/) library. It also adds random
-failure to each actor to simulate how dealing with such failures can be dealt with using the 
-[dfa](http://github.com/lytics/dfa) library.
+    res, err := client.Request(timeout, "some-mailbox-name", &MyMsg{
+        ...
+    })
+
+    ... process the response ...
+}
+```
