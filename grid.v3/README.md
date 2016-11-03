@@ -7,7 +7,7 @@ sending data between them.
 
 ## Grid
 Anything that implements the `Grid` interface is a grid. In grid an actor
-is typically just a go-routin or set of go-routines performing some stateful
+is typically just a go-routine or set of go-routines performing some stateful
 computation.
 
 ```go
