@@ -3,16 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"fmt"
+	"net"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	"fmt"
-	"os"
-
-	"flag"
-
-	"net"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3"
