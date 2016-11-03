@@ -149,18 +149,18 @@ is done with Etcd and gRPC - taking care of some boilerplate code for you.
 
 ## Client
 There are times you will need to talk to grid actors from non-actors, the
-`Client` can be used in such a case.
+`Client` can be used for this.
 
 ```go
+const timeout = 2 * time.Second
 
-func SomeExternalCode() {
+
+func Example() {
     etcd, err := etcdv3.New(...)
     ...
 
-    client, err := grid.NewClient("myapp", etcd)
+    client, err := grid.NewClient(etcd, "myapp")
     ...
-
-    const timeout = 2 * time.Second
 
     res, err := client.Request(timeout, "some-mailbox-name", &MyMsg{
         ...
