@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"fmt"
@@ -39,6 +41,9 @@ func (a *EchoActor) Act(ctx context.Context) {
 	fmt.Println("hello")
 	for {
 		select {
+		case <-ctx.Done():
+			fmt.Println("goodbye...")
+			return
 		case e := <-mailbox.C:
 			switch msg := e.Msg.(type) {
 			case StopMsg:
@@ -77,11 +82,20 @@ func main() {
 	g, err := grid.NewServer("echo", etcd, echo)
 	successOrDie(err)
 
+	// Check for exit signals.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		fmt.Println("shutting down...")
+		g.Stop()
+		fmt.Println("shutdown complete")
+	}()
+
 	lis, err := net.Listen("tcp", *address)
 	successOrDie(err)
 
-	err = g.Serve(lis)
-	successOrDie(err)
+	g.Serve(lis)
 }
 
 func successOrDie(err error, context ...string) {
