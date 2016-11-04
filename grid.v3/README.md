@@ -176,6 +176,27 @@ func (a *worker) Act(c context.Context) {
 }
 ```
 
+## Example Actor, Part 5
+Each actor is registered into etcd. Consequently each actor's name acts like a
+semaphore. If code requests the actor to start *twice* the second request will
+receive an error indicating that the actor is already started.
+
+```go
+const timeout = 2 * time.Second
+
+func (a *leader) Act(c context.Context) {
+    client, err := grid.ContextClient(c)
+
+    def := grid.NewActorDef("worker-0)
+
+    // First request to start.
+    err = client.Request(timeout, peer, def)
+
+    // Second request will fail, if the first succeeded.
+    err = client.Request(timeout, peer, def)
+}
+```
+
 ## Kubernetes + Grid
 The examples above are meant to give some intuative sense of what the grid
 library does. Howevery what it does not do is:

@@ -15,10 +15,6 @@ import (
 	"github.com/lytics/grid/grid.v3"
 )
 
-const mailboxSize = 10
-
-type HelloMsg struct{}
-
 type Leader struct{}
 
 func (a *Leader) Act(c context.Context) {
@@ -54,15 +50,7 @@ func (a *Leader) Act(c context.Context) {
 type Worker struct{}
 
 func (a *Worker) Act(ctx context.Context) {
-	fmt.Println("hello")
-
-	id, err := grid.ContextActorID(ctx)
-	successOrDie(err)
-
-	// Subscribe to messages sent to the actor's ID.
-	mailbox, err := grid.NewMailbox(ctx, id, mailboxSize)
-	successOrDie(err)
-	defer mailbox.Close()
+	fmt.Println("hello world")
 
 	// Listen and respond to requests.
 	for {
@@ -70,12 +58,6 @@ func (a *Worker) Act(ctx context.Context) {
 		case <-ctx.Done():
 			fmt.Println("goodbye...")
 			return
-		case e := <-mailbox.C:
-			switch e.Msg.(type) {
-			case HelloMsg:
-				e.Ack()
-				fmt.Println("hi from", id)
-			}
 		}
 	}
 }
@@ -105,7 +87,7 @@ func main() {
 	g, err := grid.NewServer(etcd, "hello", Hello{})
 	successOrDie(err)
 
-	// Check for exit signals.
+	// Check for exit signal, ie: ctrl-c
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -118,6 +100,9 @@ func main() {
 	lis, err := net.Listen("tcp", *address)
 	successOrDie(err)
 
+	// The "leader" actor is special, it will automatically
+	// get started when the serve method is called. The
+	// leader is always the entry-point.
 	err = g.Serve(lis)
 	successOrDie(err)
 }
