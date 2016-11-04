@@ -183,7 +183,7 @@ library does. Howevery what it does not do is:
  1. Package up your congifuration and binaries
  1. Start your VMs
  1. Start your processes on those VMs
- 1. Autoscale your VMs when resource run low
+ 1. Autoscale your VMs when resources run low
  1. Reschedule crashed processes
  1. etc...
 
