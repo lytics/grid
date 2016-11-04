@@ -19,8 +19,7 @@ type Grid interface {
 ## Example Grid
 Below is a basic example of starting your grid application. The `MakeActor` method
 must always know how to make "leader". The leader actor will be started automatically
-for you when `Serve` is called, it's the entry-point of you application. Error checking
-and full parameters are omitted with "..." placeholders.
+for you when `Serve` is called, it's the entry-point of you application.
 
 ```go
 type MyApp struct {
