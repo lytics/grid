@@ -16,13 +16,23 @@ var (
 	ErrInvalidActorNamespace = errors.New("invalid actor namespace")
 )
 
-// NewActorDef with given namespace and name. The caller
-// should set the Type, the default is to make it the
-// same as the name.
-func NewActorDef(name string) *ActorDef {
+// NewActorDef with name. The name can be a format string and its
+// arguments. For example:
+//
+//     def := NewActorDef("leader")
+//
+// or
+//
+//     def := NewActorDef("worker-%d", i)
+//     def.Type = "worker"
+//
+// Remeber that you will likely need to set the "Type" of actor
+// to something standard when using a format string as the name.
+func NewActorDef(name string, v ...interface{}) *ActorDef {
+	fname := fmt.Sprintf(name, v...)
 	return &ActorDef{
-		Type: name,
-		Name: name,
+		Type: fname,
+		Name: fname,
 	}
 }
 

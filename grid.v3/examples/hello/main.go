@@ -41,7 +41,7 @@ func (a *Leader) Act(c context.Context) {
 
 			// Define an actor.
 			existing[peer] = true
-			def := grid.NewActorDef(fmt.Sprintf("worker-%v", len(existing)))
+			def := grid.NewActorDef("worker-%d", len(existing))
 			def.Type = "worker"
 
 			// On new peers start a worker.

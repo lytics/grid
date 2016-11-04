@@ -25,9 +25,7 @@ type MyApp struct {
     MakeActor(def *grid.ActorDef) (grid.Actor, error) {
         switch def.Type {
         case "leader":
-            return &leader{
-                ...
-            }, nil
+            return &leader{}, nil
         }
     }
 }
@@ -86,7 +84,7 @@ func (a *leader) Act(c context.Context) {
         // There can never be more than one actor with
         // a given name. When an actor exits or panics
         // its record is removed from etcd.
-        def := grid.NewActorDef("worker"+i)
+        def := grid.NewActorDef("worker-%d", i)
         def.Type = "worker"
 
         // Start a new actor on the given peer. The
@@ -126,8 +124,6 @@ func (a *worker) Act(c context.Context) {
 
     for {
         select {
-        case <-c.Done():
-            return
         case envelope := <-mailbox.C:
             switch msg := envelope.Msg.(type) {
             case PingMsg:
@@ -142,7 +138,7 @@ func (a *worker) Act(c context.Context) {
 ## Example Actor, Part 3
 Each actor receives a context as a parameter in its `Act` method. That context
 is created by the peer that started the actor. The context contains several
-useful values which an be extracted using the `Context*` functions.
+useful values, they can be extracted using the `Context*` functions.
 
 ```go
 func (a *worker) Act(c context.Context) {
