@@ -126,10 +126,10 @@ func (a *worker) Act(c context.Context) {
 
     for {
         select {
-        case envelope := <-mailbox.C:
-            switch msg := envelope.Msg.(type) {
+        case req := <-mailbox.C:
+            switch req.Msg().(type) {
             case PingMsg:
-                err := envelope.Respond(&PongMsg{
+                err := req.Respond(&PongMsg{
                     ...
                 })
         }
