@@ -81,15 +81,15 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 }
 
 // Request a response for the message. The response message is in the returned envelope.
-func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}) (*Envelope, error) {
+func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}) (interface{}, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.RequestC(timeoutC, receiver, msg)
 }
 
 // RequestC a response for the message. The response message is in the returned envelope.
-func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (*Envelope, error) {
-	env := &Envelope{
+func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
+	env := &envelope{
 		Msg: msg,
 	}
 
@@ -125,14 +125,17 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, io.ErrUnexpectedEOF
 	}
 
-	env = &Envelope{}
+	env = &envelope{}
 	dec := gob.NewDecoder(&buf)
 	err = dec.Decode(env)
 	if err != nil {
 		return nil, err
 	}
 
-	return env, nil
+	if env.Msg != nil {
+		return env.Msg, nil
+	}
+	return nil, ErrNilResponse
 }
 
 // getWireClient for the address of the receiver.

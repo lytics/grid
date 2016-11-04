@@ -30,6 +30,7 @@ type contextVal struct {
 }
 
 var (
+	ErrNilResponse        = errors.New("nil response")
 	ErrInvalidEtcd        = errors.New("invalid etcd")
 	ErrInvalidContext     = errors.New("invalid context")
 	ErrInvalidNamespace   = errors.New("invalid namespace")
@@ -187,11 +188,11 @@ func (s *Server) Stop() {
 
 // Process a request and return a response. Implements the interface for
 // gRPC definition of the wire service.
-func (s *Server) Process(c netcontext.Context, req *Delivery) (*Delivery, error) {
+func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	getMailbox := func() (*Mailbox, bool) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		m, ok := s.mailboxes[req.Receiver]
+		m, ok := s.mailboxes[d.Receiver]
 		return m, ok
 	}
 
@@ -203,17 +204,17 @@ func (s *Server) Process(c netcontext.Context, req *Delivery) (*Delivery, error)
 	// Write the bytes of the request into the byte
 	// buffer for decoding.
 	var buf bytes.Buffer
-	n, err := buf.Write(req.Data)
+	n, err := buf.Write(d.Data)
 	if err != nil {
 		return nil, err
 	}
-	if n != len(req.Data) {
+	if n != len(d.Data) {
 		return nil, io.ErrUnexpectedEOF
 	}
 
 	// Decode the request into an actual
 	// type.
-	env := &Envelope{}
+	env := &envelope{}
 	dec := gob.NewDecoder(&buf)
 	err = dec.Decode(env)
 	if err != nil {
@@ -222,8 +223,10 @@ func (s *Server) Process(c netcontext.Context, req *Delivery) (*Delivery, error)
 	// This actually converts between the "context" and
 	// "golang.org/x/net/context" types of Context so
 	// that method signatures are satisfied.
-	env.context = context.WithValue(c, "", "")
-	env.response = make(chan []byte)
+	req := &request{}
+	req.msg = env.Msg
+	req.context = context.WithValue(c, "", "")
+	req.response = make(chan []byte)
 
 	// Send the filled envelope to the actual
 	// receiver. Also note that the receiver
@@ -231,7 +234,7 @@ func (s *Server) Process(c netcontext.Context, req *Delivery) (*Delivery, error)
 	// some defualt or timeout always needs
 	// to exist here.
 	select {
-	case mailbox.c <- env:
+	case mailbox.c <- req:
 	default:
 		return nil, ErrReceiverBusy
 	}
@@ -241,7 +244,7 @@ func (s *Server) Process(c netcontext.Context, req *Delivery) (*Delivery, error)
 	select {
 	case <-c.Done():
 		return nil, ErrContextFinished
-	case data := <-env.response:
+	case data := <-req.response:
 		return &Delivery{
 			Data: data,
 		}, nil
@@ -255,17 +258,17 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 		select {
 		case <-s.ctx.Done():
 			return
-		case e := <-mailbox.C:
-			switch msg := e.Msg.(type) {
+		case req := <-mailbox.C:
+			switch msg := req.Msg().(type) {
 			case *ActorDef:
-				err := s.startActorC(e.Context(), msg)
+				err := s.startActorC(req.Context(), msg)
 				if err != nil {
-					e.Respond(&ResponseMsg{
+					req.Respond(&ResponseMsg{
 						Succeeded: false,
 						Error:     err.Error(),
 					})
 				} else {
-					e.Respond(&ResponseMsg{
+					req.Respond(&ResponseMsg{
 						Succeeded: true,
 					})
 				}

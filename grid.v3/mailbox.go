@@ -8,8 +8,8 @@ import (
 // Mailbox for receiving messages.
 type Mailbox struct {
 	name    string
-	C       <-chan *Envelope
-	c       chan *Envelope
+	C       <-chan Request
+	c       chan Request
 	cleanup func() error
 }
 
@@ -63,7 +63,7 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 		// Return any error from the deregister call.
 		return err
 	}
-	boxC := make(chan *Envelope, size)
+	boxC := make(chan Request, size)
 	box := &Mailbox{
 		name:    name,
 		C:       boxC,
