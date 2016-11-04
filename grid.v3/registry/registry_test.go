@@ -262,7 +262,7 @@ func TestKeepAlive(t *testing.T) {
 
 	// Use the minimum.
 	r.LeaseDuration = 1 * time.Second
-	err := r.Start()
+	_, err := r.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry) {
 	r.LeaseDuration = 10 * time.Second
 
 	if shouldStart {
-		err = r.Start()
+		_, err = r.Start()
 		if err != nil {
 			t.Fatal(err)
 		}

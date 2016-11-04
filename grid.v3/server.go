@@ -10,10 +10,8 @@ import (
 	"log"
 	"net"
 	"strings"
-
-	"time"
-
 	"sync"
+	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/registry"
@@ -34,15 +32,13 @@ type contextVal struct {
 var (
 	ErrInvalidEtcd        = errors.New("invalid etcd")
 	ErrInvalidContext     = errors.New("invalid context")
-	ErrUnknownResponse    = errors.New("unknown response")
 	ErrInvalidNamespace   = errors.New("invalid namespace")
 	ErrAlreadyRegistered  = errors.New("already registered")
 	ErrInvalidMailboxName = errors.New("invalid mailbox name")
 )
 
-var (
-	Logger *log.Logger
-)
+// Logger used for logging when non-nil, default is nil.
+var Logger *log.Logger
 
 // Server of a grid.
 type Server struct {
@@ -75,7 +71,16 @@ func NewServer(etcd *etcdv3.Client, namespace string, g Grid) (*Server, error) {
 	}, nil
 }
 
-// Serve the grid on the listener, and start the leader actor.
+// Serve the grid on the listener, and start the leader actor, ie:
+// the MakeActor method will be called with defintion:
+//
+//     ActorDef{
+//         Name: "leader",
+//         Type: "leader",
+//     }
+//
+// The returned actor will be run and can be considered the
+// entry-point of the grid.
 func (s *Server) Serve(lis net.Listener) error {
 	r, err := registry.New(s.etcd)
 	if err != nil {
@@ -83,7 +88,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 	s.registry = r
 	s.registry.Address = lis.Addr().String()
-	err = s.registry.Start()
+	regFaults, err := s.registry.Start()
 	if err != nil {
 		return err
 	}
@@ -114,7 +119,21 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 	go s.runMailbox(mailbox)
 
-	boot := make(chan error, 1)
+	runtimeErrors := make(chan error, 1)
+	go func() {
+		select {
+		case <-ctx.Done():
+		case err := <-regFaults:
+			if err == nil {
+				return
+			}
+			select {
+			case runtimeErrors <- err:
+			default:
+			}
+			s.Stop()
+		}
+	}()
 	go func() {
 		def := NewActorDef("leader")
 		for i := 0; i < 6; i++ {
@@ -124,7 +143,7 @@ func (s *Server) Serve(lis net.Listener) error {
 				return
 			}
 		}
-		boot <- fmt.Errorf("leader start failed: %v", err)
+		runtimeErrors <- fmt.Errorf("leader start failed: %v", err)
 		s.Stop()
 	}()
 
@@ -137,7 +156,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 
 	select {
-	case err = <-boot:
+	case err = <-runtimeErrors:
 	default:
 	}
 
@@ -201,7 +220,7 @@ func (s *Server) Process(c netcontext.Context, req *Delivery) (*Delivery, error)
 		return nil, err
 	}
 	// This actually converts between the "context" and
-	// golang.org/x/net/context types of Context so
+	// "golang.org/x/net/context" types of Context so
 	// that method signatures are satisfied.
 	env.context = context.WithValue(c, "", "")
 	env.response = make(chan []byte)
@@ -316,73 +335,4 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	}()
 
 	return nil
-}
-
-// Mailbox for receiving messages.
-type Mailbox struct {
-	name    string
-	C       <-chan *Envelope
-	c       chan *Envelope
-	cleanup func() error
-}
-
-// Close the mailbox.
-func (box *Mailbox) Close() error {
-	return box.cleanup()
-}
-
-// String of mailbox name.
-func (box *Mailbox) String() string {
-	return box.name
-}
-
-// NewMailbox for requests addressed to name. Size will be the mailbox's
-// channel size.
-func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
-	if !isNameValid(name) {
-		return nil, ErrInvalidMailboxName
-	}
-
-	s, err := contextServer(c)
-	if err != nil {
-		return nil, err
-	}
-
-	_, ok := s.mailboxes[name]
-	if ok {
-		return nil, ErrAlreadyRegistered
-	}
-
-	timeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	err = s.registry.Register(timeout, name)
-	cancel()
-	if err != nil {
-		return nil, err
-	}
-
-	cleanup := func() error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-
-		// Immediately delete the subscription so that no one
-		// can send to it, at least from this host.
-		delete(s.mailboxes, name)
-
-		// Deregister the name.
-		timeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		err := s.registry.Deregister(timeout, name)
-		cancel()
-
-		// Return any error from the deregister call.
-		return err
-	}
-	boxC := make(chan *Envelope, size)
-	box := &Mailbox{
-		name:    name,
-		C:       boxC,
-		c:       boxC,
-		cleanup: cleanup,
-	}
-	s.mailboxes[name] = box
-	return box, nil
 }

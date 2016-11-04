@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"fmt"
 	"sync"
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
 )
-
-var Logger *log.Logger
 
 type Option int
 
@@ -75,19 +73,19 @@ func New(client *etcdv3.Client) (*Registry, error) {
 }
 
 // Start Registry.
-func (rr *Registry) Start() error {
+func (rr *Registry) Start() (<-chan error, error) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
 	if rr.LeaseDuration < minLeaseDuration {
-		return ErrLeaseDurationTooShort
+		return nil, ErrLeaseDurationTooShort
 	}
 
 	timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
 	res, err := rr.lease.Grant(timeout, int64(rr.LeaseDuration.Seconds()))
 	cancel()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	rr.leaseID = res.ID
 
@@ -97,6 +95,7 @@ func (rr *Registry) Start() error {
 	//     2) The Registry fails to signal keep-alive on it
 	//        lease repeatedly, in which case it will cancel
 	//        its context and exit.
+	failure := make(chan error, 1)
 	go func() {
 		ticker := time.NewTicker(rr.LeaseDuration / time.Duration(heartbeatsPerLeaseDuration))
 		defer ticker.Stop()
@@ -122,7 +121,6 @@ func (rr *Registry) Start() error {
 				if err != nil {
 					stats.failure++
 					errCnt++
-					logPrintf("failed keep-alive heartbeat, total error count: %v, current error: %v", errCnt, err)
 				} else {
 					stats.success++
 					errCnt = 0
@@ -130,12 +128,16 @@ func (rr *Registry) Start() error {
 				if errCnt < heartbeatsPerLeaseDuration-1 {
 					continue
 				}
+				select {
+				case failure <- fmt.Errorf("registry: keep-alive to etcd cluster failed: %v", err):
+				default:
+				}
 				return
 			}
 		}
 	}()
 
-	return nil
+	return failure, nil
 }
 
 // Stop Registry.
@@ -302,10 +304,4 @@ func (rr *Registry) Deregister(c context.Context, key string) error {
 type keepAliveStats struct {
 	success int
 	failure int
-}
-
-func logPrintf(format string, v ...interface{}) {
-	if Logger != nil {
-		Logger.Printf(format, v...)
-	}
 }
