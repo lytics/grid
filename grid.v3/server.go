@@ -75,7 +75,7 @@ func NewServer(etcd *etcdv3.Client, namespace string, g Grid) (*Server, error) {
 	}, nil
 }
 
-// Serve the grid on the listener.
+// Serve the grid on the listener, and start the leader actor.
 func (s *Server) Serve(lis net.Listener) error {
 	r, err := registry.New(s.etcd)
 	if err != nil {
@@ -119,12 +119,13 @@ func (s *Server) Serve(lis net.Listener) error {
 		def := NewActorDef("leader")
 		for i := 0; i < 6; i++ {
 			time.Sleep(1 * time.Second)
-			err := s.StartActor(9*time.Second, def)
+			err := s.startActor(9*time.Second, def)
 			if err == nil || (err != nil && strings.Contains(err.Error(), "already registered")) {
 				return
 			}
 		}
 		boot <- fmt.Errorf("leader start failed: %v", err)
+		s.Stop()
 	}()
 
 	RegisterWireServer(s.grpc, s)
@@ -238,7 +239,7 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 		case e := <-mailbox.C:
 			switch msg := e.Msg.(type) {
 			case *ActorDef:
-				err := s.StartActorC(e.Context(), msg)
+				err := s.startActorC(e.Context(), msg)
 				if err != nil {
 					e.Respond(&ResponseMsg{
 						Succeeded: false,
@@ -254,19 +255,19 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 	}
 }
 
-// StartActor in the current process. This method does not communicate with another
+// startActor in the current process. This method does not communicate with another
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
-func (s *Server) StartActor(timeout time.Duration, def *ActorDef) error {
+func (s *Server) startActor(timeout time.Duration, def *ActorDef) error {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return s.StartActorC(timeoutC, def)
+	return s.startActorC(timeoutC, def)
 }
 
-// StartActorC in the current process. This method does not communicate with another
+// startActorC in the current process. This method does not communicate with another
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
-func (s *Server) StartActorC(c context.Context, def *ActorDef) error {
+func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	def.namespace = s.namespace
 
 	if err := ValidateActorDef(def); err != nil {

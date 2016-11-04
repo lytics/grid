@@ -1,7 +1,7 @@
 hello
 =====
 
-The "hello world" of a grid application.
+The "hello world" of a grid applications.
 
 ### What You Will Learn
 

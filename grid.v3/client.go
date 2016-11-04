@@ -54,7 +54,7 @@ func (c *Client) Close() error {
 }
 
 // Peers in this client's namespace. A peer is any process that called
-// the grid Server Serve method.
+// the Serve method to act as a server within the namespace.
 func (c *Client) Peers(timeout time.Duration) ([]string, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -62,7 +62,7 @@ func (c *Client) Peers(timeout time.Duration) ([]string, error) {
 }
 
 // PeersC in this client's namespace. A peer is any process that called
-// the grid Server Serve method.
+// the Serve method to act as a server within the namespace.
 func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -135,7 +135,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	return env, nil
 }
 
-// getWireClient to the address of the receiver.
+// getWireClient for the address of the receiver.
 func (c *Client) getWireClient(ctx context.Context, receiver string) (WireClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

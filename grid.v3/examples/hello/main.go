@@ -15,34 +15,42 @@ import (
 	"github.com/lytics/grid/grid.v3"
 )
 
+const timeout = 2 * time.Second
+
 type Leader struct{}
 
 func (a *Leader) Act(c context.Context) {
 	client, err := grid.ContextClient(c)
 	successOrDie(err)
 
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
 	existing := make(map[string]bool)
 	for {
-		time.Sleep(2 * time.Second)
-
-		// Ask for current peers.
-		peers, err := client.Peers(2 * time.Second)
-		successOrDie(err)
-
-		// Loop over result and check if any peers are new.
-		for _, peer := range peers {
-			if existing[peer] {
-				continue
-			}
-
-			// Define an actor.
-			existing[peer] = true
-			def := grid.NewActorDef("worker-%d", len(existing))
-			def.Type = "worker"
-
-			// On new peers start a worker.
-			_, err := client.Request(2*time.Second, peer, def)
+		select {
+		case <-c.Done():
+			return
+		case <-ticker.C:
+			// Ask for current peers.
+			peers, err := client.Peers(timeout)
 			successOrDie(err)
+
+			// Check for new peers.
+			for _, peer := range peers {
+				if existing[peer] {
+					continue
+				}
+
+				// Define a worker.
+				existing[peer] = true
+				def := grid.NewActorDef("worker-%d", len(existing))
+				def.Type = "worker"
+
+				// On new peers start the worker.
+				_, err := client.Request(timeout, peer, def)
+				successOrDie(err)
+			}
 		}
 	}
 }
@@ -51,8 +59,6 @@ type Worker struct{}
 
 func (a *Worker) Act(ctx context.Context) {
 	fmt.Println("hello world")
-
-	// Listen and respond to requests.
 	for {
 		select {
 		case <-ctx.Done():
@@ -101,8 +107,10 @@ func main() {
 	successOrDie(err)
 
 	// The "leader" actor is special, it will automatically
-	// get started when the serve method is called. The
-	// leader is always the entry-point.
+	// get started for you when the Serve method is called.
+	// The leader is always the entry-point. Even if you
+	// start this app multiple times on different port
+	// numbers there will only be one leader in the namespace.
 	err = g.Serve(lis)
 	successOrDie(err)
 }
