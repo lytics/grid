@@ -187,7 +187,7 @@ const timeout = 2 * time.Second
 func (a *leader) Act(c context.Context) {
     client, err := grid.ContextClient(c)
 
-    def := grid.NewActorDef("worker-0)
+    def := grid.NewActorDef("worker-0")
 
     // First request to start.
     err = client.Request(timeout, peer, def)
