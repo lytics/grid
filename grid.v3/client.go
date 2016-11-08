@@ -18,7 +18,8 @@ type clientAndConn struct {
 	client WireClient
 }
 
-// Client for non-actors to talk with grid actors.
+// Client for grid-actors or non-actors to make requests to grid-actors.
+// The client can be used by multiple go-routines.
 type Client struct {
 	mu              sync.Mutex
 	registry        *registry.Registry
@@ -27,7 +28,7 @@ type Client struct {
 	clientsAndConns map[string]*clientAndConn
 }
 
-// NewClient withing namespace and using the etcd client.
+// NewClient with namespace and using the given etcd client.
 func NewClient(etcd *etcdv3.Client, namespace string) (*Client, error) {
 	r, err := registry.New(etcd)
 	if err != nil {
@@ -54,19 +55,17 @@ func (c *Client) Close() error {
 }
 
 // Peers in this client's namespace. A peer is any process that called
-// the Serve method to act as a server within the namespace.
+// the Serve method to act as a server for the namespace.
 func (c *Client) Peers(timeout time.Duration) ([]string, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.PeersC(timeoutC)
 }
 
-// PeersC in this client's namespace. A peer is any process that called
-// the Serve method to act as a server within the namespace.
+// PeersC (peers) in this client's namespace. A peer is any process that called
+// the Serve method to act as a server for the namespace. The context can be
+// used to control cancelation or timeouts.
 func (c *Client) PeersC(ctx context.Context) ([]string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	regs, err := c.registry.FindRegistrations(ctx, "grid-"+c.namespace)
 	if err != nil {
 		return nil, err
@@ -80,14 +79,15 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 	return peers, nil
 }
 
-// Request a response for the message. The response message is in the returned envelope.
+// Request a response for the given message.
 func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}) (interface{}, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.RequestC(timeoutC, receiver, msg)
 }
 
-// RequestC a response for the message. The response message is in the returned envelope.
+// RequestC (request) a response for the given message. The context can be
+// used to control cancelation or timeouts.
 func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
 	env := &envelope{
 		Msg: msg,

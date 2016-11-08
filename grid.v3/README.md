@@ -199,7 +199,7 @@ func (a *leader) Act(c context.Context) {
 ```
 
 ## Kubernetes + Grid
-The examples above are meant to give some intuative sense of what the grid
+The examples above are meant to give some intuitive sense of what the grid
 library does. Howevery what it does not do is:
 
  1. Package up your congifuration and binaries

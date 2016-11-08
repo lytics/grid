@@ -27,7 +27,8 @@ var (
 //     def.Type = "worker"
 //
 // Remeber that you will likely need to set the "Type" of actor
-// to something standard when using a format string as the name.
+// when using a format strings with arguments, like in the
+// example above.
 func NewActorDef(name string, v ...interface{}) *ActorDef {
 	fname := fmt.Sprintf(name, v...)
 	return &ActorDef{
@@ -36,7 +37,7 @@ func NewActorDef(name string, v ...interface{}) *ActorDef {
 	}
 }
 
-// ActorDef defines the namespace, name, and type of an actor.
+// ActorDef defines the name and type of an actor.
 type ActorDef struct {
 	id        string
 	Type      string
@@ -52,6 +53,7 @@ func (a *ActorDef) ID() string {
 	return a.id
 }
 
+// regID (registration ID) of the actor, same as ID but with a hash suffix.
 func (a *ActorDef) regID() string {
 	h := fnv.New64()
 	_, err := h.Write([]byte(a.ID()))
@@ -61,7 +63,7 @@ func (a *ActorDef) regID() string {
 	return fmt.Sprintf("%v-%v", a.ID(), h.Sum64())
 }
 
-// ValidateActorDef components, such as name and namespace.
+// ValidateActorDef name and type.
 func ValidateActorDef(def *ActorDef) error {
 	if !isNameValid(def.Type) {
 		return ErrInvalidActorType
@@ -75,7 +77,7 @@ func ValidateActorDef(def *ActorDef) error {
 	return nil
 }
 
-// ResponseMsg for generic response that need only a
+// ResponseMsg for generic responses that need only a
 // success flag or error.
 type ResponseMsg struct {
 	Succeeded bool

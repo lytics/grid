@@ -187,7 +187,7 @@ func (s *Server) Stop() {
 }
 
 // Process a request and return a response. Implements the interface for
-// gRPC definition of the wire service.
+// gRPC definition of the wire service. Consider this a private method.
 func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	getMailbox := func() (*Mailbox, bool) {
 		s.mu.Lock()
