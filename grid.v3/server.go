@@ -55,7 +55,8 @@ type Server struct {
 	cancel    func()
 }
 
-// NewServer for the grid.
+// NewServer for the grid. The namespace must contain only characters
+// in the set: [a-zA-Z0-9-_]
 func NewServer(etcd *etcdv3.Client, namespace string, g Grid) (*Server, error) {
 	if !isNameValid(namespace) {
 		return nil, ErrInvalidNamespace

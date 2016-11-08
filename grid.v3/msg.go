@@ -29,6 +29,9 @@ var (
 // Remeber that you will likely need to set the "Type" of actor
 // when using a format strings with arguments, like in the
 // example above.
+//
+// The name must contain only characters in the set: [a-zA-Z0-9-_]
+//
 func NewActorDef(name string, v ...interface{}) *ActorDef {
 	fname := fmt.Sprintf(name, v...)
 	return &ActorDef{

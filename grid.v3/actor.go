@@ -5,15 +5,16 @@ import (
 	"regexp"
 )
 
+// Actor that does work.
 type Actor interface {
 	Act(c context.Context)
 }
 
-const validActorName = "^[a-zA-Z0-9-_]+$"
-
 // isNameValid returns true if the give name matches the
 // regular expression "^[a-zA-Z0-9-_]+$".
 func isNameValid(name string) bool {
+	const validActorName = "^[a-zA-Z0-9-_]+$"
+
 	if name == "" {
 		return false
 	}
