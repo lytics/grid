@@ -291,7 +291,7 @@ func (s *Server) startActor(timeout time.Duration, def *ActorDef) error {
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
 func (s *Server) startActorC(c context.Context, def *ActorDef) error {
-	def.namespace = s.namespace
+	def.Namespace = s.namespace
 
 	if err := ValidateActorDef(def); err != nil {
 		return err

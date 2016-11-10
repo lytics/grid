@@ -3,22 +3,27 @@ package ring
 import "testing"
 
 func TestMultiRing(t *testing.T) {
-	expected := make(map[string]bool)
-	expected["reader-0-0"] = true
-	expected["reader-0-1"] = true
-	expected["reader-1-0"] = true
-	expected["reader-1-1"] = true
+	const (
+		name      = "reader"
+		namespace = "testing"
+	)
 
-	m := NewMultiRing("reader", 2, 2, 0)
+	expected := make(map[string]bool)
+	expected["testing-reader-0-0"] = true
+	expected["testing-reader-0-1"] = true
+	expected["testing-reader-1-0"] = true
+	expected["testing-reader-1-1"] = true
+
+	m := NewMultiRing(namespace, name, 2, 2, 0)
 	for _, r := range m.Rings() {
 		for _, def := range r.ActorDefs() {
-			if !expected[def.Name] {
-				t.Fatalf("expected to find: %v", def.Name)
+			if !expected[def.ID()] {
+				t.Fatalf("expected to find: %v", def.ID())
 			}
 			if def.Type != "reader" {
 				t.Fatalf("expected actor type to be 'reader'")
 			}
-			delete(expected, def.Name)
+			delete(expected, def.ID())
 		}
 	}
 	if len(expected) != 0 {
@@ -27,7 +32,12 @@ func TestMultiRing(t *testing.T) {
 }
 
 func TestMultiRingByHashedString(t *testing.T) {
-	m := NewMultiRing("reader", 2, 20, 0)
+	const (
+		name      = "reader"
+		namespace = "namespace"
+	)
+
+	m := NewMultiRing(namespace, name, 2, 20, 0)
 
 	if r := m.ByHashedString("group-0"); r.(*ring).name != "reader-17" {
 		t.Fatalf("expected '%v' to hash to ring '%v'", "group-0", "")

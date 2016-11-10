@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
-
-	"github.com/lytics/grid/grid.v3"
 )
 
 type MultiRing interface {
@@ -31,7 +29,7 @@ func NewMultiRing(namespace, name string, members, totalRings, reservedRings int
 	return &multi{
 		totalRings:    totalRings,
 		reservedRings: reservedRings,
-		dice:          grid.NewSeededRand(),
+		dice:          rand.New(rand.NewSource(rand.Int63())),
 		rings:         rings,
 	}
 }

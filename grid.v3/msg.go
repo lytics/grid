@@ -32,6 +32,9 @@ var (
 //
 // The name must contain only characters in the set: [a-zA-Z0-9-_]
 //
+// The namespace does not need to be set. The grid server will
+// overwrite the namespace to match its namespace.
+//
 func NewActorDef(name string, v ...interface{}) *ActorDef {
 	fname := fmt.Sprintf(name, v...)
 	return &ActorDef{
@@ -45,13 +48,13 @@ type ActorDef struct {
 	id        string
 	Type      string
 	Name      string
-	namespace string
+	Namespace string
 }
 
-// ID of the actor, in format of <namespace> . <name> but without whitespace.
+// ID of the actor, includes both namespace and name.
 func (a *ActorDef) ID() string {
 	if a.id == "" {
-		a.id = fmt.Sprintf("%v-%v", a.namespace, a.Name)
+		a.id = fmt.Sprintf("%v-%v", a.Namespace, a.Name)
 	}
 	return a.id
 }
@@ -74,7 +77,7 @@ func ValidateActorDef(def *ActorDef) error {
 	if !isNameValid(def.Name) {
 		return ErrInvalidActorName
 	}
-	if !isNameValid(def.namespace) {
+	if !isNameValid(def.Namespace) {
 		return ErrInvalidActorNamespace
 	}
 	return nil

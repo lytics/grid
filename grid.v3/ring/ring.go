@@ -34,7 +34,7 @@ type ring struct {
 func New(namespace, name string, n int) Ring {
 	return &ring{
 		n:         n,
-		dice:      grid.NewSeededRand(),
+		dice:      rand.New(rand.NewSource(rand.Int63())),
 		name:      name,
 		namespace: namespace,
 		actortype: name,
@@ -142,11 +142,13 @@ func (r *ring) ByHashedUint64(key uint64) string {
 }
 
 func (r *ring) actorDef(i int) *grid.ActorDef {
-	a := grid.NewActorDef(r.namespace, r.actorName(i))
+	a := grid.NewActorDef("%s-%d", r.name, i)
 	a.Type = r.actortype
+	a.Namespace = r.namespace
+	a.ID()
 	return a
 }
 
 func (r *ring) actorName(i int) string {
-	return fmt.Sprintf("%s-%d", r.name, i)
+	return fmt.Sprintf("%s-%s-%d", r.namespace, r.name, i)
 }
