@@ -3,7 +3,7 @@ package main
 import (
 	"math/rand"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid.v2"
 )
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")

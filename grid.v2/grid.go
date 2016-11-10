@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-etcd/etcd"
-	"github.com/lytics/grid/balancer"
+	"github.com/lytics/grid/grid.v2/balancer"
 	"github.com/lytics/metafora"
 	"github.com/lytics/metafora/m_etcd"
 	"github.com/nats-io/nats"
