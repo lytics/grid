@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid.v2"
 )
 
 type maker struct {

@@ -5,7 +5,7 @@ import (
 	"hash/fnv"
 	"math/rand"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid.v2"
 )
 
 type MultiRing interface {
