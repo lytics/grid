@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/lytics/dfa"
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/grid.v2"
 )
 
 var (

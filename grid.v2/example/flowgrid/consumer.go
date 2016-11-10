@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/lytics/dfa"
-	"github.com/lytics/grid"
-	"github.com/lytics/grid/condition"
-	"github.com/lytics/grid/ring"
+	"github.com/lytics/grid/grid.v2"
+	"github.com/lytics/grid/grid.v2/condition"
+	"github.com/lytics/grid/grid.v2/ring"
 )
 
 func NewConsumerActor(def *grid.ActorDef, conf *Conf) grid.Actor {
