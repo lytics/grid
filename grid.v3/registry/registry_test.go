@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
+	"github.com/lytics/grid/grid.v3/testetcd"
 )
 
 const (
@@ -18,7 +19,8 @@ const (
 )
 
 func TestInitialLeaseID(t *testing.T) {
-	client, r := bootstrap(t, dontStart)
+	client, r, etcdcleanup := bootstrap(t, dontStart)
+	defer etcdcleanup()
 	defer client.Close()
 
 	if r.leaseID != -1 {
@@ -27,7 +29,8 @@ func TestInitialLeaseID(t *testing.T) {
 }
 
 func TestStartStop(t *testing.T) {
-	client, r := bootstrap(t, start)
+	client, r, etcdcleanup := bootstrap(t, start)
+	defer etcdcleanup()
 	defer client.Close()
 
 	r.Stop()
@@ -39,7 +42,8 @@ func TestStartStop(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
-	client, r := bootstrap(t, start)
+	client, r, etcdcleanup := bootstrap(t, start)
+	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
 
@@ -66,7 +70,8 @@ func TestRegister(t *testing.T) {
 }
 
 func TestDeregistration(t *testing.T) {
-	client, r := bootstrap(t, start)
+	client, r, etcdcleanup := bootstrap(t, start)
+	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
 
@@ -112,7 +117,8 @@ func TestDeregistration(t *testing.T) {
 }
 
 func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
-	client, r := bootstrap(t, dontStart)
+	client, r, etcdcleanup := bootstrap(t, dontStart)
+	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
 
@@ -132,7 +138,8 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 }
 
 func TestRegisterTwiceAllowed(t *testing.T) {
-	client, r := bootstrap(t, start)
+	client, r, etcdcleanup := bootstrap(t, start)
+	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
 
@@ -147,7 +154,8 @@ func TestRegisterTwiceAllowed(t *testing.T) {
 }
 
 func TestRegisterTwiceNotAllowed(t *testing.T) {
-	client, r := bootstrap(t, start)
+	client, r, etcdcleanup := bootstrap(t, start)
+	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
 
@@ -162,7 +170,8 @@ func TestRegisterTwiceNotAllowed(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	client, r := bootstrap(t, start)
+	client, r, etcdcleanup := bootstrap(t, start)
+	defer etcdcleanup()
 	defer client.Close()
 
 	timeout, cancel := timeoutContext()
@@ -183,7 +192,8 @@ func TestStop(t *testing.T) {
 }
 
 func TestFindRegistration(t *testing.T) {
-	client, r := bootstrap(t, start)
+	client, r, etcdcleanup := bootstrap(t, start)
+	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
 
@@ -213,7 +223,8 @@ func TestFindRegistration(t *testing.T) {
 }
 
 func TestFindRegistrations(t *testing.T) {
-	client, r := bootstrap(t, start)
+	client, r, etcdcleanup := bootstrap(t, start)
+	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
 
@@ -254,7 +265,8 @@ func TestFindRegistrations(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	client, r := bootstrap(t, dontStart)
+	client, r, etcdcleanup := bootstrap(t, dontStart)
+	defer etcdcleanup()
 	defer client.Close()
 
 	// Change the minimum for sake of testing quickly.
@@ -277,9 +289,18 @@ func TestKeepAlive(t *testing.T) {
 	}
 }
 
-func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry) {
+func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, testetcd.Cleanupfn) {
+	srvcfg, cleanup, err := testetcd.StartEtcd(t)
+	if err != nil {
+		t.Fatalf("err:%v", err)
+	}
+
+	urls := []string{}
+	for _, u := range srvcfg.LCUrls {
+		urls = append(urls, u.String())
+	}
 	cfg := etcdv3.Config{
-		Endpoints: []string{"localhost:2379"},
+		Endpoints: urls,
 	}
 	client, err := etcdv3.New(cfg)
 	if err != nil {
@@ -300,7 +321,7 @@ func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry) {
 		}
 	}
 
-	return client, r
+	return client, r, cleanup
 }
 
 func timeoutContext() (context.Context, func()) {
