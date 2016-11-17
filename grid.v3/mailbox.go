@@ -3,6 +3,7 @@ package grid
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 )
 
@@ -28,7 +29,6 @@ func (box *Mailbox) String() string {
 // channel size.
 func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	if !isNameValid(name) {
-		fmt.Println(name)
 		return nil, ErrInvalidMailboxName
 	}
 
@@ -74,4 +74,17 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	}
 	s.mailboxes[name] = box
 	return box, nil
+}
+
+func CleanAddress(addr net.Addr) (string, error) {
+	switch ad := addr.(type) {
+	default:
+		return "", fmt.Errorf("unexpected type %T", ad) // %T prints whatever type t has
+	case *net.TCPAddr:
+		cleanad := fmt.Sprintf("%v:%v", ad.IP, ad.Port)
+		if ad.IP.IsUnspecified() {
+			return "", fmt.Errorf("the IP or hostname can't be unspecified: value:%v", cleanad)
+		}
+		return cleanad, nil
+	}
 }

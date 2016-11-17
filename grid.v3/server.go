@@ -89,7 +89,11 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 	s.registry = r
-	s.registry.Address = lis.Addr().String()
+	addr, err := CleanAddress(lis.Addr())
+	if err != nil {
+		return err
+	}
+	s.registry.Address = addr
 	regFaults, err := s.registry.Start()
 	if err != nil {
 		return err
