@@ -17,9 +17,9 @@ import (
 
 const timeout = 2 * time.Second
 
-type Leader struct{}
+type LeaderActor struct{}
 
-func (a *Leader) Act(c context.Context) {
+func (a *LeaderActor) Act(c context.Context) {
 	client, err := grid.ContextClient(c)
 	successOrDie(err)
 
@@ -55,9 +55,9 @@ func (a *Leader) Act(c context.Context) {
 	}
 }
 
-type Worker struct{}
+type WorkerActor struct{}
 
-func (a *Worker) Act(ctx context.Context) {
+func (a *WorkerActor) Act(ctx context.Context) {
 	fmt.Println("hello world")
 	for {
 		select {
@@ -75,9 +75,9 @@ type HelloGrid struct{}
 func (e HelloGrid) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
 	switch def.Type {
 	case "leader":
-		return &Leader{}, nil
+		return &LeaderActor{}, nil
 	case "worker":
-		return &Worker{}, nil
+		return &WorkerActor{}, nil
 	default:
 		return nil, errors.New("unknown actor type")
 	}
@@ -110,7 +110,8 @@ func main() {
 	// get started for you when the Serve method is called.
 	// The leader is always the entry-point. Even if you
 	// start this app multiple times on different port
-	// numbers there will only be one leader in the namespace.
+	// numbers there will only be one leader, it's a
+	// singleton.
 	err = g.Serve(lis)
 	successOrDie(err)
 }
