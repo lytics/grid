@@ -2,6 +2,7 @@ package grid
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -27,6 +28,7 @@ func (box *Mailbox) String() string {
 // channel size.
 func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	if !isNameValid(name) {
+		fmt.Println(name)
 		return nil, ErrInvalidMailboxName
 	}
 
