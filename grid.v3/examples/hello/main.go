@@ -68,11 +68,11 @@ func (a *Worker) Act(ctx context.Context) {
 	}
 }
 
-// Hello grid.
-type Hello struct{}
+// HelloGrid is a grid, because it has the MakeActor method.
+type HelloGrid struct{}
 
-// MakeActor given the definition.
-func (e Hello) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
+// MakeActor given the definition of the actor.
+func (e HelloGrid) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
 	switch def.Type {
 	case "leader":
 		return &Leader{}, nil
@@ -90,7 +90,7 @@ func main() {
 	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
 	successOrDie(err)
 
-	g, err := grid.NewServer(etcd, "hello", Hello{})
+	g, err := grid.NewServer(etcd, "hellogrid", HelloGrid{})
 	successOrDie(err)
 
 	// Check for exit signal, ie: ctrl-c
