@@ -6,9 +6,9 @@ in scheduling fine-grain stateful computations, which grid calls actors, and
 sending data between them. Its only external dependency is an Etcd v3 cluster.
 
 ## Grid
-Anything that implements the `Grid` interface is a grid. In grid an actor is
-typically just a go-routine or set of go-routines performing some stateful
-computation.
+Anything that implements the `Grid` interface is a grid. The interface defines
+a method to make actors from actor definitions. Actors are explained further
+down in the readme.
 
 ```go
 type Grid interface {
@@ -18,11 +18,11 @@ type Grid interface {
 
 ## Example Grid
 Below is a basic example of starting your grid application. The `MakeActor` method
-must always know how to make "leader". The leader actor will be started automatically
-for you when `Serve` is called, it's the entry-point of you application.
+must always know how to make a "leader". The leader actor will be started for you
+when `Serve` is called. The leader is the entry-point of you application.
 
 ```go
-type MyApp struct {
+type MyGrid struct {
     MakeActor(def *grid.ActorDef) (grid.Actor, error) {
         switch def.Type {
         case "leader":
@@ -35,7 +35,7 @@ func main() {
     etcd, err := etcdv3.New(...)
     ...
 
-    g, err := grid.NewServer(etcd, "myapp", MyApp{})
+    g, err := grid.NewServer(etcd, "mygrid", MyGrid{})
     ...
 
     lis, err := net.Listen("tcp", ...)
