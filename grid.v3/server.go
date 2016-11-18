@@ -43,16 +43,17 @@ var Logger *log.Logger
 
 // Server of a grid.
 type Server struct {
-	mu        sync.Mutex
-	g         Grid
-	etcd      *etcdv3.Client
-	grpc      *grpc.Server
-	registry  *registry.Registry
-	namespace string
-	mailboxes map[string]*Mailbox
-	client    *Client
-	ctx       context.Context
-	cancel    func()
+	mu          sync.Mutex
+	g           Grid
+	etcd        *etcdv3.Client
+	grpc        *grpc.Server
+	registry    *registry.Registry
+	namespace   string
+	mailboxes   map[string]*Mailbox
+	client      *Client
+	ctx         context.Context
+	cancel      func()
+	CanBeLeader bool
 }
 
 // NewServer for the grid. The namespace must contain only characters
@@ -65,11 +66,12 @@ func NewServer(etcd *etcdv3.Client, namespace string, g Grid) (*Server, error) {
 		return nil, ErrInvalidEtcd
 	}
 	return &Server{
-		g:         g,
-		etcd:      etcd,
-		grpc:      grpc.NewServer(),
-		namespace: namespace,
-		mailboxes: make(map[string]*Mailbox),
+		g:           g,
+		etcd:        etcd,
+		grpc:        grpc.NewServer(),
+		namespace:   namespace,
+		mailboxes:   make(map[string]*Mailbox),
+		CanBeLeader: true,
 	}, nil
 }
 
@@ -141,6 +143,9 @@ func (s *Server) Serve(lis net.Listener) error {
 		}
 	}()
 	go func() {
+		if !s.CanBeLeader {
+			return
+		}
 		def := NewActorDef("leader")
 		for i := 0; i < 6; i++ {
 			time.Sleep(1 * time.Second)
