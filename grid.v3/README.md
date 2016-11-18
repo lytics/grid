@@ -178,8 +178,8 @@ func (a *WorkerActor) Act(c context.Context) {
 ```
 
 ## Example Actor, Part 5
-Each actor is registered into etcd. Consequently each actor's name acts like a
-semaphore. If code requests the actor to start *twice* the second request will
+Each actor is registered into etcd. Consequently each actor's name acts like
+a mutex. If code requests the actor to start *twice* the second request will
 receive an error indicating that the actor is already started.
 
 ```go
