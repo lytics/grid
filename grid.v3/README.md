@@ -26,7 +26,7 @@ type MyGrid struct {
     MakeActor(def *grid.ActorDef) (grid.Actor, error) {
         switch def.Type {
         case "leader":
-            return &leader{}, nil
+            return &LeaderActor{}, nil
         }
     }
 }
@@ -68,11 +68,11 @@ application.
 ```go
 const timeout = 2 * time.Second
 
-type leader struct {
+type LeaderActor struct {
     ...
 }
 
-func (a *leader) Act(c context.Context) {
+func (a *LeaderActor) Act(c context.Context) {
     client, err := grid.ContextClient(c)
     ...
 
@@ -111,11 +111,11 @@ exists.
 ```go
 const size = 10
 
-type worker struct {
+type WorkerActor struct {
     ...
 }
 
-func (a *worker) Act(c context.Context) {
+func (a *WorkerActor) Act(c context.Context) {
     id, err := grid.ContextActorID(c)
     ...
 
@@ -142,7 +142,7 @@ is created by the peer that started the actor. The context contains several
 useful values, they can be extracted using the `Context*` functions.
 
 ```go
-func (a *worker) Act(c context.Context) {
+func (a *WorkerActor) Act(c context.Context) {
     // The ID of the actor.
     id, err := grid.ContextActorID(c)
 
@@ -165,7 +165,7 @@ An actor can exit whenever it wants, but it *must* exit when its context
 signals done. An actor should always monitor its context Done channel.
 
 ```go
-func (a *worker) Act(c context.Context) {
+func (a *WorkerActor) Act(c context.Context) {
     for {
         select {
         case <-c.Done():
@@ -185,7 +185,7 @@ receive an error indicating that the actor is already started.
 ```go
 const timeout = 2 * time.Second
 
-func (a *leader) Act(c context.Context) {
+func (a *LeaderActor) Act(c context.Context) {
     client, err := grid.ContextClient(c)
 
     def := grid.NewActorDef("worker-0")

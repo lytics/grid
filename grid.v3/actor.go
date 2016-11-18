@@ -10,7 +10,7 @@ type Actor interface {
 	Act(c context.Context)
 }
 
-// isNameValid returns true if the give name matches the
+// isNameValid returns true if the name matches the
 // regular expression "^[a-zA-Z0-9-_]+$".
 func isNameValid(name string) bool {
 	const validActorName = "^[a-zA-Z0-9-_]+$"
