@@ -6,7 +6,7 @@ import (
 
 	"github.com/nats-io/gnatsd/server"
 	gnatsd "github.com/nats-io/gnatsd/test"
-	"github.com/nats-io/nats"
+	"github.com/nats-io/go-nats"
 )
 
 // Create Test Options that don't Conflict with

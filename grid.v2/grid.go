@@ -13,7 +13,7 @@ import (
 	"github.com/lytics/grid/grid.v2/balancer"
 	"github.com/lytics/metafora"
 	"github.com/lytics/metafora/m_etcd"
-	"github.com/nats-io/nats"
+	"github.com/nats-io/go-nats"
 )
 
 type Grid interface {
