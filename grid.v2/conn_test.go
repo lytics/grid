@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lytics/grid/natsunit"
-	"github.com/nats-io/nats"
+	"github.com/lytics/grid/grid.v2/natsunit"
+	"github.com/nats-io/go-nats"
 )
 
 func TestSenderTimeouts(t *testing.T) {

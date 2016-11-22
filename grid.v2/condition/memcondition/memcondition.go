@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lytics/grid/condition"
-	"github.com/lytics/grid/ring"
+	"github.com/lytics/grid/grid.v2/condition"
+	"github.com/lytics/grid/grid.v2/ring"
 )
 
 var ErrKeyExists = fmt.Errorf("key exists")
