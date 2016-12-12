@@ -21,7 +21,7 @@ type LeaderActor struct{}
 
 func (a *LeaderActor) Act(c context.Context) {
 	client, err := grid.ContextClient(c)
-	successOrDie(err, "client")
+	successOrDie(err)
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -34,7 +34,7 @@ func (a *LeaderActor) Act(c context.Context) {
 		case <-ticker.C:
 			// Ask for current peers.
 			peers, err := client.Peers(timeout)
-			successOrDie(err, "peers")
+			successOrDie(err)
 
 			// Check for new peers.
 			for _, peer := range peers {
@@ -50,7 +50,7 @@ func (a *LeaderActor) Act(c context.Context) {
 				// On new peers start the worker.
 				fmt.Println("calling", peer)
 				_, err := client.Request(timeout, peer, def)
-				successOrDie(err, "request")
+				successOrDie(err)
 			}
 		}
 	}
@@ -119,11 +119,7 @@ func main() {
 
 func successOrDie(err error, loc ...string) {
 	if err != nil {
-		if len(loc) == 0 {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "error: %v @ %v\n", err, loc[0])
-		}
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
