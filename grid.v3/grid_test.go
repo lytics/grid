@@ -73,6 +73,66 @@ func TestServerExample(t *testing.T) {
 	}
 }
 
+func TestServerWatchPeers(t *testing.T) {
+	client, cleanup := bootstrap(t)
+	defer cleanup()
+	errs := &testerrors{}
+
+	e := &ExampleGrid{errs: errs}
+	g, err := NewServer(client, "example_grid", e)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+	abort := make(chan struct{}, 1)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-abort //shutting down...
+		if len(errs.errors()) == 0 {
+			g.Stop() //shutdown complete
+		}
+	}()
+
+	lis, err := net.Listen("tcp", "localhost:0") //let the OS pick a port for us.
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// After calling Serve one node within your Grid will be elected as
+		// a "leader" and that grid's MakeActor() will be called with a
+		// def.Type == "leader".  You can think of this as the main for the
+		// grid cluster.
+		err = g.Serve(lis)
+		if err != nil {
+			errs.append(err)
+		}
+	}()
+
+	time.Sleep(2 * time.Second)
+	close(abort)
+	wg.Wait()
+
+	if len(errs.errors()) > 0 {
+		t.Fatalf("we got errors: %v", errs.errors())
+	}
+
+	ls := atomic.LoadInt64(&e.leadersStarted)
+	le := atomic.LoadInt64(&e.leadersEnded)
+	ws := atomic.LoadInt64(&e.workersStarted)
+	we := atomic.LoadInt64(&e.workersEnded)
+
+	if ls != 1 || le != 1 {
+		t.Fatalf("leader's lifecycle isn't correct: leaderstarts:%d leaderstops:%d", ls, le)
+	}
+	if ws != 1 || we != 1 {
+		t.Fatalf("leader's lifecycle isn't correct: workerstarts:%d workerstops:%d", ws, we)
+	}
+}
+
 type ExampleGrid struct {
 	leadersStarted int64
 	leadersEnded   int64

@@ -29,11 +29,7 @@ type Client struct {
 }
 
 // NewClient with namespace and using the given etcd client.
-func NewClient(etcd *etcdv3.Client, namespace string) (*Client, error) {
-	r, err := registry.New(etcd)
-	if err != nil {
-		return nil, err
-	}
+func NewClient(etcd *etcdv3.Client, r *registry.Registry, namespace string) (*Client, error) {
 	return &Client{
 		registry:        r,
 		namespace:       namespace,
@@ -52,6 +48,122 @@ func (c *Client) Close() error {
 	}
 
 	return err
+}
+
+type PeerChangeEvent struct {
+	peer        string
+	err         error
+	stateChange int
+}
+
+func (p *PeerChangeEvent) Peer() string {
+	return p.peer
+}
+
+func (p *PeerChangeEvent) Discovered() bool {
+	return p.stateChange == PeerDiscovered
+}
+
+func (p *PeerChangeEvent) Lost() bool {
+	return p.stateChange == PeerLost
+}
+func (p *PeerChangeEvent) Err() error {
+	return p.err
+}
+
+const (
+	WatchErr       = -1
+	PeerDiscovered = 1
+	PeerLost       = 2
+)
+
+/*
+
+	client := grid.Client(...)
+	watch, currentpeers := client.PeersWatch(c)
+	for _, peer := range currentpeers {
+			//do work or request metadata from peer
+	}
+	for peer := range watch.C {
+			if peer.Err() != nil {
+				//deal with a peer that went down.. reschedule actors..
+			}
+			if peer.Lost() {
+				//deal with a peer that went down.. reschedule actors..
+			}
+			if peer.Discovered() {
+				//Request metadata from the peer.
+				//deal with a new peer, maybe reschedule existing actors on it it..
+			}
+	}
+*/
+func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEvent, error) {
+	peers, err := c.PeersC(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	currentPeers := map[string]struct{}{}
+	for _, p := range peers {
+		currentPeers[p] = struct{}{}
+	}
+
+	watchchan := make(chan *PeerChangeEvent)
+	go func() {
+		//TODO consider switching this to using an etcd watch? But that maybe overkill and more complex?
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		oldPeers := currentPeers
+		for {
+			select {
+			case <-ticker.C:
+				peers, err := c.PeersC(ctx)
+				if err != nil {
+					close(watchchan)
+					watchchan <- &PeerChangeEvent{"", err, WatchErr}
+					return
+				}
+
+				currentPeers := map[string]struct{}{}
+				for _, p := range peers {
+					currentPeers[p] = struct{}{}
+				}
+				lostPeers := minus(oldPeers, currentPeers)
+				discoveredPeers := minus(currentPeers, oldPeers)
+				oldPeers = currentPeers
+
+				for peer := range lostPeers {
+					watchchan <- &PeerChangeEvent{peer, nil, PeerLost}
+				}
+				for peer := range discoveredPeers {
+					watchchan <- &PeerChangeEvent{peer, nil, PeerDiscovered}
+				}
+			case <-ctx.Done():
+				close(watchchan)
+				return
+			}
+		}
+	}()
+
+	return peers, watchchan, nil
+}
+
+// minus creeates a set out of two existing sets.
+// Where the new set is the set of elements which only belong to first set.  i.e.
+// set A minus set B.
+// for example using the let of peers as an example:
+//    lostPeers := minus(oldPeers, currentPeers)
+//    discoveredPeers := minus(currentPeers, oldPeers)
+//
+func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
+	res := map[string]struct{}{}
+	for in, _ := range a {
+		if _, skip := b[in]; !skip {
+			res[in] = struct{}{}
+		}
+	}
+	return res
 }
 
 // Peers in this client's namespace. A peer is any process that called

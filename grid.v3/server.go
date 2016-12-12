@@ -101,7 +101,7 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 
-	client, err := NewClient(s.etcd, s.namespace)
+	client, err := NewClient(s.etcd, r, s.namespace)
 	if err != nil {
 		return err
 	}
