@@ -110,6 +110,7 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 
 	watchchan := make(chan *PeerChangeEvent)
 	go func() {
+		defer close(watchchan)
 		//TODO consider switching this to using an etcd watch? But that maybe overkill and more complex?
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -120,8 +121,10 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 			case <-ticker.C:
 				peers, err := c.PeersC(ctx)
 				if err != nil {
-					close(watchchan)
-					watchchan <- &PeerChangeEvent{"", err, WatchErr}
+					select {
+					case watchchan <- &PeerChangeEvent{"", err, WatchErr}:
+					case <-ctx.Done():
+					}
 					return
 				}
 
@@ -140,7 +143,6 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 					watchchan <- &PeerChangeEvent{peer, nil, PeerDiscovered}
 				}
 			case <-ctx.Done():
-				close(watchchan)
 				return
 			}
 		}
