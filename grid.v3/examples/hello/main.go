@@ -48,7 +48,6 @@ func (a *LeaderActor) Act(c context.Context) {
 				def.Type = "worker"
 
 				// On new peers start the worker.
-				fmt.Println("calling", peer)
 				_, err := client.Request(timeout, peer, def)
 				successOrDie(err)
 			}
