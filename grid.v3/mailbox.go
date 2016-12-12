@@ -32,18 +32,26 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 		return nil, ErrInvalidMailboxName
 	}
 
+	namespace, err := ContextNamespace(c)
+	if err != nil {
+		return nil, err
+	}
+
+	// Namespaced name.
+	nsName := namespace + "-" + name
+
 	s, err := contextServer(c)
 	if err != nil {
 		return nil, err
 	}
 
-	_, ok := s.mailboxes[name]
+	_, ok := s.mailboxes[nsName]
 	if ok {
 		return nil, ErrAlreadyRegistered
 	}
 
 	timeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	err = s.registry.Register(timeout, name)
+	err = s.registry.Register(timeout, nsName)
 	cancel()
 	if err != nil {
 		return nil, err
@@ -55,11 +63,11 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 
 		// Immediately delete the subscription so that no one
 		// can send to it, at least from this host.
-		delete(s.mailboxes, name)
+		delete(s.mailboxes, nsName)
 
 		// Deregister the name.
 		timeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		err := s.registry.Deregister(timeout, name)
+		err := s.registry.Deregister(timeout, nsName)
 		cancel()
 
 		// Return any error from the deregister call.
@@ -67,12 +75,12 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	}
 	boxC := make(chan Request, size)
 	box := &Mailbox{
-		name:    name,
+		name:    nsName,
 		C:       boxC,
 		c:       boxC,
 		cleanup: cleanup,
 	}
-	s.mailboxes[name] = box
+	s.mailboxes[nsName] = box
 	return box, nil
 }
 

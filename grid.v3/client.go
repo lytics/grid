@@ -66,14 +66,14 @@ func (c *Client) Peers(timeout time.Duration) ([]string, error) {
 // the Serve method to act as a server for the namespace. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) PeersC(ctx context.Context) ([]string, error) {
-	regs, err := c.registry.FindRegistrations(ctx, "grid-"+c.namespace)
+	regs, err := c.registry.FindRegistrations(ctx, c.namespace+"-grid-")
 	if err != nil {
 		return nil, err
 	}
 
 	peers := make([]string, 0)
 	for _, reg := range regs {
-		peers = append(peers, reg.Key)
+		peers = append(peers, reg.Key[len(c.namespace+"-"):])
 	}
 
 	return peers, nil
@@ -93,6 +93,9 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		Msg: msg,
 	}
 
+	// Namespaced receiver name.
+	nsReceiver := c.namespace + "-" + receiver
+
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(env)
@@ -100,7 +103,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	client, err := c.getWireClient(ctx, receiver)
+	client, err := c.getWireClient(ctx, nsReceiver)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +112,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		Ver:      Delivery_V1,
 		Enc:      Delivery_Gob,
 		Data:     buf.Bytes(),
-		Receiver: receiver,
+		Receiver: nsReceiver,
 	}
 	res, err := client.Process(ctx, req)
 	if err != nil {
@@ -139,18 +142,18 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 }
 
 // getWireClient for the address of the receiver.
-func (c *Client) getWireClient(ctx context.Context, receiver string) (WireClient, error) {
+func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	address, ok := c.addresses[receiver]
+	address, ok := c.addresses[nsReceiver]
 	if !ok {
-		reg, err := c.registry.FindRegistration(ctx, receiver)
+		reg, err := c.registry.FindRegistration(ctx, nsReceiver)
 		if err != nil {
 			return nil, err
 		}
 		address = reg.Address
-		c.addresses[receiver] = address
+		c.addresses[nsReceiver] = address
 	}
 
 	cc, ok := c.clientsAndConns[address]

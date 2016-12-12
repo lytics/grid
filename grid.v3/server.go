@@ -114,7 +114,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.ctx = ctx
 	s.cancel = cancel
 
-	name := fmt.Sprintf("grid-%v-%v", s.namespace, s.registry.Address)
+	name := fmt.Sprintf("grid-%v", s.registry.Address)
 	name = strings.Replace(name, ":", "-", -1)
 	name = strings.Replace(name, ".", "-", -1)
 	name = strings.Replace(name, "/", "", -1)
@@ -147,6 +147,7 @@ func (s *Server) Serve(lis net.Listener) error {
 			return
 		}
 		def := NewActorDef("leader")
+		def.Namespace = s.namespace
 		for i := 0; i < 6; i++ {
 			time.Sleep(1 * time.Second)
 			err := s.startActor(9*time.Second, def)

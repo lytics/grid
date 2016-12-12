@@ -150,5 +150,5 @@ func (r *ring) actorDef(i int) *grid.ActorDef {
 }
 
 func (r *ring) actorName(i int) string {
-	return fmt.Sprintf("%s-%s-%d", r.namespace, r.name, i)
+	return fmt.Sprintf("%s-%d", r.name, i)
 }
