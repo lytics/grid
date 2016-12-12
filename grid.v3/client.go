@@ -73,7 +73,16 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 
 	peers := make([]string, 0)
 	for _, reg := range regs {
-		peers = append(peers, reg.Key[len(c.namespace+"-"):])
+		prefix := c.namespace + "-"
+		// INVARIANT CHECK
+		// Under all circumstances if a registration is returned
+		// from the prefix scan above, ie: FindRegistrations,
+		// then each registration must contain the namespace
+		// as a prefix with the key.
+		if len(reg.Key) <= len(prefix) {
+			panic("registry key without proper namespace prefix")
+		}
+		peers = append(peers, reg.Key[len(prefix):])
 	}
 
 	return peers, nil
