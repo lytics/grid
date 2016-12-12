@@ -93,7 +93,7 @@ const (
 			}
 			if peer.Discovered() {
 				//Request metadata from the peer.
-				//deal with a new peer, maybe reschedule existing actors on it it..
+				//deal with a new peer, maybe rebalance some existing actors on to it or send new tasks to it.
 			}
 	}
 */
