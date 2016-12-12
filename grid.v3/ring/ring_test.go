@@ -15,7 +15,7 @@ func TestByInt(t *testing.T) {
 	r := New(namespace, name, 10)
 	for i := int(0); i < 100; i++ {
 		name := r.ByInt(i)
-		if name != fmt.Sprintf("testing-reader-%v", i%10) {
+		if name != fmt.Sprintf("reader-%v", i%10) {
 			t.Fail()
 		}
 	}
@@ -25,7 +25,7 @@ func TestByUint32(t *testing.T) {
 	r := New(namespace, name, 10)
 	for i := uint32(0); i < 100; i++ {
 		name := r.ByUint32(i)
-		if name != fmt.Sprintf("testing-reader-%v", i%10) {
+		if name != fmt.Sprintf("reader-%v", i%10) {
 			t.Fail()
 		}
 	}
@@ -35,7 +35,7 @@ func TestByUint64(t *testing.T) {
 	r := New(namespace, name, 10)
 	for i := uint64(0); i < 100; i++ {
 		name := r.ByUint64(i)
-		if name != fmt.Sprintf("testing-reader-%v", i%10) {
+		if name != fmt.Sprintf("reader-%v", i%10) {
 			t.Fail()
 		}
 	}
