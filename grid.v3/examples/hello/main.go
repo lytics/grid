@@ -117,7 +117,7 @@ func main() {
 	successOrDie(err)
 }
 
-func successOrDie(err error, loc ...string) {
+func successOrDie(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
