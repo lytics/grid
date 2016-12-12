@@ -170,9 +170,6 @@ func (a *PeerTestleader) Act(c context.Context) {
 		return
 	}
 
-	def := NewActorDef("worker-%d", 1)
-	def.Type = "worker"
-
 	peers, peersC, err := client.PeersWatch(c)
 	if err != nil || len(peers) == 0 {
 		a.e.errs.append(fmt.Errorf("failed to get list of peers:%v", err))
@@ -191,7 +188,10 @@ func (a *PeerTestleader) Act(c context.Context) {
 		if peer.Discovered() {
 			a.cstate.PeerFound()
 		}
+		select {
+		case <-c.Done():
+			return
+		default:
+		}
 	}
-
-	<-c.Done()
 }
