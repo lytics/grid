@@ -90,7 +90,9 @@ func main() {
 	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
 	successOrDie(err)
 
-	g, err := grid.NewServer(etcd, "hellogrid", HelloGrid{})
+	cfg := grid.ServerCfg{Namespace: "hellogrid"}
+
+	g, err := grid.NewServer(etcd, cfg, HelloGrid{})
 	successOrDie(err)
 
 	// Check for exit signal, ie: ctrl-c

@@ -55,8 +55,6 @@ type Registry struct {
 	keepAliveStats *keepAliveStats
 }
 
-var DefaultLeaseDuration = 60 * time.Second
-
 // New Registry.
 func New(client *etcdv3.Client) (*Registry, error) {
 	if client == nil {
@@ -70,7 +68,7 @@ func New(client *etcdv3.Client) (*Registry, error) {
 		leaseID:       -1,
 		client:        client,
 		Timeout:       10 * time.Second,
-		LeaseDuration: DefaultLeaseDuration,
+		LeaseDuration: 60 * time.Second,
 	}, nil
 }
 

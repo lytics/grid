@@ -45,21 +45,20 @@ var Logger *log.Logger
 type Server struct {
 	mu          sync.Mutex
 	g           Grid
+	cfg         ServerCfg
 	etcd        *etcdv3.Client
 	grpc        *grpc.Server
 	registry    *registry.Registry
-	namespace   string
 	mailboxes   map[string]*Mailbox
 	client      *Client
 	ctx         context.Context
 	cancel      func()
-	CanBeLeader bool
 }
 
 // NewServer for the grid. The namespace must contain only characters
 // in the set: [a-zA-Z0-9-_]
-func NewServer(etcd *etcdv3.Client, namespace string, g Grid) (*Server, error) {
-	if !isNameValid(namespace) {
+func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
+	if !isNameValid(cfg.Namespace) {
 		return nil, ErrInvalidNamespace
 	}
 	if etcd == nil {
@@ -67,11 +66,10 @@ func NewServer(etcd *etcdv3.Client, namespace string, g Grid) (*Server, error) {
 	}
 	return &Server{
 		g:           g,
+		cfg:         cfg,
 		etcd:        etcd,
 		grpc:        grpc.NewServer(),
-		namespace:   namespace,
 		mailboxes:   make(map[string]*Mailbox),
-		CanBeLeader: true,
 	}, nil
 }
 
@@ -91,6 +89,14 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 	s.registry = r
+
+	if s.cfg.Timeout > 0 {
+		s.registry.Timeout = s.cfg.Timeout
+	}
+	if s.cfg.LeaseDuration > 0 {
+		s.registry.LeaseDuration = s.cfg.LeaseDuration
+	}
+
 	addr, err := CleanAddress(lis.Addr())
 	if err != nil {
 		return err
@@ -101,7 +107,11 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 
-	client, err := NewClient(s.etcd, r, s.namespace)
+	client, err := NewClient(s.etcd, ClientCfg{
+		Namespace:     s.cfg.Namespace,
+		Timeout:       s.cfg.Timeout,
+		LeaseDuration: s.cfg.LeaseDuration,
+	})
 	if err != nil {
 		return err
 	}
@@ -143,11 +153,11 @@ func (s *Server) Serve(lis net.Listener) error {
 		}
 	}()
 	go func() {
-		if !s.CanBeLeader {
+		if s.cfg.DisalowLeadership {
 			return
 		}
 		def := NewActorDef("leader")
-		def.Namespace = s.namespace
+		def.Namespace = s.cfg.Namespace
 		for i := 0; i < 6; i++ {
 			time.Sleep(1 * time.Second)
 			err := s.startActor(9*time.Second, def)
@@ -301,7 +311,7 @@ func (s *Server) startActor(timeout time.Duration, def *ActorDef) error {
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
 func (s *Server) startActorC(c context.Context, def *ActorDef) error {
-	def.Namespace = s.namespace
+	def.Namespace = s.cfg.Namespace
 
 	if err := ValidateActorDef(def); err != nil {
 		return err

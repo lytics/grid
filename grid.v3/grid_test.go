@@ -19,7 +19,7 @@ func TestServerExample(t *testing.T) {
 	errs := &testerrors{}
 
 	e := &ExampleGrid{errs: errs}
-	g, err := NewServer(client, "example_grid", e)
+	g, err := NewServer(client, ServerCfg{Namespace: "example_grid"}, e)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -148,12 +148,12 @@ func bootstrap(t *testing.T) (*etcdv3.Client, testetcd.Cleanupfn) {
 	cfg := etcdv3.Config{
 		Endpoints: urls,
 	}
-	client, err := etcdv3.New(cfg)
+	etcd, err := etcdv3.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return client, cleanup
+	return etcd, cleanup
 }
 
 type testerrors struct {
