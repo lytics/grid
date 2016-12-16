@@ -45,7 +45,7 @@ func ContextNamespace(c context.Context) (string, error) {
 	if !ok {
 		return "", ErrInvalidContext
 	}
-	return cv.server.namespace, nil
+	return cv.server.cfg.Namespace, nil
 }
 
 // ContextEtcd returns the etcd client for the grid this actor

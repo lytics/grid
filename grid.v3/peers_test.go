@@ -10,11 +10,9 @@ import (
 	"time"
 
 	"github.com/bmizerany/assert"
-	"github.com/lytics/grid/grid.v3/registry"
 )
 
 func TestPeersWatch(t *testing.T) {
-	registry.DefaultLeaseDuration = 10 * time.Second
 	var cstate = &clusterState{}
 
 	client, cleanup := bootstrap(t)
@@ -26,7 +24,7 @@ func TestPeersWatch(t *testing.T) {
 	gridnodes := []*Server{}
 	for i := 0; i < 4; i++ {
 		e := &PeerTestGrid{errs: errs, cstate: cstate}
-		g, err := NewServer(client, "g1", e)
+		g, err := NewServer(client, ServerCfg{Namespace: "g1"}, e)
 		if err != nil {
 			t.Fatalf("NewServer failed: %v", err)
 		}
@@ -72,7 +70,7 @@ func TestPeersWatch(t *testing.T) {
 			t.Fatalf("listen failed: %v", err)
 		}
 		e := &PeerTestGrid{errs: errs}
-		g, err := NewServer(client, "g1", e)
+		g, err := NewServer(client, ServerCfg{Namespace: "g1"}, e)
 		if err != nil {
 			t.Fatalf("NewServer failed: %v", err)
 		}

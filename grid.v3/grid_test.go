@@ -19,7 +19,7 @@ func TestServerExample(t *testing.T) {
 	errs := &testerrors{}
 
 	e := &ExampleGrid{errs: errs}
-	g, err := NewServer(client, "example_grid", e)
+	g, err := NewServer(client, ServerCfg{Namespace: "example_grid"}, e)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}

@@ -13,26 +13,76 @@ import (
 	"google.golang.org/grpc"
 )
 
+type peerWatchDelta int
+
+const (
+	peerErr        peerWatchDelta = 0
+	peerDiscovered peerWatchDelta = 1
+	peerLost       peerWatchDelta = 2
+)
+
 type clientAndConn struct {
 	conn   *grpc.ClientConn
 	client WireClient
+}
+
+// PeerChangeEvent indicating that a peer has been discovered,
+// lost, or some error has occured with a peer or the watch
+// of peers.
+type PeerChangeEvent struct {
+	peer        string
+	err         error
+	stateChange peerWatchDelta
+}
+
+// Peer name that caused the event.
+func (p *PeerChangeEvent) Peer() string {
+	return p.peer
+}
+
+// Discovered peer.
+func (p *PeerChangeEvent) Discovered() bool {
+	return p.stateChange == peerDiscovered
+}
+
+// Lost peer.
+func (p *PeerChangeEvent) Lost() bool {
+	return p.stateChange == peerLost
+}
+
+// Err caught watching peers. The error is not
+// associated with any particular peer.
+func (p *PeerChangeEvent) Err() error {
+	return p.err
 }
 
 // Client for grid-actors or non-actors to make requests to grid-actors.
 // The client can be used by multiple go-routines.
 type Client struct {
 	mu              sync.Mutex
+	cfg             ClientCfg
 	registry        *registry.Registry
-	namespace       string
 	addresses       map[string]string
 	clientsAndConns map[string]*clientAndConn
 }
 
 // NewClient with namespace and using the given etcd client.
-func NewClient(etcd *etcdv3.Client, r *registry.Registry, namespace string) (*Client, error) {
+func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
+	r, err := registry.New(etcd)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.Timeout > 0 {
+		r.Timeout = cfg.Timeout
+	}
+	if cfg.LeaseDuration > 0 {
+		r.LeaseDuration = cfg.LeaseDuration
+	}
+
 	return &Client{
+		cfg:             cfg,
 		registry:        r,
-		namespace:       namespace,
 		addresses:       make(map[string]string),
 		clientsAndConns: make(map[string]*clientAndConn),
 	}, nil
@@ -50,53 +100,28 @@ func (c *Client) Close() error {
 	return err
 }
 
-type PeerChangeEvent struct {
-	peer        string
-	err         error
-	stateChange int
-}
-
-func (p *PeerChangeEvent) Peer() string {
-	return p.peer
-}
-
-func (p *PeerChangeEvent) Discovered() bool {
-	return p.stateChange == PeerDiscovered
-}
-
-func (p *PeerChangeEvent) Lost() bool {
-	return p.stateChange == PeerLost
-}
-func (p *PeerChangeEvent) Err() error {
-	return p.err
-}
-
-const (
-	WatchErr       = -1
-	PeerDiscovered = 1
-	PeerLost       = 2
-)
-
-/*
-
-	client := grid.Client(...)
-	watch, currentpeers := client.PeersWatch(c)
-	for _, peer := range currentpeers {
-			//do work or request metadata from peer
-	}
-	for peer := range watch.C {
-			if peer.Err() != nil {
-				//deal with a peer that went down.. reschedule actors..
-			}
-			if peer.Lost() {
-				//deal with a peer that went down.. reschedule actors..
-			}
-			if peer.Discovered() {
-				//Request metadata from the peer.
-				//deal with a new peer, maybe rebalance some existing actors on to it or send new tasks to it.
-			}
-	}
-*/
+// PeersWatch monitors the entry and exit of peers in the same namespace.
+// Example usage:
+//
+//     client, err := grid.NewClient(...)
+//     ...
+//
+//     watch, currentpeers := client.PeersWatch(c)
+//     for _, peer := range currentpeers {
+//         // Do work regarding peer.
+//     }
+//
+//     for event := range watch.C {
+//         if event.Err() != nil {
+//             // Error occured watching peers, deal with error.
+//         }
+//         if event.Lost() {
+//             // Existing peer lost, reschedule work on extant peers.
+//         }
+//         if event.Discovered() {
+//             // New peer discovered, assign work, get data, reschedule, etc.
+//         }
+//     }
 func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEvent, error) {
 	peers, err := c.PeersC(ctx)
 	if err != nil {
@@ -111,7 +136,6 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 	watchchan := make(chan *PeerChangeEvent)
 	go func() {
 		defer close(watchchan)
-		//TODO consider switching this to using an etcd watch? But that maybe overkill and more complex?
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 
@@ -122,7 +146,7 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 				peers, err := c.PeersC(ctx)
 				if err != nil {
 					select {
-					case watchchan <- &PeerChangeEvent{"", err, WatchErr}:
+					case watchchan <- &PeerChangeEvent{err: err}:
 					case <-ctx.Done():
 					}
 					return
@@ -137,10 +161,10 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 				oldPeers = currentPeers
 
 				for peer := range lostPeers {
-					watchchan <- &PeerChangeEvent{peer, nil, PeerLost}
+					watchchan <- &PeerChangeEvent{peer, nil, peerLost}
 				}
 				for peer := range discoveredPeers {
-					watchchan <- &PeerChangeEvent{peer, nil, PeerDiscovered}
+					watchchan <- &PeerChangeEvent{peer, nil, peerDiscovered}
 				}
 			case <-ctx.Done():
 				return
@@ -149,23 +173,6 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 	}()
 
 	return peers, watchchan, nil
-}
-
-// minus creeates a set out of two existing sets.
-// Where the new set is the set of elements which only belong to first set.  i.e.
-// set A minus set B.
-// for example using the let of peers as an example:
-//    lostPeers := minus(oldPeers, currentPeers)
-//    discoveredPeers := minus(currentPeers, oldPeers)
-//
-func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
-	res := map[string]struct{}{}
-	for in, _ := range a {
-		if _, skip := b[in]; !skip {
-			res[in] = struct{}{}
-		}
-	}
-	return res
 }
 
 // Peers in this client's namespace. A peer is any process that called
@@ -180,14 +187,14 @@ func (c *Client) Peers(timeout time.Duration) ([]string, error) {
 // the Serve method to act as a server for the namespace. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) PeersC(ctx context.Context) ([]string, error) {
-	regs, err := c.registry.FindRegistrations(ctx, c.namespace+"-grid-")
+	regs, err := c.registry.FindRegistrations(ctx, c.cfg.Namespace+"-grid-")
 	if err != nil {
 		return nil, err
 	}
 
 	peers := make([]string, 0)
 	for _, reg := range regs {
-		prefix := c.namespace + "-"
+		prefix := c.cfg.Namespace + "-"
 		// INVARIANT CHECK
 		// Under all circumstances if a registration is returned
 		// from the prefix scan above, ie: FindRegistrations,
@@ -217,7 +224,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	}
 
 	// Namespaced receiver name.
-	nsReceiver := c.namespace + "-" + receiver
+	nsReceiver := c.cfg.Namespace + "-" + receiver
 
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -293,4 +300,21 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 		c.clientsAndConns[address] = cc
 	}
 	return cc.client, nil
+}
+
+// minus creeates a set out of two existing sets.
+// Where the new set is the set of elements which only belong to first set.  i.e.
+// set A minus set B.
+// for example using the let of peers as an example:
+//    lostPeers := minus(oldPeers, currentPeers)
+//    discoveredPeers := minus(currentPeers, oldPeers)
+//
+func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
+	res := map[string]struct{}{}
+	for in, _ := range a {
+		if _, skip := b[in]; !skip {
+			res[in] = struct{}{}
+		}
+	}
+	return res
 }
