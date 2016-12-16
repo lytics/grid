@@ -43,16 +43,16 @@ var Logger *log.Logger
 
 // Server of a grid.
 type Server struct {
-	mu          sync.Mutex
-	g           Grid
-	cfg         ServerCfg
-	etcd        *etcdv3.Client
-	grpc        *grpc.Server
-	registry    *registry.Registry
-	mailboxes   map[string]*Mailbox
-	client      *Client
-	ctx         context.Context
-	cancel      func()
+	mu        sync.Mutex
+	g         Grid
+	cfg       ServerCfg
+	etcd      *etcdv3.Client
+	grpc      *grpc.Server
+	registry  *registry.Registry
+	mailboxes map[string]*Mailbox
+	client    *Client
+	ctx       context.Context
+	cancel    func()
 }
 
 // NewServer for the grid. The namespace must contain only characters
@@ -65,11 +65,11 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 		return nil, ErrInvalidEtcd
 	}
 	return &Server{
-		g:           g,
-		cfg:         cfg,
-		etcd:        etcd,
-		grpc:        grpc.NewServer(),
-		mailboxes:   make(map[string]*Mailbox),
+		g:         g,
+		cfg:       cfg,
+		etcd:      etcd,
+		grpc:      grpc.NewServer(),
+		mailboxes: make(map[string]*Mailbox),
 	}, nil
 }
 

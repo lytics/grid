@@ -4,21 +4,21 @@ import (
 	"time"
 )
 
-// ClientCfg where the only required argument is Namespace, 
-// other fields with their zero value will receiver defaults.
+// ClientCfg where the only required argument is Namespace,
+// other fields with their zero value will receive defaults.
 type ClientCfg struct {
-	Namespace     string
+	Namespace string
 	// Etcd configuration.
 	Timeout       time.Duration
 	LeaseDuration time.Duration
 }
 
-// ServerCfg where the only required argument is Namespace, 
-// other fields with their zero value will receiver defaults.
+// ServerCfg where the only required argument is Namespace,
+// other fields with their zero value will receive defaults.
 type ServerCfg struct {
 	Namespace         string
 	DisalowLeadership bool
 	// Etcd configuration.
-	Timeout           time.Duration
-	LeaseDuration     time.Duration
+	Timeout       time.Duration
+	LeaseDuration time.Duration
 }
