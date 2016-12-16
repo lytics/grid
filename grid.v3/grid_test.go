@@ -148,12 +148,12 @@ func bootstrap(t *testing.T) (*etcdv3.Client, testetcd.Cleanupfn) {
 	cfg := etcdv3.Config{
 		Endpoints: urls,
 	}
-	client, err := etcdv3.New(cfg)
+	etcd, err := etcdv3.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return client, cleanup
+	return etcd, cleanup
 }
 
 type testerrors struct {
