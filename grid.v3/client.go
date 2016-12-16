@@ -303,12 +303,12 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 }
 
 // minus creeates a set out of two existing sets.
-// Where the new set is the set of elements which only belong to first set.  i.e.
-// set A minus set B.
-// for example using the let of peers as an example:
+// Where the new set is the set of elements which
+// only belong to the first set.
+// 
+// Example:
 //    lostPeers := minus(oldPeers, currentPeers)
 //    discoveredPeers := minus(currentPeers, oldPeers)
-//
 func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
 	res := map[string]struct{}{}
 	for in, _ := range a {
