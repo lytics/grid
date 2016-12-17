@@ -23,16 +23,20 @@ var (
 )
 
 func StartEmbeddedNATS() (*server.Server, error) {
+	return StartEmbeddedNATSOpts(GnatsdTestOptions, TestURL)
+}
+
+func StartEmbeddedNATSOpts(opts server.Options, natsUrl string) (*server.Server, error) {
 	const (
 		retry = 10
 		testq = "testembeddednatstopic"
 	)
 
 	// Start the server.
-	s := gnatsd.RunServer(&GnatsdTestOptions)
+	s := gnatsd.RunServer(&opts)
 
 	// Create a client connection.
-	nc, err := nats.Connect(TestURL)
+	nc, err := nats.Connect(natsUrl)
 	if err != nil {
 		s.Shutdown()
 		return nil, err
