@@ -195,7 +195,7 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 	peers := make([]string, 0)
 	for _, reg := range regs {
 		prefix := c.cfg.Namespace + "-"
-		// INVARIANT CHECK
+		// INVARIANT
 		// Under all circumstances if a registration is returned
 		// from the prefix scan above, ie: FindRegistrations,
 		// then each registration must contain the namespace

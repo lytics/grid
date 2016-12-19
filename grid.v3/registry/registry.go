@@ -90,8 +90,8 @@ func (rr *Registry) Start() (<-chan error, error) {
 	rr.leaseID = res.ID
 
 	// There are two ways the Registry can exit:
-	//     1) Someone calls StopHeartbeat, in which case it will
-	//        cancel its context and exit.
+	//     1) Someone calls Stop, in which case it will cancel
+	//        its context and exit.
 	//     2) The Registry fails to signal keep-alive on it
 	//        lease repeatedly, in which case it will cancel
 	//        its context and exit.

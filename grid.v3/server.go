@@ -30,12 +30,14 @@ type contextVal struct {
 }
 
 var (
-	ErrNilResponse        = errors.New("nil response")
-	ErrInvalidEtcd        = errors.New("invalid etcd")
-	ErrInvalidContext     = errors.New("invalid context")
-	ErrInvalidNamespace   = errors.New("invalid namespace")
-	ErrAlreadyRegistered  = errors.New("already registered")
-	ErrInvalidMailboxName = errors.New("invalid mailbox name")
+	ErrNilResponse             = errors.New("nil response")
+	ErrInvalidEtcd             = errors.New("invalid etcd")
+	ErrInvalidContext          = errors.New("invalid context")
+	ErrInvalidNamespace        = errors.New("invalid namespace")
+	ErrAlreadyRegistered       = errors.New("already registered")
+	ErrInvalidMailboxName      = errors.New("invalid mailbox name")
+	ErrUnknownNetAddressType   = errors.New("unknown net address type")
+	ErrUnspecifiedNetAddressIP = errors.New("unspecified net address ip")
 )
 
 // Logger used for logging when non-nil, default is nil.
@@ -83,6 +85,9 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 //
 // The returned actor will be run and can be considered the
 // entry-point of the grid.
+//
+// The listener address type must be net.TCPAddr, otherwise an error
+// will be returned.
 func (s *Server) Serve(lis net.Listener) error {
 	r, err := registry.New(s.etcd)
 	if err != nil {
@@ -97,7 +102,7 @@ func (s *Server) Serve(lis net.Listener) error {
 		s.registry.LeaseDuration = s.cfg.LeaseDuration
 	}
 
-	addr, err := CleanAddress(lis.Addr())
+	addr, err := cleanAddress(lis.Addr())
 	if err != nil {
 		return err
 	}
@@ -160,7 +165,7 @@ func (s *Server) Serve(lis net.Listener) error {
 		def.Namespace = s.cfg.Namespace
 		for i := 0; i < 6; i++ {
 			time.Sleep(1 * time.Second)
-			err := s.startActor(9*time.Second, def)
+			err := s.startActor(s.cfg.Timeout, def)
 			if err == nil || (err != nil && strings.Contains(err.Error(), "already registered")) {
 				return
 			}
@@ -359,4 +364,18 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	}()
 
 	return nil
+}
+
+// cleanAddress in the format of ip:port, since just calling String()
+// on the address can return some funky formatting.
+func cleanAddress(addr net.Addr) (string, error) {
+	switch addr := addr.(type) {
+	default:
+		return "", ErrUnknownNetAddressType
+	case *net.TCPAddr:
+		if addr.IP.IsUnspecified() {
+			return "", ErrUnspecifiedNetAddressIP
+		}
+		return fmt.Sprintf("%v:%v", addr.IP, addr.Port), nil
+	}
 }
