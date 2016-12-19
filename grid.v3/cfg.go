@@ -9,7 +9,7 @@ import (
 type ClientCfg struct {
 	// Namespace of grid.
 	Namespace string
-	// Timeout for communication with etcd.
+	// Timeout for communication with etcd, and interal gossip.
 	Timeout time.Duration
 	// LeaseDuration for data in etcd.
 	LeaseDuration time.Duration
@@ -37,7 +37,7 @@ type ServerCfg struct {
 	Namespace string
 	// DisalowLeadership to prevent leader from running on a node.
 	DisalowLeadership bool
-	// Timeout for communication with etcd.
+	// Timeout for communication with etcd, and interal gossip.
 	Timeout time.Duration
 	// LeaseDuration for data in etcd.
 	LeaseDuration time.Duration

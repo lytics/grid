@@ -327,7 +327,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	// Register the actor. This acts as a distributed mutex to
 	// prevent an actor from starting twice on one system or
 	// many systems.
-	timeout, cancel := context.WithTimeout(c, 10*time.Second)
+	timeout, cancel := context.WithTimeout(c, s.cfg.Timeout)
 	err = s.registry.Register(timeout, def.regID())
 	cancel()
 	if err != nil {
@@ -346,7 +346,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	// and capture panics that the actor raises.
 	go func() {
 		defer func() {
-			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 			s.registry.Deregister(timeout, def.ID())
 			cancel()
 		}()
