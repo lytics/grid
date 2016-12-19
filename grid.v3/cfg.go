@@ -7,7 +7,8 @@ import (
 // ClientCfg where the only required argument is Namespace,
 // other fields with their zero value will receive defaults.
 type ClientCfg struct {
-	Namespace string
+	Namespace            string
+	PeersRefreshInterval time.Duration
 	// Etcd configuration.
 	Timeout       time.Duration
 	LeaseDuration time.Duration
@@ -15,6 +16,9 @@ type ClientCfg struct {
 
 // setClientCfgDefaults for those fields that have their zero value.
 func setClientCfgDefaults(cfg *ClientCfg) {
+	if cfg.PeersRefreshInterval == 0 {
+		cfg.PeersRefreshInterval = 2 * time.Second
+	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Second
 	}

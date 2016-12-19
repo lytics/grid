@@ -133,7 +133,8 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 	watchchan := make(chan *PeerChangeEvent)
 	go func() {
 		defer close(watchchan)
-		ticker := time.NewTicker(2 * time.Second)
+
+		ticker := time.NewTicker(c.cfg.PeersRefreshInterval)
 		defer ticker.Stop()
 
 		oldPeers := currentPeers
