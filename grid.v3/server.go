@@ -30,12 +30,14 @@ type contextVal struct {
 }
 
 var (
-	ErrNilResponse        = errors.New("nil response")
-	ErrInvalidEtcd        = errors.New("invalid etcd")
-	ErrInvalidContext     = errors.New("invalid context")
-	ErrInvalidNamespace   = errors.New("invalid namespace")
-	ErrAlreadyRegistered  = errors.New("already registered")
-	ErrInvalidMailboxName = errors.New("invalid mailbox name")
+	ErrNilResponse             = errors.New("nil response")
+	ErrInvalidEtcd             = errors.New("invalid etcd")
+	ErrInvalidContext          = errors.New("invalid context")
+	ErrInvalidNamespace        = errors.New("invalid namespace")
+	ErrAlreadyRegistered       = errors.New("already registered")
+	ErrInvalidMailboxName      = errors.New("invalid mailbox name")
+	ErrUnknownNetAddressType   = errors.New("unknown net address type")
+	ErrUnspecifiedNetAddressIP = errors.New("unspecified net address ip")
 )
 
 // Logger used for logging when non-nil, default is nil.
@@ -58,6 +60,8 @@ type Server struct {
 // NewServer for the grid. The namespace must contain only characters
 // in the set: [a-zA-Z0-9-_]
 func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
+	setServerCfgDefaults(&cfg)
+
 	if !isNameValid(cfg.Namespace) {
 		return nil, ErrInvalidNamespace
 	}
@@ -83,21 +87,19 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 //
 // The returned actor will be run and can be considered the
 // entry-point of the grid.
+//
+// The listener address type must be net.TCPAddr, otherwise an error
+// will be returned.
 func (s *Server) Serve(lis net.Listener) error {
 	r, err := registry.New(s.etcd)
 	if err != nil {
 		return err
 	}
 	s.registry = r
+	s.registry.Timeout = s.cfg.Timeout
+	s.registry.LeaseDuration = s.cfg.LeaseDuration
 
-	if s.cfg.Timeout > 0 {
-		s.registry.Timeout = s.cfg.Timeout
-	}
-	if s.cfg.LeaseDuration > 0 {
-		s.registry.LeaseDuration = s.cfg.LeaseDuration
-	}
-
-	addr, err := CleanAddress(lis.Addr())
+	addr, err := formatAddress(lis.Addr())
 	if err != nil {
 		return err
 	}
@@ -160,7 +162,7 @@ func (s *Server) Serve(lis net.Listener) error {
 		def.Namespace = s.cfg.Namespace
 		for i := 0; i < 6; i++ {
 			time.Sleep(1 * time.Second)
-			err := s.startActor(9*time.Second, def)
+			err := s.startActor(s.cfg.Timeout, def)
 			if err == nil || (err != nil && strings.Contains(err.Error(), "already registered")) {
 				return
 			}
@@ -325,7 +327,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	// Register the actor. This acts as a distributed mutex to
 	// prevent an actor from starting twice on one system or
 	// many systems.
-	timeout, cancel := context.WithTimeout(c, 10*time.Second)
+	timeout, cancel := context.WithTimeout(c, s.cfg.Timeout)
 	err = s.registry.Register(timeout, def.regID())
 	cancel()
 	if err != nil {
@@ -344,7 +346,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	// and capture panics that the actor raises.
 	go func() {
 		defer func() {
-			timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 			s.registry.Deregister(timeout, def.ID())
 			cancel()
 		}()
@@ -359,4 +361,18 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	}()
 
 	return nil
+}
+
+// formatAddress as ip:port, since just calling String()
+// on the address can return some funky formatting.
+func formatAddress(addr net.Addr) (string, error) {
+	switch addr := addr.(type) {
+	default:
+		return "", ErrUnknownNetAddressType
+	case *net.TCPAddr:
+		if addr.IP.IsUnspecified() {
+			return "", ErrUnspecifiedNetAddressIP
+		}
+		return fmt.Sprintf("%v:%v", addr.IP, addr.Port), nil
+	}
 }

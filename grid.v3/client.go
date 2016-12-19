@@ -68,17 +68,14 @@ type Client struct {
 
 // NewClient with namespace and using the given etcd client.
 func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
+	setClientCfgDefaults(&cfg)
+
 	r, err := registry.New(etcd)
 	if err != nil {
 		return nil, err
 	}
-
-	if cfg.Timeout > 0 {
-		r.Timeout = cfg.Timeout
-	}
-	if cfg.LeaseDuration > 0 {
-		r.LeaseDuration = cfg.LeaseDuration
-	}
+	r.Timeout = cfg.Timeout
+	r.LeaseDuration = cfg.LeaseDuration
 
 	return &Client{
 		cfg:             cfg,
@@ -136,7 +133,8 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 	watchchan := make(chan *PeerChangeEvent)
 	go func() {
 		defer close(watchchan)
-		ticker := time.NewTicker(2 * time.Second)
+
+		ticker := time.NewTicker(c.cfg.PeersRefreshInterval)
 		defer ticker.Stop()
 
 		oldPeers := currentPeers
@@ -195,7 +193,7 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 	peers := make([]string, 0)
 	for _, reg := range regs {
 		prefix := c.cfg.Namespace + "-"
-		// INVARIANT CHECK
+		// INVARIANT
 		// Under all circumstances if a registration is returned
 		// from the prefix scan above, ie: FindRegistrations,
 		// then each registration must contain the namespace
