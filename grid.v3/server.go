@@ -99,7 +99,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
 
-	addr, err := cleanAddress(lis.Addr())
+	addr, err := formatAddress(lis.Addr())
 	if err != nil {
 		return err
 	}
@@ -363,9 +363,9 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	return nil
 }
 
-// cleanAddress in the format of ip:port, since just calling String()
+// formatAddress as ip:port, since just calling String()
 // on the address can return some funky formatting.
-func cleanAddress(addr net.Addr) (string, error) {
+func formatAddress(addr net.Addr) (string, error) {
 	switch addr := addr.(type) {
 	default:
 		return "", ErrUnknownNetAddressType
