@@ -68,17 +68,14 @@ type Client struct {
 
 // NewClient with namespace and using the given etcd client.
 func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
+	setClientCfgDefaults(&cfg)
+
 	r, err := registry.New(etcd)
 	if err != nil {
 		return nil, err
 	}
-
-	if cfg.Timeout > 0 {
-		r.Timeout = cfg.Timeout
-	}
-	if cfg.LeaseDuration > 0 {
-		r.LeaseDuration = cfg.LeaseDuration
-	}
+	r.Timeout = cfg.Timeout
+	r.LeaseDuration = cfg.LeaseDuration
 
 	return &Client{
 		cfg:             cfg,

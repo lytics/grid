@@ -60,6 +60,8 @@ type Server struct {
 // NewServer for the grid. The namespace must contain only characters
 // in the set: [a-zA-Z0-9-_]
 func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
+	setServerCfgDefaults(&cfg)
+
 	if !isNameValid(cfg.Namespace) {
 		return nil, ErrInvalidNamespace
 	}
@@ -94,13 +96,8 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 	s.registry = r
-
-	if s.cfg.Timeout > 0 {
-		s.registry.Timeout = s.cfg.Timeout
-	}
-	if s.cfg.LeaseDuration > 0 {
-		s.registry.LeaseDuration = s.cfg.LeaseDuration
-	}
+	s.registry.Timeout = s.cfg.Timeout
+	s.registry.LeaseDuration = s.cfg.LeaseDuration
 
 	addr, err := cleanAddress(lis.Addr())
 	if err != nil {
