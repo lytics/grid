@@ -7,11 +7,14 @@ import (
 // ClientCfg where the only required argument is Namespace,
 // other fields with their zero value will receive defaults.
 type ClientCfg struct {
-	Namespace            string
-	PeersRefreshInterval time.Duration
-	// Etcd configuration.
-	Timeout       time.Duration
+	// Namespace of grid.
+	Namespace string
+	// Timeout for communication with etcd.
+	Timeout time.Duration
+	// LeaseDuration for data in etcd.
 	LeaseDuration time.Duration
+	// PeersRefreshInterval for polling list of peers in etcd.
+	PeersRefreshInterval time.Duration
 }
 
 // setClientCfgDefaults for those fields that have their zero value.
@@ -30,10 +33,13 @@ func setClientCfgDefaults(cfg *ClientCfg) {
 // ServerCfg where the only required argument is Namespace,
 // other fields with their zero value will receive defaults.
 type ServerCfg struct {
-	Namespace         string
+	// Namespace of grid.
+	Namespace string
+	// DisalowLeadership to prevent leader from running on a node.
 	DisalowLeadership bool
-	// Etcd configuration.
-	Timeout       time.Duration
+	// Timeout for communication with etcd.
+	Timeout time.Duration
+	// LeaseDuration for data in etcd.
 	LeaseDuration time.Duration
 }
 
