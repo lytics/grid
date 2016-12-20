@@ -379,11 +379,5 @@ func formatAddress(addr net.Addr) (string, error) {
 }
 
 func isServerRunning(s *Server) bool {
-	if s == nil {
-		return false
-	}
-	if s.ctx == nil || s.client == nil || s.cancel == nil || s.registry == nil {
-		return false
-	}
-	return true
+	return !(s == nil || s.ctx == nil || s.client == nil || s.cancel == nil || s.registry == nil)
 }
