@@ -34,6 +34,7 @@ var (
 	ErrInvalidEtcd             = errors.New("invalid etcd")
 	ErrInvalidContext          = errors.New("invalid context")
 	ErrInvalidNamespace        = errors.New("invalid namespace")
+	ErrServerNotRunning        = errors.New("server not running")
 	ErrAlreadyRegistered       = errors.New("already registered")
 	ErrInvalidMailboxName      = errors.New("invalid mailbox name")
 	ErrUnknownNetAddressType   = errors.New("unknown net address type")
@@ -335,7 +336,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	}
 
 	// The actor's context contains its full id, it's name and the
-	// full registration, which contains the actors namespace.
+	// full registration, which contains the actor's namespace.
 	actorCtx := context.WithValue(s.ctx, contextKey, &contextVal{
 		server:    s,
 		actorID:   def.ID(),
@@ -353,7 +354,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		defer func() {
 			if err := recover(); err != nil {
 				if Logger != nil {
-					log.Printf("panic in actor: %v, recovered with: %v", def.ID(), err)
+					log.Printf("panic in actor: %v, recovered from: %v", def.ID(), err)
 				}
 			}
 		}()
@@ -375,4 +376,14 @@ func formatAddress(addr net.Addr) (string, error) {
 		}
 		return fmt.Sprintf("%v:%v", addr.IP, addr.Port), nil
 	}
+}
+
+func isServerRunning(s *Server) bool {
+	if s == nil {
+		return false
+	}
+	if s.ctx == nil || s.client == nil || s.cancel == nil || s.registry == nil {
+		return false
+	}
+	return true
 }

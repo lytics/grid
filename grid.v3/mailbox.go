@@ -1,9 +1,6 @@
 package grid
 
-import (
-	"context"
-	"time"
-)
+import "context"
 
 // Mailbox for receiving messages.
 type Mailbox struct {
@@ -26,30 +23,40 @@ func (box *Mailbox) String() string {
 // NewMailbox for requests addressed to name. Size will be the mailbox's
 // channel size.
 func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
-	if !isNameValid(name) {
-		return nil, ErrInvalidMailboxName
-	}
-
 	namespace, err := ContextNamespace(c)
 	if err != nil {
 		return nil, err
 	}
-
-	// Namespaced name.
-	nsName := namespace + "-" + name
 
 	s, err := contextServer(c)
 	if err != nil {
 		return nil, err
 	}
 
+	return NewMailboxWith(s, namespace, name, size)
+}
+
+// NewMailboxWith the server and namespace given explicitly rather than
+// from a context. If creating a new mailbox from within the Act method
+// of an actor, use NewMailbox instead, it's easier.
+func NewMailboxWith(s *Server, namespace, name string, size int) (*Mailbox, error) {
+	if !isServerRunning(s) {
+		return nil, ErrServerNotRunning
+	}
+	if !isNameValid(name) {
+		return nil, ErrInvalidMailboxName
+	}
+
+	// Namespaced name.
+	nsName := namespace + "-" + name
+
 	_, ok := s.mailboxes[nsName]
 	if ok {
 		return nil, ErrAlreadyRegistered
 	}
 
-	timeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	err = s.registry.Register(timeout, nsName)
+	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+	err := s.registry.Register(timeout, nsName)
 	cancel()
 	if err != nil {
 		return nil, err
@@ -64,7 +71,7 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 		delete(s.mailboxes, nsName)
 
 		// Deregister the name.
-		timeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 		err := s.registry.Deregister(timeout, nsName)
 		cancel()
 
