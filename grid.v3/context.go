@@ -85,13 +85,11 @@ func ContextClient(c context.Context) (*Client, error) {
 // the reply back to a mailbox it's listening to.
 //
 //     import (
-//         ...
-//
-//         etcdv3 "github.com/coreos/etcd/clientv3"
+//         "github.com/coreos/etcd/clientv3"
 //         "github.com/lytics/grid/grid.v3"
 //     )
 //
-//     etcd, err := etcdv3.New(...)
+//     etcd, err := clientv3.New(...)
 //     ...
 //
 //     s, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "cli"}, nil)
