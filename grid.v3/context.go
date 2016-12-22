@@ -80,6 +80,44 @@ func ContextClient(c context.Context) (*Client, error) {
 // This use-case occurs when trying to establish bidirectional communication
 // from a command-line-utility or from some existing service that does
 // not use grid's actors.
+//
+// Example usage for a hypothetical cli tool that submits a task and gets
+// the reply back to a mailbox it's listening to.
+//
+//     etcd, err := etcdv3.NewClient(...)
+//     ...
+//
+//     s, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "cli"}, nil)
+//     ...
+//
+//     lis, err := net.Listener(...)
+//     ...
+//
+//     go func() {
+//         err := s.Serve(lis)
+//         ...
+//     }()
+//
+//     ctx := ContextForNonActor(s)
+//     go func() {
+//         mailbox := grid.NewMailbox(ctx, "cli", 1)
+//         defer mailbox.Close()
+//         for {
+//             select {
+//             case <-ctx.Done():
+//                 return
+//             case m := <-mailbox.C:
+//                 // Do something with message.
+//             }
+//         }
+//     }()
+//
+//     c, err := grid.NewClient(etc, grid.ClientCfg{Namespace:"remote"})
+//     ...
+//
+//     c.Request(timeout, "worker", &StartTask{})
+//     ...
+//
 func ContextForNonActor(s *Server) context.Context {
 	return context.WithValue(s.ctx, contextKey, &contextVal{
 		server: s,
