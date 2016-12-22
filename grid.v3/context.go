@@ -84,7 +84,14 @@ func ContextClient(c context.Context) (*Client, error) {
 // Example usage for a hypothetical cli tool that submits a task and gets
 // the reply back to a mailbox it's listening to.
 //
-//     etcd, err := etcdv3.NewClient(...)
+//     import (
+//         ...
+//
+//         etcdv3 "github.com/coreos/etcd/clientv3"
+//         "github.com/lytics/grid/grid.v3"
+//     )
+//
+//     etcd, err := etcdv3.New(...)
 //     ...
 //
 //     s, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "cli"}, nil)
@@ -98,7 +105,7 @@ func ContextClient(c context.Context) (*Client, error) {
 //         ...
 //     }()
 //
-//     ctx := ContextForNonActor(s)
+//     ctx := grid.ContextForNonActor(s)
 //     go func() {
 //         mailbox := grid.NewMailbox(ctx, "cli", 1)
 //         defer mailbox.Close()
