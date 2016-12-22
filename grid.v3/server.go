@@ -161,10 +161,7 @@ func (s *Server) Serve(lis net.Listener) error {
 		}
 	}()
 	go func() {
-		if s.g == nil {
-			return
-		}
-		if s.cfg.DisalowLeadership {
+		if s.g == nil || s.cfg.DisalowLeadership {
 			return
 		}
 		def := NewActorDef("leader")
