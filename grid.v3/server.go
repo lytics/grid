@@ -63,8 +63,7 @@ type Server struct {
 // in the set: [a-zA-Z0-9-_] and no other.
 //
 // If argument g is nil, then this server will not create actors, will
-// not start a leader, and can be used only for serving incoming
-// messages for mailboxes.
+// not start a leader, and can be used only for serving mailboxes.
 func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 	setServerCfgDefaults(&cfg)
 
