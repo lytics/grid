@@ -117,7 +117,7 @@ func ContextClient(c context.Context) (*Client, error) {
 //         }
 //     }()
 //
-//     c, err := grid.NewClient(etc, grid.ClientCfg{Namespace:"remote"})
+//     c, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "remote"})
 //     ...
 //
 //     c.Request(timeout, "worker", &StartTask{})
