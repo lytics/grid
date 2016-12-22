@@ -77,10 +77,9 @@ func ContextClient(c context.Context) (*Client, error) {
 }
 
 // ContextForNonActor useful for creating grid mailboxs in non actors. This
-// use case occurs when trying to establish bidirectional communication
+// use-case occurs when trying to establish bidirectional communication
 // from a command-line-utility or from some existing service that does
-// not use grid's actors interface. The server argument "s" will be
-// listening on the gRPC port.
+// not use grid's actors.
 func ContextForNonActor(s *Server) context.Context {
 	return context.WithValue(s.ctx, contextKey, &contextVal{
 		server: s,
