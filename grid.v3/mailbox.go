@@ -33,13 +33,6 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 		return nil, err
 	}
 
-	return NewMailboxWith(s, namespace, name, size)
-}
-
-// NewMailboxWith the server and namespace given explicitly rather than
-// from a context. If creating a new mailbox from within the Act method
-// of an actor, use NewMailbox instead, it's easier.
-func NewMailboxWith(s *Server, namespace, name string, size int) (*Mailbox, error) {
 	if !isServerRunning(s) {
 		return nil, ErrServerNotRunning
 	}
@@ -56,7 +49,7 @@ func NewMailboxWith(s *Server, namespace, name string, size int) (*Mailbox, erro
 	}
 
 	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-	err := s.registry.Register(timeout, nsName)
+	err = s.registry.Register(timeout, nsName)
 	cancel()
 	if err != nil {
 		return nil, err

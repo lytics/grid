@@ -30,15 +30,16 @@ type contextVal struct {
 }
 
 var (
-	ErrNilResponse             = errors.New("nil response")
-	ErrInvalidEtcd             = errors.New("invalid etcd")
-	ErrInvalidContext          = errors.New("invalid context")
-	ErrInvalidNamespace        = errors.New("invalid namespace")
-	ErrServerNotRunning        = errors.New("server not running")
-	ErrAlreadyRegistered       = errors.New("already registered")
-	ErrInvalidMailboxName      = errors.New("invalid mailbox name")
-	ErrUnknownNetAddressType   = errors.New("unknown net address type")
-	ErrUnspecifiedNetAddressIP = errors.New("unspecified net address ip")
+	ErrNilResponse               = errors.New("nil response")
+	ErrInvalidEtcd               = errors.New("invalid etcd")
+	ErrInvalidContext            = errors.New("invalid context")
+	ErrInvalidNamespace          = errors.New("invalid namespace")
+	ErrServerNotRunning          = errors.New("server not running")
+	ErrAlreadyRegistered         = errors.New("already registered")
+	ErrInvalidMailboxName        = errors.New("invalid mailbox name")
+	ErrUnknownNetAddressType     = errors.New("unknown net address type")
+	ErrUnspecifiedNetAddressIP   = errors.New("unspecified net address ip")
+	ErrActorCreationNotSupported = errors.New("actor creation not supported")
 )
 
 // Logger used for logging when non-nil, default is nil.
@@ -59,7 +60,11 @@ type Server struct {
 }
 
 // NewServer for the grid. The namespace must contain only characters
-// in the set: [a-zA-Z0-9-_]
+// in the set: [a-zA-Z0-9-_] and no other.
+//
+// If argument g is nil, then this server will not create actors, will
+// not start a leader, and can be used only for serving incoming
+// messages for mailboxes.
 func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 	setServerCfgDefaults(&cfg)
 
@@ -156,6 +161,9 @@ func (s *Server) Serve(lis net.Listener) error {
 		}
 	}()
 	go func() {
+		if s.g == nil {
+			return
+		}
 		if s.cfg.DisalowLeadership {
 			return
 		}
@@ -314,6 +322,10 @@ func (s *Server) startActor(timeout time.Duration, def *ActorDef) error {
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
 func (s *Server) startActorC(c context.Context, def *ActorDef) error {
+	if s.g == nil {
+		return ErrActorCreationNotSupported
+	}
+
 	def.Namespace = s.cfg.Namespace
 
 	if err := ValidateActorDef(def); err != nil {
