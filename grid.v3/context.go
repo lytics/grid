@@ -76,8 +76,8 @@ func ContextClient(c context.Context) (*Client, error) {
 	return cv.server.client, nil
 }
 
-// ContextForNonActor useful for creating grid mailboxs in non actors. This
-// use-case occurs when trying to establish bidirectional communication
+// ContextForNonActor is useful for creating grid mailboxs in non actors.
+// This use-case occurs when trying to establish bidirectional communication
 // from a command-line-utility or from some existing service that does
 // not use grid's actors.
 func ContextForNonActor(s *Server) context.Context {
