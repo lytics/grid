@@ -22,6 +22,35 @@ func (box *Mailbox) String() string {
 
 // NewMailbox for requests addressed to name. Size will be the mailbox's
 // channel size.
+//
+// Example Usage:
+//
+//     func Act(c context.Context) {
+//         mailbox, err := NewMailbox(c, "incoming", 10)
+//         ...
+//         defer mailbox.Close()
+//
+//         for {
+//             select {
+//             case req := <-mailbox.C:
+//                 // Do something with request, and then respond
+//                 // or ack. A response or ack is required.
+//                 switch m := req.Msg().(type) {
+//                 case *HiMsg:
+//                     req.Respond(&HelloMsg{...})
+//                 }
+//             }
+//         }
+//     }
+//
+// If the mailbox has already been created, in the calling process or
+// any other process, an error is returned, since only one mailbox
+// can claim a particular name.
+//
+// Using a mailbox requires that the process creating the mailbox also
+// started a grid Server. The context agrument must be the same one an
+// actor recieved via its Act method, or a context created using
+// ContextForNonActor.
 func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	namespace, err := ContextNamespace(c)
 	if err != nil {
@@ -39,6 +68,10 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	if !isNameValid(name) {
 		return nil, ErrInvalidMailboxName
 	}
+
+	// Acquire lock for safe mailbox updates.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Namespaced name.
 	nsName := namespace + "-" + name
@@ -65,8 +98,8 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 
 		// Deregister the name.
 		timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+		defer cancel()
 		err := s.registry.Deregister(timeout, nsName)
-		cancel()
 
 		// Return any error from the deregister call.
 		return err

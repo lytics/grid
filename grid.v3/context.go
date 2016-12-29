@@ -1,10 +1,6 @@
 package grid
 
-import (
-	"context"
-
-	etcdv3 "github.com/coreos/etcd/clientv3"
-)
+import "context"
 
 // ContextActorID returns an ID that is a concatenation of the context
 // namespace and the actor name associated with this context.
@@ -46,20 +42,6 @@ func ContextNamespace(c context.Context) (string, error) {
 		return "", ErrInvalidContext
 	}
 	return cv.server.cfg.Namespace, nil
-}
-
-// ContextEtcd returns the etcd client for the grid this actor
-// is associated with.
-func ContextEtcd(c context.Context) (*etcdv3.Client, error) {
-	v := c.Value(contextKey)
-	if v == nil {
-		return nil, ErrInvalidContext
-	}
-	cv, ok := v.(*contextVal)
-	if !ok {
-		return nil, ErrInvalidContext
-	}
-	return cv.server.etcd, nil
 }
 
 // ContextClient returns the grid client for the grid this actor
@@ -105,8 +87,10 @@ func ContextClient(c context.Context) (*Client, error) {
 //
 //     ctx := grid.ContextForNonActor(s)
 //     go func() {
-//         mailbox := grid.NewMailbox(ctx, "cli", 1)
+//         mailbox, err := grid.NewMailbox(ctx, "cli", 1)
+//         ...
 //         defer mailbox.Close()
+//
 //         for {
 //             select {
 //             case <-ctx.Done():

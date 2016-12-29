@@ -115,9 +115,8 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 
 	client, err := NewClient(s.etcd, ClientCfg{
-		Namespace:     s.cfg.Namespace,
-		Timeout:       s.cfg.Timeout,
-		LeaseDuration: s.cfg.LeaseDuration,
+		Namespace: s.cfg.Namespace,
+		Timeout:   s.cfg.Timeout,
 	})
 	if err != nil {
 		return err
@@ -203,10 +202,17 @@ func (s *Server) Stop() {
 		return len(s.mailboxes) == 0
 	}
 
+	t0 := time.Now()
 	for {
 		time.Sleep(200 * time.Millisecond)
 		if zeroMailboxes() {
 			break
+		}
+		if Logger != nil && time.Now().Sub(t0) > 10*time.Second {
+			t0 = time.Now()
+			for _, mailbox := range s.mailboxes {
+				Logger.Printf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
+			}
 		}
 	}
 

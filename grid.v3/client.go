@@ -66,7 +66,7 @@ type Client struct {
 	clientsAndConns map[string]*clientAndConn
 }
 
-// NewClient with namespace and using the given etcd client.
+// NewClient using the given etcd client and configuration.
 func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 	setClientCfgDefaults(&cfg)
 
@@ -75,7 +75,6 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 		return nil, err
 	}
 	r.Timeout = cfg.Timeout
-	r.LeaseDuration = cfg.LeaseDuration
 
 	return &Client{
 		cfg:             cfg,
@@ -87,13 +86,13 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 
 // Close all outbound connections of this client immediately.
 func (c *Client) Close() error {
-	c.registry.Stop()
-
 	var err error
 	for _, cc := range c.clientsAndConns {
-		err = cc.conn.Close()
+		clostErr := cc.conn.Close()
+		if clostErr != nil {
+			err = clostErr
+		}
 	}
-
 	return err
 }
 
@@ -197,7 +196,7 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 		// Under all circumstances if a registration is returned
 		// from the prefix scan above, ie: FindRegistrations,
 		// then each registration must contain the namespace
-		// as a prefix with the key.
+		// as a prefix of the key.
 		if len(reg.Key) <= len(prefix) {
 			panic("registry key without proper namespace prefix")
 		}
@@ -309,7 +308,7 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 //    discoveredPeers := minus(currentPeers, oldPeers)
 func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
 	res := map[string]struct{}{}
-	for in, _ := range a {
+	for in := range a {
 		if _, skip := b[in]; !skip {
 			res[in] = struct{}{}
 		}
