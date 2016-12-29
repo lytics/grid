@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
-	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -120,15 +119,10 @@ func (c *Client) Close() error {
 //         }
 //     }
 func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEvent, error) {
-	fmt.Println(">>> calling peers #1")
-
 	peers, err := c.Peers(c.cfg.Timeout)
 	if err != nil {
-		fmt.Println(">>> calling peers #3")
 		return nil, nil, err
 	}
-
-	fmt.Println(">>> finished with peers call")
 
 	currentPeers := map[string]struct{}{}
 	for _, p := range peers {
@@ -181,7 +175,6 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 // Peers in this client's namespace. A peer is any process that called
 // the Serve method to act as a server for the namespace.
 func (c *Client) Peers(timeout time.Duration) ([]string, error) {
-	fmt.Println(">>>>>>>>> calling peersC #2")
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.PeersC(timeoutC)

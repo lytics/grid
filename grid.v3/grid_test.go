@@ -14,12 +14,17 @@ import (
 )
 
 func TestServerExample(t *testing.T) {
-	client, cleanup := bootstrap(t)
+	etcd, cleanup := bootstrap(t)
 	defer cleanup()
 	errs := &testerrors{}
 
-	e := &ExampleGrid{errs: errs}
-	g, err := NewServer(client, ServerCfg{Namespace: "example_grid"}, e)
+	client, err := NewClient(etcd, ClientCfg{Namespace: "example_grid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := &ExampleGrid{errs: errs, client: client}
+	g, err := NewServer(etcd, ServerCfg{Namespace: "example_grid"}, e)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
