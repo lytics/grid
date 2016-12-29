@@ -150,7 +150,7 @@ func (a *WorkerActor) Act(c context.Context) {
     name, err := grid.ContextActorName(c)
 
     // The namespace of the grid this actor is associated with.
-    namespace, err := grid.ContextNamespace(c)
+    namespace, err := grid.ContextActorNamespace(c)
 
     // The etcd client associated with this actor.
     etcd, err := grid.ContextEtcd(c)

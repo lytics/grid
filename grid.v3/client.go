@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -119,10 +120,15 @@ func (c *Client) Close() error {
 //         }
 //     }
 func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEvent, error) {
-	peers, err := c.PeersC(ctx)
+	fmt.Println(">>> calling peers #1")
+
+	peers, err := c.Peers(c.cfg.Timeout)
 	if err != nil {
+		fmt.Println(">>> calling peers #3")
 		return nil, nil, err
 	}
+
+	fmt.Println(">>> finished with peers call")
 
 	currentPeers := map[string]struct{}{}
 	for _, p := range peers {
@@ -140,7 +146,7 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 		for {
 			select {
 			case <-ticker.C:
-				peers, err := c.PeersC(ctx)
+				peers, err := c.Peers(c.cfg.Timeout)
 				if err != nil {
 					select {
 					case watchchan <- &PeerChangeEvent{err: err}:
@@ -153,8 +159,8 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 				for _, p := range peers {
 					currentPeers[p] = struct{}{}
 				}
-				lostPeers := minus(oldPeers, currentPeers)
-				discoveredPeers := minus(currentPeers, oldPeers)
+				lostPeers := difference(oldPeers, currentPeers)
+				discoveredPeers := difference(currentPeers, oldPeers)
 				oldPeers = currentPeers
 
 				for peer := range lostPeers {
@@ -175,6 +181,7 @@ func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEv
 // Peers in this client's namespace. A peer is any process that called
 // the Serve method to act as a server for the namespace.
 func (c *Client) Peers(timeout time.Duration) ([]string, error) {
+	fmt.Println(">>>>>>>>> calling peersC #2")
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.PeersC(timeoutC)
@@ -299,14 +306,16 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	return cc.client, nil
 }
 
-// minus creeates a set out of two existing sets.
-// Where the new set is the set of elements which
-// only belong to the first set.
+// difference of sets a and b, in mathematical notation: A \ B,
+// ie: all elements in A that are not in B.
+//
+// See: https://en.wikipedia.org/wiki/Complement_(set_theory)
 //
 // Example:
-//    lostPeers := minus(oldPeers, currentPeers)
-//    discoveredPeers := minus(currentPeers, oldPeers)
-func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
+//    lostPeers := difference(oldPeers, currentPeers)
+//    discoveredPeers := difference(currentPeers, oldPeers)
+//
+func difference(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
 	res := map[string]struct{}{}
 	for in := range a {
 		if _, skip := b[in]; !skip {

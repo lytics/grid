@@ -79,7 +79,8 @@ type ExampleGrid struct {
 	workersStarted int64
 	workersEnded   int64
 
-	errs *testerrors
+	errs   *testerrors
+	client *Client
 }
 
 func (e *ExampleGrid) MakeActor(def *ActorDef) (Actor, error) {
@@ -98,16 +99,10 @@ func (a *ExampleLeader) Act(c context.Context) {
 	atomic.AddInt64(&(a.e.leadersStarted), 1)
 	defer atomic.AddInt64(&(a.e.leadersEnded), 1)
 
-	client, err := ContextClient(c)
-	if err != nil {
-		a.e.errs.append(fmt.Errorf("failed to get client:%v", err))
-		return
-	}
-
 	def := NewActorDef("worker-%d", 1)
 	def.Type = "worker"
 
-	peers, err := client.Peers(time.Second)
+	peers, err := a.e.client.Peers(time.Second)
 	if err != nil || len(peers) == 0 {
 		a.e.errs.append(fmt.Errorf("failed to get list of peers:%v", err))
 		return
@@ -118,7 +113,7 @@ func (a *ExampleLeader) Act(c context.Context) {
 		return
 	}
 
-	_, err = client.Request(time.Second, peers[0], def)
+	_, err = a.e.client.Request(time.Second, peers[0], def)
 	if err != nil || len(peers) == 0 {
 		a.e.errs.append(fmt.Errorf("create worker request failed:%v", err))
 		return

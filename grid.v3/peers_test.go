@@ -13,7 +13,7 @@ import (
 )
 
 var cfg = ServerCfg{
-	Namespace: "g1", 
+	Namespace:     "g1",
 	LeaseDuration: 10 * time.Second,
 }
 
@@ -107,12 +107,13 @@ func TestPeersWatch(t *testing.T) {
 type PeerTestGrid struct {
 	errs   *testerrors
 	cstate *clusterState
+	client *Client
 }
 
 func (e *PeerTestGrid) MakeActor(def *ActorDef) (Actor, error) {
 	switch def.Type {
 	case "leader":
-		return &PeerTestleader{e, e.cstate}, nil
+		return &PeerTestleader{e}, nil
 	}
 	return nil, fmt.Errorf("unknow actor type: %v", def.Type)
 }
@@ -159,37 +160,36 @@ func (c *clusterState) PeerLost() {
 }
 
 type PeerTestleader struct {
-	e      *PeerTestGrid
-	cstate *clusterState
+	e *PeerTestGrid
 }
 
 func (a *PeerTestleader) Act(c context.Context) {
-	a.cstate.LeaderFound()
-	defer a.cstate.LeaderLost()
+	fmt.Println(">>> leader running")
 
-	client, err := ContextClient(c)
-	if err != nil {
-		a.e.errs.append(fmt.Errorf("failed to get client:%v", err))
-		return
-	}
+	a.e.cstate.LeaderFound()
+	defer a.e.cstate.LeaderLost()
 
-	peers, peersC, err := client.PeersWatch(c)
+	fmt.Println(">>> starting peers watch")
+	peers, peersC, err := a.e.client.PeersWatch(c)
+	fmt.Println(">>> got starting peers watch")
 	if err != nil || len(peers) == 0 {
+		fmt.Println(">>> no peers")
 		a.e.errs.append(fmt.Errorf("failed to get list of peers:%v", err))
 		return
 	}
 
-	a.cstate.Peers(len(peers))
+	fmt.Println(">>> got peers", peers)
+	a.e.cstate.Peers(len(peers))
 
 	for peer := range peersC {
 		if peer.Err() != nil {
 			fmt.Printf("err: %v\n", peer.Err())
 		}
 		if peer.Lost() {
-			a.cstate.PeerLost()
+			a.e.cstate.PeerLost()
 		}
 		if peer.Discovered() {
-			a.cstate.PeerFound()
+			a.e.cstate.PeerFound()
 		}
 		select {
 		case <-c.Done():

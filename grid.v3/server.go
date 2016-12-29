@@ -137,7 +137,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	name = strings.TrimSpace(name)
 	name = strings.Trim(name, "~\\!@#$%^&*()<>")
 
-	mailbox, err := NewMailbox(s.ctx, name, 10)
+	mailbox, err := NewMailbox(s, name, 10)
 	if err != nil {
 		return err
 	}

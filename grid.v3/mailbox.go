@@ -51,17 +51,7 @@ func (box *Mailbox) String() string {
 // started a grid Server. The context agrument must be the same one an
 // actor recieved via its Act method, or a context created using
 // ContextForNonActor.
-func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
-	namespace, err := ContextNamespace(c)
-	if err != nil {
-		return nil, err
-	}
-
-	s, err := contextServer(c)
-	if err != nil {
-		return nil, err
-	}
-
+func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 	if !isServerRunning(s) {
 		return nil, ErrServerNotRunning
 	}
@@ -74,7 +64,7 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	defer s.mu.Unlock()
 
 	// Namespaced name.
-	nsName := namespace + "-" + name
+	nsName := s.cfg.Namespace + "-" + name
 
 	_, ok := s.mailboxes[nsName]
 	if ok {
@@ -82,7 +72,7 @@ func NewMailbox(c context.Context, name string, size int) (*Mailbox, error) {
 	}
 
 	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-	err = s.registry.Register(timeout, nsName)
+	err := s.registry.Register(timeout, nsName)
 	cancel()
 	if err != nil {
 		return nil, err
