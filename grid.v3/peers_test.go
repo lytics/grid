@@ -13,7 +13,7 @@ import (
 )
 
 var cfg = ServerCfg{
-	Namespace: "g1", 
+	Namespace:     "g1",
 	LeaseDuration: 10 * time.Second,
 }
 
@@ -23,6 +23,13 @@ func TestPeersWatch(t *testing.T) {
 	etcd, cleanup := bootstrap(t)
 	defer cleanup()
 	errs := &testerrors{}
+
+	client, err := NewClient(etcd, ClientCfg{Namespace: "g1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	cstate.client = client
 
 	abort := make(chan struct{}, 1)
 	wg := sync.WaitGroup{}
@@ -124,6 +131,8 @@ type clusterState struct {
 	leadersLost  int64
 	peersFound   int64
 	peersLost    int64
+
+	client *Client
 }
 
 func (c *clusterState) assertEvenualClusterSize(t *testing.T, expected int64, timeout time.Duration) {
@@ -167,13 +176,7 @@ func (a *PeerTestleader) Act(c context.Context) {
 	a.cstate.LeaderFound()
 	defer a.cstate.LeaderLost()
 
-	client, err := ContextClient(c)
-	if err != nil {
-		a.e.errs.append(fmt.Errorf("failed to get client:%v", err))
-		return
-	}
-
-	peers, peersC, err := client.PeersWatch(c)
+	peers, peersC, err := a.cstate.client.PeersWatch(c)
 	if err != nil || len(peers) == 0 {
 		a.e.errs.append(fmt.Errorf("failed to get list of peers:%v", err))
 		return

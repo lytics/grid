@@ -1,8 +1,6 @@
 package grid
 
-import (
-	"time"
-)
+import "time"
 
 // ClientCfg where the only required argument is Namespace,
 // other fields with their zero value will receive defaults.
@@ -11,8 +9,6 @@ type ClientCfg struct {
 	Namespace string
 	// Timeout for communication with etcd, and internal gossip.
 	Timeout time.Duration
-	// LeaseDuration for data in etcd.
-	LeaseDuration time.Duration
 	// PeersRefreshInterval for polling list of peers in etcd.
 	PeersRefreshInterval time.Duration
 }
@@ -24,9 +20,6 @@ func setClientCfgDefaults(cfg *ClientCfg) {
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Second
-	}
-	if cfg.LeaseDuration == 0 {
-		cfg.LeaseDuration = 60 * time.Second
 	}
 }
 

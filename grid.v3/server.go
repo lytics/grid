@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -30,14 +31,16 @@ type contextVal struct {
 }
 
 var (
-	ErrNilResponse             = errors.New("nil response")
-	ErrInvalidEtcd             = errors.New("invalid etcd")
-	ErrInvalidContext          = errors.New("invalid context")
-	ErrInvalidNamespace        = errors.New("invalid namespace")
-	ErrAlreadyRegistered       = errors.New("already registered")
-	ErrInvalidMailboxName      = errors.New("invalid mailbox name")
-	ErrUnknownNetAddressType   = errors.New("unknown net address type")
-	ErrUnspecifiedNetAddressIP = errors.New("unspecified net address ip")
+	ErrNilResponse               = errors.New("nil response")
+	ErrInvalidEtcd               = errors.New("invalid etcd")
+	ErrInvalidContext            = errors.New("invalid context")
+	ErrInvalidNamespace          = errors.New("invalid namespace")
+	ErrServerNotRunning          = errors.New("server not running")
+	ErrAlreadyRegistered         = errors.New("already registered")
+	ErrInvalidMailboxName        = errors.New("invalid mailbox name")
+	ErrUnknownNetAddressType     = errors.New("unknown net address type")
+	ErrUnspecifiedNetAddressIP   = errors.New("unspecified net address ip")
+	ErrActorCreationNotSupported = errors.New("actor creation not supported")
 )
 
 // Logger used for logging when non-nil, default is nil.
@@ -58,7 +61,10 @@ type Server struct {
 }
 
 // NewServer for the grid. The namespace must contain only characters
-// in the set: [a-zA-Z0-9-_]
+// in the set: [a-zA-Z0-9-_] and no other.
+//
+// If argument g is nil, then this server will not create actors, will
+// not start a leader, and can be used only for serving mailboxes.
 func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 	setServerCfgDefaults(&cfg)
 
@@ -110,9 +116,8 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 
 	client, err := NewClient(s.etcd, ClientCfg{
-		Namespace:     s.cfg.Namespace,
-		Timeout:       s.cfg.Timeout,
-		LeaseDuration: s.cfg.LeaseDuration,
+		Namespace: s.cfg.Namespace,
+		Timeout:   s.cfg.Timeout,
 	})
 	if err != nil {
 		return err
@@ -133,7 +138,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	name = strings.TrimSpace(name)
 	name = strings.Trim(name, "~\\!@#$%^&*()<>")
 
-	mailbox, err := NewMailbox(s.ctx, name, 10)
+	mailbox, err := NewMailbox(s, name, 10)
 	if err != nil {
 		return err
 	}
@@ -155,7 +160,7 @@ func (s *Server) Serve(lis net.Listener) error {
 		}
 	}()
 	go func() {
-		if s.cfg.DisalowLeadership {
+		if s.g == nil || s.cfg.DisalowLeadership {
 			return
 		}
 		def := NewActorDef("leader")
@@ -198,10 +203,17 @@ func (s *Server) Stop() {
 		return len(s.mailboxes) == 0
 	}
 
+	t0 := time.Now()
 	for {
 		time.Sleep(200 * time.Millisecond)
 		if zeroMailboxes() {
 			break
+		}
+		if Logger != nil && time.Now().Sub(t0) > 10*time.Second {
+			t0 = time.Now()
+			for _, mailbox := range s.mailboxes {
+				Logger.Printf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
+			}
 		}
 	}
 
@@ -313,6 +325,10 @@ func (s *Server) startActor(timeout time.Duration, def *ActorDef) error {
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
 func (s *Server) startActorC(c context.Context, def *ActorDef) error {
+	if s.g == nil {
+		return ErrActorCreationNotSupported
+	}
+
 	def.Namespace = s.cfg.Namespace
 
 	if err := ValidateActorDef(def); err != nil {
@@ -335,7 +351,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	}
 
 	// The actor's context contains its full id, it's name and the
-	// full registration, which contains the actors namespace.
+	// full registration, which contains the actor's namespace.
 	actorCtx := context.WithValue(s.ctx, contextKey, &contextVal{
 		server:    s,
 		actorID:   def.ID(),
@@ -353,7 +369,8 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		defer func() {
 			if err := recover(); err != nil {
 				if Logger != nil {
-					log.Printf("panic in actor: %v, recovered with: %v", def.ID(), err)
+					stack := niceStack(debug.Stack())
+					log.Printf("panic in actor: %v, recovered from: %v, stack: %v", def.ID(), err, stack)
 				}
 			}
 		}()
@@ -375,4 +392,8 @@ func formatAddress(addr net.Addr) (string, error) {
 		}
 		return fmt.Sprintf("%v:%v", addr.IP, addr.Port), nil
 	}
+}
+
+func isServerRunning(s *Server) bool {
+	return !(s == nil || s.ctx == nil || s.client == nil || s.cancel == nil || s.registry == nil)
 }

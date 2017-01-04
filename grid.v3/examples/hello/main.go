@@ -17,12 +17,11 @@ import (
 
 const timeout = 2 * time.Second
 
-type LeaderActor struct{}
+type LeaderActor struct {
+	client *grid.Client
+}
 
 func (a *LeaderActor) Act(c context.Context) {
-	client, err := grid.ContextClient(c)
-	successOrDie(err)
-
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -33,7 +32,7 @@ func (a *LeaderActor) Act(c context.Context) {
 			return
 		case <-ticker.C:
 			// Ask for current peers.
-			peers, err := client.Peers(timeout)
+			peers, err := a.client.Peers(timeout)
 			successOrDie(err)
 
 			// Check for new peers.
@@ -48,7 +47,7 @@ func (a *LeaderActor) Act(c context.Context) {
 				def.Type = "worker"
 
 				// On new peers start the worker.
-				_, err := client.Request(timeout, peer, def)
+				_, err := a.client.Request(timeout, peer, def)
 				successOrDie(err)
 			}
 		}
@@ -69,13 +68,15 @@ func (a *WorkerActor) Act(ctx context.Context) {
 }
 
 // HelloGrid is a grid, because it has the MakeActor method.
-type HelloGrid struct{}
+type HelloGrid struct {
+	client *grid.Client
+}
 
 // MakeActor given the definition of the actor.
-func (e HelloGrid) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
+func (hg HelloGrid) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
 	switch def.Type {
 	case "leader":
-		return &LeaderActor{}, nil
+		return &LeaderActor{client: hg.client}, nil
 	case "worker":
 		return &WorkerActor{}, nil
 	default:
@@ -90,9 +91,10 @@ func main() {
 	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
 	successOrDie(err)
 
-	cfg := grid.ServerCfg{Namespace: "hellogrid"}
+	client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "hellogrid"})
+	successOrDie(err)
 
-	g, err := grid.NewServer(etcd, cfg, HelloGrid{})
+	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "hellogrid"}, HelloGrid{client})
 	successOrDie(err)
 
 	// Check for exit signal, ie: ctrl-c
@@ -101,7 +103,7 @@ func main() {
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		<-sig
 		fmt.Println("shutting down...")
-		g.Stop()
+		server.Stop()
 		fmt.Println("shutdown complete")
 	}()
 
@@ -114,7 +116,7 @@ func main() {
 	// start this app multiple times on different port
 	// numbers there will only be one leader, it's a
 	// singleton.
-	err = g.Serve(lis)
+	err = server.Serve(lis)
 	successOrDie(err)
 }
 

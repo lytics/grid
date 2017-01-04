@@ -64,7 +64,6 @@ func New(client *etcdv3.Client) (*Registry, error) {
 		done:          make(chan bool),
 		exited:        make(chan bool),
 		kv:            etcdv3.NewKV(client),
-		lease:         etcdv3.NewLease(client),
 		leaseID:       -1,
 		client:        client,
 		Timeout:       10 * time.Second,
@@ -80,6 +79,7 @@ func (rr *Registry) Start() (<-chan error, error) {
 	if rr.LeaseDuration < minLeaseDuration {
 		return nil, ErrLeaseDurationTooShort
 	}
+	rr.lease = etcdv3.NewLease(rr.client)
 
 	timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
 	res, err := rr.lease.Grant(timeout, int64(rr.LeaseDuration.Seconds()))
