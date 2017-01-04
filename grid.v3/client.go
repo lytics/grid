@@ -202,7 +202,7 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 		// then each registration must contain the namespace
 		// as a prefix of the key.
 		if err != nil {
-			panic("registry key without proper namespace prefix")
+			panic("registry key without proper namespace prefix: " + reg.Key)
 		}
 		peers = append(peers, peer)
 	}
