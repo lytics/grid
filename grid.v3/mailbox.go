@@ -64,7 +64,10 @@ func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 	defer s.mu.Unlock()
 
 	// Namespaced name.
-	nsName := s.cfg.Namespace + "-" + name
+	nsName, err := namespaceName(s.cfg.Namespace, name)
+	if err != nil {
+		return nil, err
+	}
 
 	_, ok := s.mailboxes[nsName]
 	if ok {
@@ -72,7 +75,7 @@ func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 	}
 
 	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-	err := s.registry.Register(timeout, nsName)
+	err = s.registry.Register(timeout, nsName)
 	cancel()
 	if err != nil {
 		return nil, err

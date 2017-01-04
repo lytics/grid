@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -28,19 +27,6 @@ type contextVal struct {
 	actorID   string
 	actorName string
 }
-
-var (
-	ErrNilResponse               = errors.New("nil response")
-	ErrInvalidEtcd               = errors.New("invalid etcd")
-	ErrInvalidContext            = errors.New("invalid context")
-	ErrInvalidNamespace          = errors.New("invalid namespace")
-	ErrServerNotRunning          = errors.New("server not running")
-	ErrAlreadyRegistered         = errors.New("already registered")
-	ErrInvalidMailboxName        = errors.New("invalid mailbox name")
-	ErrUnknownNetAddressType     = errors.New("unknown net address type")
-	ErrUnspecifiedNetAddressIP   = errors.New("unspecified net address ip")
-	ErrActorCreationNotSupported = errors.New("actor creation not supported")
-)
 
 // Logger used for logging when non-nil, default is nil.
 var Logger *log.Logger
@@ -82,19 +68,8 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 	}, nil
 }
 
-// Serve the grid on the listener, and start the leader actor, ie:
-// the MakeActor method will be called with defintion:
-//
-//     ActorDef{
-//         Name: "leader",
-//         Type: "leader",
-//     }
-//
-// The returned actor will be run and can be considered the
-// entry-point of the grid.
-//
-// The listener address type must be net.TCPAddr, otherwise an error
-// will be returned.
+// Serve the grid on the listener. The listener address type must be
+// net.TCPAddr, otherwise an error will be returned.
 func (s *Server) Serve(lis net.Listener) error {
 	r, err := registry.New(s.etcd)
 	if err != nil {
@@ -130,50 +105,18 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.ctx = ctx
 	s.cancel = cancel
 
-	name := fmt.Sprintf("grid-%v", s.registry.Address)
+	name := fmt.Sprintf("peer-%v", s.registry.Address)
 	name = strings.Replace(name, ":", "-", -1)
 	name = strings.Replace(name, ".", "-", -1)
-	name = strings.Replace(name, "/", "", -1)
-	name = strings.TrimSpace(name)
+	name = strings.Replace(name, "/", "-", -1)
 	name = strings.Trim(name, "~\\!@#$%^&*()<>")
+	name = strings.TrimSpace(name)
 
 	mailbox, err := NewMailbox(s, name, 10)
 	if err != nil {
 		return err
 	}
 	go s.runMailbox(mailbox)
-
-	runtimeErrors := make(chan error, 1)
-	go func() {
-		select {
-		case <-ctx.Done():
-		case err := <-regFaults:
-			if err == nil {
-				return
-			}
-			select {
-			case runtimeErrors <- err:
-			default:
-			}
-			s.Stop()
-		}
-	}()
-	go func() {
-		if s.g == nil || s.cfg.DisalowLeadership {
-			return
-		}
-		def := NewActorDef("leader")
-		def.Namespace = s.cfg.Namespace
-		for i := 0; i < 6; i++ {
-			time.Sleep(1 * time.Second)
-			err := s.startActor(s.cfg.Timeout, def)
-			if err == nil || (err != nil && strings.Contains(err.Error(), "already registered")) {
-				return
-			}
-		}
-		runtimeErrors <- fmt.Errorf("leader start failed: %v", err)
-		s.Stop()
-	}()
 
 	RegisterWireServer(s.grpc, s)
 	err = s.grpc.Serve(lis)
@@ -184,7 +127,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 
 	select {
-	case err = <-runtimeErrors:
+	case err = <-regFaults:
 	default:
 	}
 
@@ -328,9 +271,15 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		return ErrActorCreationNotSupported
 	}
 
-	def.Namespace = s.cfg.Namespace
+	if !isNameValid(def.Type) {
+		return ErrInvalidActorType
+	}
+	if !isNameValid(def.Name) {
+		return ErrInvalidActorName
+	}
 
-	if err := ValidateActorDef(def); err != nil {
+	nsName, err := namespaceName(s.cfg.Namespace, def.Name)
+	if err != nil {
 		return err
 	}
 
@@ -338,12 +287,15 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	if err != nil {
 		return err
 	}
+	if actor == nil {
+		return ErrGridReturnedNilActor
+	}
 
 	// Register the actor. This acts as a distributed mutex to
 	// prevent an actor from starting twice on one system or
 	// many systems.
 	timeout, cancel := context.WithTimeout(c, s.cfg.Timeout)
-	err = s.registry.Register(timeout, def.regID())
+	err = s.registry.Register(timeout, nsName)
 	cancel()
 	if err != nil {
 		return err
@@ -353,7 +305,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	// full registration, which contains the actor's namespace.
 	actorCtx := context.WithValue(s.ctx, contextKey, &contextVal{
 		server:    s,
-		actorID:   def.ID(),
+		actorID:   nsName,
 		actorName: def.Name,
 	})
 
@@ -362,13 +314,13 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	go func() {
 		defer func() {
 			timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-			s.registry.Deregister(timeout, def.ID())
+			s.registry.Deregister(timeout, nsName)
 			cancel()
 		}()
 		defer func() {
 			if err := recover(); err != nil {
 				if Logger != nil {
-					log.Printf("panic in actor: %v, recovered from: %v", def.ID(), err)
+					log.Printf("panic in namespace: %v, actor: %v, recovered from: %v", s.cfg.Namespace, def.Name, err)
 				}
 			}
 		}()

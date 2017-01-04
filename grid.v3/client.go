@@ -184,23 +184,27 @@ func (c *Client) Peers(timeout time.Duration) ([]string, error) {
 // the Serve method to act as a server for the namespace. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) PeersC(ctx context.Context) ([]string, error) {
-	regs, err := c.registry.FindRegistrations(ctx, c.cfg.Namespace+"-grid-")
+	nsPrefix, err := namespaceName(c.cfg.Namespace, "peer-")
+	if err != nil {
+		return nil, err
+	}
+	regs, err := c.registry.FindRegistrations(ctx, nsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
 	peers := make([]string, 0)
 	for _, reg := range regs {
-		prefix := c.cfg.Namespace + "-"
+		peer, err := stripNamespace(c.cfg.Namespace, reg.Key)
 		// INVARIANT
 		// Under all circumstances if a registration is returned
 		// from the prefix scan above, ie: FindRegistrations,
 		// then each registration must contain the namespace
 		// as a prefix of the key.
-		if len(reg.Key) <= len(prefix) {
+		if err != nil {
 			panic("registry key without proper namespace prefix")
 		}
-		peers = append(peers, reg.Key[len(prefix):])
+		peers = append(peers, peer)
 	}
 
 	return peers, nil
@@ -221,11 +225,14 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	}
 
 	// Namespaced receiver name.
-	nsReceiver := c.cfg.Namespace + "-" + receiver
+	nsReceiver, err := namespaceName(c.cfg.Namespace, receiver)
+	if err != nil {
+		return nil, err
+	}
 
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(env)
+	err = enc.Encode(env)
 	if err != nil {
 		return nil, err
 	}
