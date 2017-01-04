@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -320,7 +321,9 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		defer func() {
 			if err := recover(); err != nil {
 				if Logger != nil {
-					log.Printf("panic in namespace: %v, actor: %v, recovered from: %v", s.cfg.Namespace, def.Name, err)
+					stack := niceStack(debug.Stack())
+					log.Printf("panic in namespace: %v, actor: %v, recovered from: %v, stack: %v",
+						s.cfg.Namespace, def.Name, err, stack)
 				}
 			}
 		}()

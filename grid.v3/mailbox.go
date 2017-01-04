@@ -48,9 +48,7 @@ func (box *Mailbox) String() string {
 // can claim a particular name.
 //
 // Using a mailbox requires that the process creating the mailbox also
-// started a grid Server. The context agrument must be the same one an
-// actor recieved via its Act method, or a context created using
-// ContextForNonActor.
+// started a grid Server.
 func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 	if !isServerRunning(s) {
 		return nil, ErrServerNotRunning

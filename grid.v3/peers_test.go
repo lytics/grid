@@ -5,17 +5,14 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/bmizerany/assert"
 )
 
-var clientCfg = ClientCfg{
-	Namespace: "g1",
-}
-
-var serverCfg = ServerCfg{
+var cfg = ServerCfg{
 	Namespace:     "g1",
 	LeaseDuration: 10 * time.Second,
 }
@@ -27,17 +24,19 @@ func TestPeersWatch(t *testing.T) {
 	defer cleanup()
 	errs := &testerrors{}
 
-	client, err := NewClient(etcd, clientCfg)
+	client, err := NewClient(etcd, ClientCfg{Namespace: "g1"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.Close()
+	cstate.client = client
 
 	abort := make(chan struct{}, 1)
 	wg := sync.WaitGroup{}
 	gridnodes := []*Server{}
 	for i := 0; i < 4; i++ {
-		e := &PeerTestGrid{errs: errs, cstate: cstate, client: client}
-		g, err := NewServer(etcd, serverCfg, e)
+		e := &PeerTestGrid{errs: errs, cstate: cstate}
+		g, err := NewServer(etcd, cfg, e)
 		if err != nil {
 			t.Fatalf("NewServer failed: %v", err)
 		}
@@ -71,7 +70,7 @@ func TestPeersWatch(t *testing.T) {
 		}(gg)
 	}
 	//wait for all the cluster's peers to join up.
-	cstate.assertEvenualClusterSize(t, len(gridnodes), 30*time.Second)
+	cstate.assertEvenualClusterSize(t, int64(len(gridnodes)), 30*time.Second)
 
 	{
 		// TC add and remove a peer.
@@ -82,14 +81,14 @@ func TestPeersWatch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("listen failed: %v", err)
 		}
-		e := &PeerTestGrid{errs: errs, client: client}
-		g, err := NewServer(etcd, serverCfg, e)
+		e := &PeerTestGrid{errs: errs}
+		g, err := NewServer(etcd, cfg, e)
 		if err != nil {
 			t.Fatalf("NewServer failed: %v", err)
 		}
 		go func() {
 			//wait for the peer to join and be discovered by the leader.
-			cstate.assertEvenualClusterSize(t, len(gridnodes)+1, 30*time.Second)
+			cstate.assertEvenualClusterSize(t, int64(len(gridnodes)+1), 30*time.Second)
 			g.Stop()
 		}()
 		err = g.Serve(lis)
@@ -97,7 +96,7 @@ func TestPeersWatch(t *testing.T) {
 			errs.append(err)
 		}
 		//wait for the cluster to return to it's orginal size.
-		cstate.assertEvenualClusterSize(t, len(gridnodes), 30*time.Second)
+		cstate.assertEvenualClusterSize(t, int64(len(gridnodes)), 30*time.Second)
 	}
 
 	close(abort)
@@ -106,115 +105,94 @@ func TestPeersWatch(t *testing.T) {
 	if len(errs.errors()) > 0 {
 		t.Fatalf("we got errors: %v", errs.errors())
 	}
-	assert.Equal(t, cstate.leadersFound, 1)
-	assert.Equal(t, cstate.leadersLost, 1)
-	assert.Equal(t, cstate.peersFound, 1)
-	assert.Equal(t, cstate.peersLost, 1)
+	assert.Equal(t, atomic.LoadInt64(&(cstate.leadersFound)), int64(1))
+	assert.Equal(t, atomic.LoadInt64(&(cstate.leadersLost)), int64(1))
+	assert.Equal(t, atomic.LoadInt64(&(cstate.peersFound)), int64(1))
+	assert.Equal(t, atomic.LoadInt64(&(cstate.peersLost)), int64(1))
 }
 
 type PeerTestGrid struct {
 	errs   *testerrors
 	cstate *clusterState
-	client *Client
 }
 
 func (e *PeerTestGrid) MakeActor(def *ActorDef) (Actor, error) {
 	switch def.Type {
 	case "leader":
-		return &PeerTestleader{e}, nil
+		return &PeerTestleader{e, e.cstate}, nil
 	}
 	return nil, fmt.Errorf("unknow actor type: %v", def.Type)
 }
 
 type clusterState struct {
-	mu sync.Mutex
+	currentPeers int64
 
-	currentPeers int
-	leadersFound int
-	leadersLost  int
-	peersFound   int
-	peersLost    int
+	leadersFound int64
+	leadersLost  int64
+	peersFound   int64
+	peersLost    int64
+
+	client *Client
 }
 
-func (c *clusterState) assertEvenualClusterSize(t *testing.T, expected int, timeout time.Duration) {
+func (c *clusterState) assertEvenualClusterSize(t *testing.T, expected int64, timeout time.Duration) {
 	st := time.Now()
+	addr := &c.currentPeers
 	for {
 		time.Sleep(100 * time.Millisecond)
-		cnt := c.CurrentPeersCount()
-		if cnt == expected {
+		csize := atomic.LoadInt64(addr)
+		if csize == expected {
 			return
 		} else if time.Since(st) >= timeout {
-			t.Fatalf("the expected cluster size of %v wasn't reach within %v: final cluster size was:%v", expected, timeout, cnt)
+			t.Fatalf("the expected cluster size of %v wasn't reach within %v: final cluster size was:%v", expected, timeout, csize)
 			return
 		}
 	}
 }
-
-func (c *clusterState) CurrentPeersCount() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	return c.currentPeers
-}
-
 func (c *clusterState) LeaderFound() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.leadersFound++
+	atomic.AddInt64(&(c.leadersFound), 1)
 }
 func (c *clusterState) LeaderLost() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.leadersLost++
+	atomic.AddInt64(&(c.leadersLost), 1)
 }
 func (c *clusterState) Peers(cnt int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.currentPeers += cnt
+	atomic.AddInt64(&(c.currentPeers), int64(cnt))
 }
-
 func (c *clusterState) PeerFound() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.peersFound++
-	c.currentPeers++
+	atomic.AddInt64(&(c.peersFound), 1)
+	atomic.AddInt64(&(c.currentPeers), 1)
 }
 func (c *clusterState) PeerLost() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.peersLost++
-	c.currentPeers--
+	atomic.AddInt64(&(c.peersLost), 1)
+	atomic.AddInt64(&(c.currentPeers), -1)
 }
 
 type PeerTestleader struct {
-	e *PeerTestGrid
+	e      *PeerTestGrid
+	cstate *clusterState
 }
 
 func (a *PeerTestleader) Act(c context.Context) {
-	a.e.cstate.LeaderFound()
-	defer a.e.cstate.LeaderLost()
+	a.cstate.LeaderFound()
+	defer a.cstate.LeaderLost()
 
-	peers, peersC, err := a.e.client.PeersWatch(c)
+	peers, peersC, err := a.cstate.client.PeersWatch(c)
 	if err != nil || len(peers) == 0 {
 		a.e.errs.append(fmt.Errorf("failed to get list of peers:%v", err))
 		return
 	}
 
-	a.e.cstate.Peers(len(peers))
+	a.cstate.Peers(len(peers))
+
 	for peer := range peersC {
 		if peer.Err() != nil {
 			fmt.Printf("err: %v\n", peer.Err())
 		}
 		if peer.Lost() {
-			a.e.cstate.PeerLost()
+			a.cstate.PeerLost()
 		}
 		if peer.Discovered() {
-			a.e.cstate.PeerFound()
+			a.cstate.PeerFound()
 		}
 		select {
 		case <-c.Done():
