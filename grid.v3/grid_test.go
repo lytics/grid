@@ -97,12 +97,12 @@ func bootstrap(t *testing.T) (*etcdv3.Client, testetcd.Cleanupfn) {
 	}
 
 	endpoints := []string{}
-	for _, u := range srvcfg.LCendpoints {
-		urls = append(urls, u.String())
+	for _, u := range srvcfg.LCUrls {
+		endpoints = append(endpoints, u.String())
 	}
 
 	cfg := etcdv3.Config{
-		Endpoints: urls,
+		Endpoints: endpoints,
 	}
 
 	etcd, err := etcdv3.New(cfg)

@@ -287,16 +287,16 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	return cc.client, nil
 }
 
-// difference of sets a and b, in mathematical notation: A \ B,
+// minus of sets a and b, in mathematical notation: A \ B,
 // ie: all elements in A that are not in B.
 //
-// See: https://en.wikipedia.org/wiki/Complement_(set_theory)
+// See: https://www.techonthenet.com/sql/minus.php
 //
 // Example:
 //    lostPeers := difference(oldPeers, currentPeers)
 //    discoveredPeers := difference(currentPeers, oldPeers)
 //
-func difference(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
+func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
 	res := map[string]struct{}{}
 	for in := range a {
 		if _, skip := b[in]; !skip {
