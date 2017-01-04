@@ -18,14 +18,15 @@ const (
 )
 
 var (
-	ErrNotOwner              = errors.New("not owner")
-	ErrNotStarted            = errors.New("not started")
-	ErrUnknownKey            = errors.New("unknown key")
-	ErrInvalidEtcd           = errors.New("invalid etcd")
-	ErrAlreadyRegistered     = errors.New("already registered")
-	ErrFailedRegistration    = errors.New("failed registration")
-	ErrFailedDeregistration  = errors.New("failed deregistration")
-	ErrLeaseDurationTooShort = errors.New("lease duration too short")
+	ErrNotOwner                = errors.New("not owner")
+	ErrNotStarted              = errors.New("not started")
+	ErrUnknownKey              = errors.New("unknown key")
+	ErrInvalidEtcd             = errors.New("invalid etcd")
+	ErrAlreadyRegistered       = errors.New("already registered")
+	ErrFailedRegistration      = errors.New("failed registration")
+	ErrFailedDeregistration    = errors.New("failed deregistration")
+	ErrLeaseDurationTooShort   = errors.New("lease duration too short")
+	ErrWatchClosedUnexpectedly = errors.New("watch closed unexpectedly")
 )
 
 var (
@@ -147,6 +148,108 @@ func (rr *Registry) Stop() {
 	}
 	close(rr.done)
 	<-rr.exited
+}
+
+type ChangeType int
+
+const (
+	Delete ChangeType = 0
+	Modify ChangeType = 1
+	Create ChangeType = 2
+)
+
+type RegistryChange struct {
+	Key   string
+	Reg   *Registration
+	Type  ChangeType
+	Error error
+}
+
+func (rc *RegistryChange) String() string {
+	typ := "delete"
+	switch rc.Type {
+	case Modify:
+		typ = "modify"
+	case Create:
+		typ = "create"
+	}
+	return fmt.Sprintf("key: %v, type: %v, registration: %v", rc.Key, typ, rc.Reg)
+}
+
+func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-chan *RegistryChange, error) {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+
+	getRes, err := rr.kv.Get(c, prefix, etcdv3.WithPrefix())
+	if err != nil {
+		return nil, nil, err
+	}
+	registrations := make([]*Registration, 0, len(getRes.Kvs))
+	for _, kv := range getRes.Kvs {
+		reg := &Registration{}
+		err = json.Unmarshal(kv.Value, reg)
+		if err != nil {
+			return nil, nil, err
+		}
+		registrations = append(registrations, reg)
+	}
+
+	// Channel to publish registry changes.
+	changes := make(chan *RegistryChange)
+
+	// Write a change or exit the watcher.
+	put := func(change *RegistryChange) {
+		select {
+		case <-c.Done():
+			return
+		case changes <- change:
+		}
+	}
+
+	// Create a change from an event.
+	createChange := func(event *etcdv3.Event) *RegistryChange {
+		change := &RegistryChange{Key: string(event.Kv.Key)}
+		reg := &Registration{}
+		err := json.Unmarshal(event.Kv.Value, reg)
+		if err != nil {
+			change.Error = err
+		} else {
+			change.Reg = reg
+			if event.IsCreate() {
+				change.Type = Create
+			}
+			if event.IsModify() {
+				change.Type = Modify
+			}
+		}
+		return change
+	}
+
+	// Watch deltas in etcd, with the give prefix, starting
+	// at the revision of the get call above.
+	deltas := rr.client.Watch(c, prefix, etcdv3.WithPrefix(), etcdv3.WithRev(getRes.Header.Revision))
+	go func() {
+		for {
+			select {
+			case <-c.Done():
+				return
+			case delta, open := <-deltas:
+				if !open {
+					put(&RegistryChange{Error: ErrWatchClosedUnexpectedly})
+					return
+				}
+				if delta.Err() != nil {
+					put(&RegistryChange{Error: delta.Err()})
+					return
+				}
+				for _, event := range delta.Events {
+					put(createChange(event))
+				}
+			}
+		}
+	}()
+
+	return registrations, changes, nil
 }
 
 // FindRegistrations associated with the prefix.

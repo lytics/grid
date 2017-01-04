@@ -24,6 +24,7 @@ var (
 	ErrInvalidMailboxName        = errors.New("invalid mailbox name")
 	ErrGridReturnedNilActor      = errors.New("grid returned nil actor")
 	ErrUnknownNetAddressType     = errors.New("unknown net address type")
+	ErrWatchClosedUnexpectedly   = errors.New("watch closed unexpectedly")
 	ErrUnspecifiedNetAddressIP   = errors.New("unspecified net address ip")
 	ErrActorCreationNotSupported = errors.New("actor creation not supported")
 )

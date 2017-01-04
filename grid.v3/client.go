@@ -13,12 +13,12 @@ import (
 	"google.golang.org/grpc"
 )
 
-type peerWatchDelta int
+type changeType int
 
 const (
-	peerErr        peerWatchDelta = 0
-	peerDiscovered peerWatchDelta = 1
-	peerLost       peerWatchDelta = 2
+	peerErr        changeType = 0
+	peerDiscovered changeType = 1
+	peerLost       changeType = 2
 )
 
 type clientAndConn struct {
@@ -26,33 +26,33 @@ type clientAndConn struct {
 	client WireClient
 }
 
-// PeerChangeEvent indicating that a peer has been discovered,
+// PeerChange indicating that a peer has been discovered,
 // lost, or some error has occured with a peer or the watch
 // of peers.
-type PeerChangeEvent struct {
-	peer        string
-	err         error
-	stateChange peerWatchDelta
+type PeerChange struct {
+	peer   string
+	err    error
+	change changeType
 }
 
 // Peer name that caused the event.
-func (p *PeerChangeEvent) Peer() string {
+func (p *PeerChange) Peer() string {
 	return p.peer
 }
 
 // Discovered peer.
-func (p *PeerChangeEvent) Discovered() bool {
-	return p.stateChange == peerDiscovered
+func (p *PeerChange) Discovered() bool {
+	return p.change == peerDiscovered
 }
 
 // Lost peer.
-func (p *PeerChangeEvent) Lost() bool {
-	return p.stateChange == peerLost
+func (p *PeerChange) Lost() bool {
+	return p.change == peerLost
 }
 
 // Err caught watching peers. The error is not
 // associated with any particular peer.
-func (p *PeerChangeEvent) Err() error {
+func (p *PeerChange) Err() error {
 	return p.err
 }
 
@@ -102,12 +102,14 @@ func (c *Client) Close() error {
 //     client, err := grid.NewClient(...)
 //     ...
 //
-//     watch, currentpeers := client.PeersWatch(c)
+//     currentpeers, watch, err := client.PeersWatch(c)
+//     ...
+//
 //     for _, peer := range currentpeers {
 //         // Do work regarding peer.
 //     }
 //
-//     for event := range watch.C {
+//     for event := range watch {
 //         if event.Err() != nil {
 //             // Error occured watching peers, deal with error.
 //         }
@@ -118,58 +120,50 @@ func (c *Client) Close() error {
 //             // New peer discovered, assign work, get data, reschedule, etc.
 //         }
 //     }
-func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEvent, error) {
-	peers, err := c.Peers(c.cfg.Timeout)
+func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChange, error) {
+	nsName, err := namespaceName(c.cfg.Namespace, "peer-")
 	if err != nil {
 		return nil, nil, err
 	}
 
-	currentPeers := map[string]struct{}{}
-	for _, p := range peers {
-		currentPeers[p] = struct{}{}
+	regs, changes, err := c.registry.Watch(ctx, nsName)
+	peers := peersFromRegs(c.cfg.Namespace, regs)
+
+	peerChanges := make(chan *PeerChange)
+	put := func(change *PeerChange) {
+		select {
+		case <-ctx.Done():
+		case peerChanges <- change:
+		}
 	}
-
-	watchchan := make(chan *PeerChangeEvent)
 	go func() {
-		defer close(watchchan)
-
-		ticker := time.NewTicker(c.cfg.PeersRefreshInterval)
-		defer ticker.Stop()
-
-		oldPeers := currentPeers
+		defer close(peerChanges)
 		for {
 			select {
-			case <-ticker.C:
-				peers, err := c.Peers(c.cfg.Timeout)
-				if err != nil {
-					select {
-					case watchchan <- &PeerChangeEvent{err: err}:
-					case <-ctx.Done():
-					}
-					return
-				}
-
-				currentPeers := map[string]struct{}{}
-				for _, p := range peers {
-					currentPeers[p] = struct{}{}
-				}
-				lostPeers := difference(oldPeers, currentPeers)
-				discoveredPeers := difference(currentPeers, oldPeers)
-				oldPeers = currentPeers
-
-				for peer := range lostPeers {
-					watchchan <- &PeerChangeEvent{peer, nil, peerLost}
-				}
-				for peer := range discoveredPeers {
-					watchchan <- &PeerChangeEvent{peer, nil, peerDiscovered}
-				}
 			case <-ctx.Done():
 				return
+			case change, open := <-changes:
+				if !open {
+					put(&PeerChange{err: ErrWatchClosedUnexpectedly})
+					return
+				}
+				if change.Error != nil {
+					put(&PeerChange{err: err})
+					return
+				}
+				switch change.Type {
+				case registry.Delete:
+					peer := peerFromReg(c.cfg.Namespace, change.Reg)
+					put(&PeerChange{peer: peer, change: peerLost})
+				case registry.Create, registry.Modify:
+					peer := peerFromReg(c.cfg.Namespace, change.Reg)
+					put(&PeerChange{peer: peer, change: peerDiscovered})
+				}
 			}
 		}
 	}()
 
-	return peers, watchchan, nil
+	return peers, peerChanges, nil
 }
 
 // Peers in this client's namespace. A peer is any process that called
@@ -193,20 +187,7 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	peers := make([]string, 0)
-	for _, reg := range regs {
-		peer, err := stripNamespace(c.cfg.Namespace, reg.Key)
-		// INVARIANT
-		// Under all circumstances if a registration is returned
-		// from the prefix scan above, ie: FindRegistrations,
-		// then each registration must contain the namespace
-		// as a prefix of the key.
-		if err != nil {
-			panic("registry key without proper namespace prefix: " + reg.Key)
-		}
-		peers = append(peers, peer)
-	}
-
+	peers := peersFromRegs(c.cfg.Namespace, regs)
 	return peers, nil
 }
 
@@ -323,4 +304,26 @@ func difference(a map[string]struct{}, b map[string]struct{}) map[string]struct{
 		}
 	}
 	return res
+}
+
+func peersFromRegs(namespace string, regs []*registry.Registration) []string {
+	peers := make([]string, 0)
+	for _, reg := range regs {
+		peer := peerFromReg(namespace, reg)
+		peers = append(peers, peer)
+	}
+	return peers
+}
+
+func peerFromReg(namespace string, reg *registry.Registration) string {
+	peer, err := stripNamespace(namespace, reg.Key)
+	// INVARIANT
+	// Under all circumstances if a registration is returned
+	// from the prefix scan above, ie: FindRegistrations,
+	// then each registration must contain the namespace
+	// as a prefix of the key.
+	if err != nil {
+		panic("registry key without proper namespace prefix: " + reg.Key)
+	}
+	return peer
 }

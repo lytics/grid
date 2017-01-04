@@ -289,6 +289,87 @@ func TestKeepAlive(t *testing.T) {
 	}
 }
 
+func TestWatch(t *testing.T) {
+	client, r, etcdcleanup := bootstrap(t, dontStart)
+	defer etcdcleanup()
+	defer client.Close()
+
+	// Change the minimum for sake of testing quickly.
+	minLeaseDuration = 1 * time.Second
+
+	// Use the minimum.
+	r.LeaseDuration = 1 * time.Second
+	_, err := r.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initial := map[string]bool{
+		"peer-1": true,
+		"peer-2": true,
+		"peer-3": true,
+	}
+
+	for peer := range initial {
+		timeout, cancel := timeoutContext()
+		err := r.Register(timeout, peer)
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	watching := make(chan bool)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		found, changes, err := r.Watch(ctx, "peer")
+		if err != nil {
+			panic(err.Error())
+		}
+		for _, peer := range found {
+			if !initial[peer.Key] {
+				panic("missing initial peer: " + peer.Key)
+			}
+		}
+		close(watching)
+		for change := range changes {
+			fmt.Println(">>>>>>", change)
+		}
+	}()
+
+	<-watching
+
+	additions := map[string]bool{
+		"peer-4": true,
+		"peer-5": true,
+	}
+
+	for peer := range additions {
+		timeout, cancel := timeoutContext()
+		err := r.Register(timeout, peer)
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	for peer := range initial {
+		timeout, cancel := timeoutContext()
+		err := r.Deregister(timeout, peer)
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	cancel()
+	time.Sleep(3 * time.Second)
+	r.Stop()
+	etcdcleanup()
+}
+
 func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, testetcd.Cleanupfn) {
 	srvcfg, cleanup, err := testetcd.StartEtcd(t)
 	if err != nil {
