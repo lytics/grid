@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -368,7 +369,8 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		defer func() {
 			if err := recover(); err != nil {
 				if Logger != nil {
-					log.Printf("panic in actor: %v, recovered from: %v", def.ID(), err)
+					stack := niceStack(debug.Stack())
+					log.Printf("panic in actor: %v, recovered from: %v, stack: %v", def.ID(), err, stack)
 				}
 			}
 		}()
