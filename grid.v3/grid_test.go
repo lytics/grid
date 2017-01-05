@@ -15,9 +15,7 @@ func TestServerExample(t *testing.T) {
 	etcd, cleanup := bootstrap(t)
 	defer cleanup()
 
-	grid := &WorkerGrid{
-		WorkerStopped: make(chan bool, 1),
-	}
+	grid := WorkerGrid(make(chan bool, 1))
 
 	server, err := NewServer(etcd, ServerCfg{Namespace: "example_grid"}, grid)
 	if err != nil {
@@ -63,31 +61,29 @@ func TestServerExample(t *testing.T) {
 	server.Stop()
 
 	select {
-	case <-grid.WorkerStopped:
+	case <-grid:
 	default:
 		t.Fatal("worker did not start and stop")
 	}
 }
 
-type WorkerGrid struct {
-	WorkerStopped chan bool
-}
+type WorkerGrid chan bool
 
-func (*WorkerGrid) MakeActor(def *ActorDef) (Actor, error) {
+func (g WorkerGrid) MakeActor(def *ActorDef) (Actor, error) {
 	switch def.Type {
 	case "worker":
-		return &ExampleWorker{}, nil
+		return &ExampleWorker{finished: g}, nil
 	}
 	return nil, fmt.Errorf("unknow actor type: %v", def.Type)
 }
 
 type ExampleWorker struct {
-	state *WorkerGrid
+	finished WorkerGrid
 }
 
 func (a *ExampleWorker) Act(c context.Context) {
 	<-c.Done()
-	a.state.WorkerStopped <- true
+	a.finished <- true
 }
 
 func bootstrap(t *testing.T) (*etcdv3.Client, testetcd.Cleanupfn) {
