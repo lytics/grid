@@ -119,6 +119,43 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 	go s.runMailbox(mailbox)
 
+	runtimeErrors := make(chan error, 1)
+	go func() {
+		select {
+		case <-ctx.Done():
+		case err := <-regFaults:
+			if err == nil {
+				return
+			}
+			select {
+			case runtimeErrors <- err:
+			default:
+			}
+			s.Stop()
+		}
+	}()
+	go func() {
+		if s.g == nil || s.cfg.DisalowLeadership {
+			return
+		}
+		def := NewActorDef("leader")
+		for i := 0; i < 6; i++ {
+			time.Sleep(1 * time.Second)
+			err := s.startActor(s.cfg.Timeout, def)
+			if err == ErrGridReturnedNilActor {
+				if Logger != nil {
+					Logger.Printf("skipping leader startup since leader definition returned nil actor")
+				}
+				return
+			}
+			if err == nil || (err != nil && strings.Contains(err.Error(), "already registered")) {
+				return
+			}
+		}
+		runtimeErrors <- fmt.Errorf("leader start failed: %v", err)
+		s.Stop()
+	}()
+
 	RegisterWireServer(s.grpc, s)
 	err = s.grpc.Serve(lis)
 	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
@@ -128,7 +165,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 
 	select {
-	case err = <-regFaults:
+	case err = <-runtimeErrors:
 	default:
 	}
 
@@ -279,7 +316,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		return ErrInvalidActorName
 	}
 
-	nsName, err := namespaceName(s.cfg.Namespace, def.Name)
+	nsName, err := namespaceName(s.cfg.Namespace, fmt.Sprintf("actor-%v", def.Name))
 	if err != nil {
 		return err
 	}

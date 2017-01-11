@@ -67,13 +67,17 @@ func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 		return nil, err
 	}
 
+	return newMailbox(s, nsName, size)
+}
+
+func newMailbox(s *Server, nsName string, size int) (*Mailbox, error) {
 	_, ok := s.mailboxes[nsName]
 	if ok {
 		return nil, ErrAlreadyRegistered
 	}
 
 	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-	err = s.registry.Register(timeout, nsName)
+	err := s.registry.Register(timeout, nsName)
 	cancel()
 	if err != nil {
 		return nil, err
