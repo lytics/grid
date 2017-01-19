@@ -2,7 +2,6 @@ package grid
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -47,11 +46,13 @@ func TestServerExample(t *testing.T) {
 	}
 
 	if len(peers) != 1 {
+		time.Sleep(30 * time.Second)
 		t.Fatal(peers)
 	}
 
 	_, err = client.Request(time.Second, peers[0], NewActorDef("worker"))
 	if err != nil {
+		time.Sleep(30 * time.Second)
 		t.Fatal(err, peers[0])
 	}
 
@@ -74,7 +75,7 @@ func (g WorkerGrid) MakeActor(def *ActorDef) (Actor, error) {
 	case "worker":
 		return &ExampleWorker{finished: g}, nil
 	}
-	return nil, fmt.Errorf("unknow actor type: %v", def.Type)
+	return nil, nil
 }
 
 type ExampleWorker struct {

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"fmt"
+
 	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/registry"
 	"google.golang.org/grpc"
@@ -54,6 +56,18 @@ func (p *PeerChange) Lost() bool {
 // associated with any particular peer.
 func (p *PeerChange) Err() error {
 	return p.err
+}
+
+// String representation of peer change.
+func (p *PeerChange) String() string {
+	switch p.change {
+	case peerLost:
+		return fmt.Sprintf("peer change: lost: %v", p.peer)
+	case peerDiscovered:
+		return fmt.Sprintf("peer change: discovered: %v", p.peer)
+	default:
+		return fmt.Sprintf("peer change: error: %v", p.err)
+	}
 }
 
 // Client for grid-actors or non-actors to make requests to grid-actors.
@@ -121,7 +135,7 @@ func (c *Client) Close() error {
 //         }
 //     }
 func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChange, error) {
-	nsName, err := namespaceName(c.cfg.Namespace, "peer-")
+	nsName, err := namespaceName(peerClass, c.cfg.Namespace, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -178,7 +192,7 @@ func (c *Client) Peers(timeout time.Duration) ([]string, error) {
 // the Serve method to act as a server for the namespace. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) PeersC(ctx context.Context) ([]string, error) {
-	nsPrefix, err := namespaceName(c.cfg.Namespace, "peer-")
+	nsPrefix, err := namespacePrefix(peerClass, c.cfg.Namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +220,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	}
 
 	// Namespaced receiver name.
-	nsReceiver, err := namespaceName(c.cfg.Namespace, receiver)
+	nsReceiver, err := namespaceName(mailboxClass, c.cfg.Namespace, receiver)
 	if err != nil {
 		return nil, err
 	}
@@ -264,6 +278,9 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	address, ok := c.addresses[nsReceiver]
 	if !ok {
 		reg, err := c.registry.FindRegistration(ctx, nsReceiver)
+		if err != nil && err == registry.ErrUnknownKey {
+			return nil, ErrUnknownMailbox
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -316,7 +333,7 @@ func peersFromRegs(namespace string, regs []*registry.Registration) []string {
 }
 
 func peerFromReg(namespace string, reg *registry.Registration) string {
-	peer, err := stripNamespace(namespace, reg.Key)
+	peer, err := stripNamespace(peerClass, namespace, reg.Key)
 	// INVARIANT
 	// Under all circumstances if a registration is returned
 	// from the prefix scan above, ie: FindRegistrations,

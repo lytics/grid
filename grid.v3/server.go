@@ -106,12 +106,24 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.ctx = ctx
 	s.cancel = cancel
 
-	name := fmt.Sprintf("peer-%v", s.registry.Address)
+	name := s.registry.Address
 	name = strings.Replace(name, ":", "-", -1)
 	name = strings.Replace(name, ".", "-", -1)
 	name = strings.Replace(name, "/", "-", -1)
 	name = strings.Trim(name, "~\\!@#$%^&*()<>")
 	name = strings.TrimSpace(name)
+
+	nsName, err := namespaceName(peerClass, s.cfg.Namespace, name)
+	if err != nil {
+		return err
+	}
+
+	timeoutC, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
+	err = s.registry.Register(timeoutC, nsName)
+	cancel()
+	if err != nil {
+		return err
+	}
 
 	mailbox, err := NewMailbox(s, name, 10)
 	if err != nil {
@@ -139,9 +151,10 @@ func (s *Server) Serve(lis net.Listener) error {
 			return
 		}
 		def := NewActorDef("leader")
+		var err error
 		for i := 0; i < 6; i++ {
 			time.Sleep(1 * time.Second)
-			err := s.startActor(s.cfg.Timeout, def)
+			err = s.startActor(s.cfg.Timeout, def)
 			if err == ErrGridReturnedNilActor {
 				if Logger != nil {
 					Logger.Printf("skipping leader startup since leader definition returned nil actor")
@@ -316,7 +329,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		return ErrInvalidActorName
 	}
 
-	nsName, err := namespaceName(s.cfg.Namespace, fmt.Sprintf("actor-%v", def.Name))
+	nsName, err := namespaceName(actorClass, s.cfg.Namespace, def.Name)
 	if err != nil {
 		return err
 	}

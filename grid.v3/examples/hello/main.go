@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -85,6 +86,8 @@ func (hg HelloGrid) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
 }
 
 func main() {
+	grid.Logger = log.New(os.Stderr, "hellogrid", log.LstdFlags)
+
 	address := flag.String("address", "", "bind address for gRPC")
 	flag.Parse()
 
