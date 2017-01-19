@@ -135,7 +135,7 @@ func (c *Client) Close() error {
 //         }
 //     }
 func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChange, error) {
-	nsName, err := namespaceName(peerClass, c.cfg.Namespace, "")
+	nsName, err := namespacePrefix(peerClass, c.cfg.Namespace)
 	if err != nil {
 		return nil, nil, err
 	}
