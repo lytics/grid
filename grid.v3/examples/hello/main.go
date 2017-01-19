@@ -33,7 +33,7 @@ func (a *LeaderActor) Act(c context.Context) {
 			return
 		case <-ticker.C:
 			// Ask for current peers.
-			peers, err := a.client.Peers(timeout)
+			peers, err := a.client.Query(timeout, grid.Peers)
 			successOrDie(err)
 
 			// Check for new peers.

@@ -18,9 +18,9 @@ import (
 type changeType int
 
 const (
-	peerErr        changeType = 0
-	peerDiscovered changeType = 1
-	peerLost       changeType = 2
+	entityErr        changeType = 0
+	entityDiscovered changeType = 1
+	entityLost       changeType = 2
 )
 
 type clientAndConn struct {
@@ -28,45 +28,45 @@ type clientAndConn struct {
 	client WireClient
 }
 
-// PeerChange indicating that a peer has been discovered,
+// QueryResult indicating that a peer has been discovered,
 // lost, or some error has occured with a peer or the watch
 // of peers.
-type PeerChange struct {
-	peer   string
+type QueryResult struct {
+	entity string
 	err    error
 	change changeType
 }
 
-// Peer name that caused the event.
-func (p *PeerChange) Peer() string {
-	return p.peer
+// Entity name that caused the event.
+func (p *QueryResult) Entity() string {
+	return p.entity
 }
 
-// Discovered peer.
-func (p *PeerChange) Discovered() bool {
-	return p.change == peerDiscovered
+// Discovered entity.
+func (p *QueryResult) Discovered() bool {
+	return p.change == entityDiscovered
 }
 
-// Lost peer.
-func (p *PeerChange) Lost() bool {
-	return p.change == peerLost
+// Lost entity.
+func (p *QueryResult) Lost() bool {
+	return p.change == entityLost
 }
 
 // Err caught watching peers. The error is not
 // associated with any particular peer.
-func (p *PeerChange) Err() error {
+func (p *QueryResult) Err() error {
 	return p.err
 }
 
 // String representation of peer change.
-func (p *PeerChange) String() string {
+func (p *QueryResult) String() string {
 	switch p.change {
-	case peerLost:
-		return fmt.Sprintf("peer change: lost: %v", p.peer)
-	case peerDiscovered:
-		return fmt.Sprintf("peer change: discovered: %v", p.peer)
+	case entityLost:
+		return fmt.Sprintf("entity change: lost: %v", p.entity)
+	case entityDiscovered:
+		return fmt.Sprintf("entity change: discovered: %v", p.entity)
 	default:
-		return fmt.Sprintf("peer change: error: %v", p.err)
+		return fmt.Sprintf("entity change: error: %v", p.err)
 	}
 }
 
@@ -110,13 +110,15 @@ func (c *Client) Close() error {
 	return err
 }
 
-// PeersWatch monitors the entry and exit of peers in the same namespace.
+// QueryWatch monitors the entry and exit of entities in the same namespace.
+// Where entities are either peers, actors, or mailboxes.
+//
 // Example usage:
 //
 //     client, err := grid.NewClient(...)
 //     ...
 //
-//     currentpeers, watch, err := client.PeersWatch(c)
+//     currentpeers, watch, err := client.QueryWatch(c, grid.Peers)
 //     ...
 //
 //     for _, peer := range currentpeers {
@@ -134,65 +136,65 @@ func (c *Client) Close() error {
 //             // New peer discovered, assign work, get data, reschedule, etc.
 //         }
 //     }
-func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChange, error) {
-	nsName, err := namespacePrefix(peerClass, c.cfg.Namespace)
+func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]string, <-chan *QueryResult, error) {
+	nsName, err := namespacePrefix(filter, c.cfg.Namespace)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	regs, changes, err := c.registry.Watch(ctx, nsName)
-	peers := peersFromRegs(c.cfg.Namespace, regs)
+	ents := nameFromRegs(filter, c.cfg.Namespace, regs)
 
-	peerChanges := make(chan *PeerChange)
-	put := func(change *PeerChange) {
+	queryResults := make(chan *QueryResult)
+	put := func(change *QueryResult) {
 		select {
 		case <-ctx.Done():
-		case peerChanges <- change:
+		case queryResults <- change:
 		}
 	}
 	go func() {
-		defer close(peerChanges)
+		defer close(queryResults)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case change, open := <-changes:
 				if !open {
-					put(&PeerChange{err: ErrWatchClosedUnexpectedly})
+					put(&QueryResult{err: ErrWatchClosedUnexpectedly})
 					return
 				}
 				if change.Error != nil {
-					put(&PeerChange{err: err})
+					put(&QueryResult{err: err})
 					return
 				}
 				switch change.Type {
 				case registry.Delete:
-					peer := peerFromReg(c.cfg.Namespace, change.Reg)
-					put(&PeerChange{peer: peer, change: peerLost})
+					ent := nameFromReg(filter, c.cfg.Namespace, change.Reg)
+					put(&QueryResult{entity: ent, change: entityLost})
 				case registry.Create, registry.Modify:
-					peer := peerFromReg(c.cfg.Namespace, change.Reg)
-					put(&PeerChange{peer: peer, change: peerDiscovered})
+					ent := nameFromReg(filter, c.cfg.Namespace, change.Reg)
+					put(&QueryResult{entity: ent, change: entityDiscovered})
 				}
 			}
 		}
 	}()
 
-	return peers, peerChanges, nil
+	return ents, queryResults, nil
 }
 
-// Peers in this client's namespace. A peer is any process that called
-// the Serve method to act as a server for the namespace.
-func (c *Client) Peers(timeout time.Duration) ([]string, error) {
+// Query in this client's namespace. The filter can be any one of
+// Peers, Actors, or Mailboxes.
+func (c *Client) Query(timeout time.Duration, filter entityType) ([]string, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return c.PeersC(timeoutC)
+	return c.QueryC(timeoutC, filter)
 }
 
-// PeersC (peers) in this client's namespace. A peer is any process that called
-// the Serve method to act as a server for the namespace. The context can be
-// used to control cancelation or timeouts.
-func (c *Client) PeersC(ctx context.Context) ([]string, error) {
-	nsPrefix, err := namespacePrefix(peerClass, c.cfg.Namespace)
+// QueryC (query) in this client's namespace. The filter can be any
+// one of Peers, Actors, or Mailboxes. The context can be used to
+// control cancelation or timeouts.
+func (c *Client) QueryC(ctx context.Context, filter entityType) ([]string, error) {
+	nsPrefix, err := namespacePrefix(filter, c.cfg.Namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -201,8 +203,8 @@ func (c *Client) PeersC(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	peers := peersFromRegs(c.cfg.Namespace, regs)
-	return peers, nil
+	names := nameFromRegs(filter, c.cfg.Namespace, regs)
+	return names, nil
 }
 
 // Request a response for the given message.
@@ -220,7 +222,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	}
 
 	// Namespaced receiver name.
-	nsReceiver, err := namespaceName(mailboxClass, c.cfg.Namespace, receiver)
+	nsReceiver, err := namespaceName(Mailboxes, c.cfg.Namespace, receiver)
 	if err != nil {
 		return nil, err
 	}
@@ -323,17 +325,17 @@ func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
 	return res
 }
 
-func peersFromRegs(namespace string, regs []*registry.Registration) []string {
+func nameFromRegs(filter entityType, namespace string, regs []*registry.Registration) []string {
 	peers := make([]string, 0)
 	for _, reg := range regs {
-		peer := peerFromReg(namespace, reg)
+		peer := nameFromReg(filter, namespace, reg)
 		peers = append(peers, peer)
 	}
 	return peers
 }
 
-func peerFromReg(namespace string, reg *registry.Registration) string {
-	peer, err := stripNamespace(peerClass, namespace, reg.Key)
+func nameFromReg(filter entityType, namespace string, reg *registry.Registration) string {
+	peer, err := stripNamespace(filter, namespace, reg.Key)
 	// INVARIANT
 	// Under all circumstances if a registration is returned
 	// from the prefix scan above, ie: FindRegistrations,

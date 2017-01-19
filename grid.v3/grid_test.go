@@ -40,7 +40,7 @@ func TestServerExample(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	peers, err := client.Peers(time.Second)
+	peers, err := client.Query(time.Second, Peers)
 	if err != nil {
 		t.Fatal(err)
 	}

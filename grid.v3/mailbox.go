@@ -62,7 +62,7 @@ func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 	defer s.mu.Unlock()
 
 	// Namespaced name.
-	nsName, err := namespaceName(mailboxClass, s.cfg.Namespace, name)
+	nsName, err := namespaceName(Mailboxes, s.cfg.Namespace, name)
 	if err != nil {
 		return nil, err
 	}

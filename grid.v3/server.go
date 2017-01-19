@@ -113,7 +113,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	name = strings.Trim(name, "~\\!@#$%^&*()<>")
 	name = strings.TrimSpace(name)
 
-	nsName, err := namespaceName(peerClass, s.cfg.Namespace, name)
+	nsName, err := namespaceName(Peers, s.cfg.Namespace, name)
 	if err != nil {
 		return err
 	}
@@ -329,7 +329,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		return ErrInvalidActorName
 	}
 
-	nsName, err := namespaceName(actorClass, s.cfg.Namespace, def.Name)
+	nsName, err := namespaceName(Actors, s.cfg.Namespace, def.Name)
 	if err != nil {
 		return err
 	}
