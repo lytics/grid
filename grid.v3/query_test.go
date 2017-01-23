@@ -17,7 +17,7 @@ func TestQuery(t *testing.T) {
 		timeout = 1 * time.Second
 	)
 
-	etcd, cleanup := testetcd.StartEtcd(t)
+	etcd, cleanup := testetcd.StartAndConnect(t)
 	defer cleanup()
 
 	c, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
@@ -36,10 +36,12 @@ func TestQuery(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		done := make(chan error, 1)
 		go func() {
+			defer close(done)
 			err := s.Serve(lis)
 			if err != nil {
-				panic(err.Error())
+				done <- err
 			}
 		}()
 		defer s.Stop()
@@ -69,7 +71,7 @@ func TestQueryWatch(t *testing.T) {
 		timeout = 1 * time.Second
 	)
 
-	etcd, cleanup := testetcd.StartEtcd(t)
+	etcd, cleanup := testetcd.StartAndConnect(t)
 	defer cleanup()
 
 	c, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
@@ -98,10 +100,11 @@ func TestQueryWatch(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			done := make(chan error, 1)
 			go func() {
 				err := s.Serve(lis)
 				if err != nil {
-					panic(err.Error())
+					done <- err
 				}
 			}()
 			defer s.Stop()

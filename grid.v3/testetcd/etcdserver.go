@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,14 +17,11 @@ import (
 
 type Cleanup func() error
 
-func StartEtcd(t *testing.T) (*clientv3.Client, Cleanup) {
-	srvcfg, cleanup, err := CreateConfig(t)
-	if err != nil {
-		t.Fatalf("err:%v", err)
-	}
+func StartAndConnect(t *testing.T) (*clientv3.Client, Cleanup) {
+	srvCfg, cleanup := Start(t)
 
 	endpoints := []string{}
-	for _, u := range srvcfg.LCUrls {
+	for _, u := range srvCfg.LCUrls {
 		endpoints = append(endpoints, u.String())
 	}
 
@@ -39,7 +37,7 @@ func StartEtcd(t *testing.T) (*clientv3.Client, Cleanup) {
 	return etcd, cleanup
 }
 
-func CreateConfig(t *testing.T) (*embed.Config, Cleanup, error) {
+func Start(t *testing.T) (*embed.Config, Cleanup) {
 	cfg := embed.NewConfig()
 	dir, _ := ioutil.TempDir("", "etcd.testserver.")
 	cfg.Dir = dir
@@ -54,45 +52,40 @@ func CreateConfig(t *testing.T) (*embed.Config, Cleanup, error) {
 
 	f, err := os.Create(cfg.Dir + "/" + "etcd.log")
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create the etcd log: err:%v", err)
+		t.Fatal(err)
 	}
 	//comment out to get etcd logs on stderr
 	capnslog.SetFormatter(capnslog.NewPrettyFormatter(f, cfg.Debug))
 
 	e, err := embed.StartEtcd(cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed starting server: err:%v", err)
+		t.Fatal(t)
 	}
 
 	select {
 	case <-e.Server.ReadyNotify():
 	case <-time.After(60 * time.Second):
-		e.Server.Stop() // trigger a shutdown
-		return nil, nil, fmt.Errorf("Server took too long to start!")
+		e.Server.Stop()
+		t.Fatal(err)
 	}
 
 	select {
 	case err := <-e.Err():
-		return nil, nil, fmt.Errorf("server return an error during startup: err:%v", err)
+		t.Fatal(err)
 	default:
 	}
 
 	return cfg, func() error {
-		e.Server.Stop() // trigger a shutdown
-		select {
-		case err := <-e.Err():
-			return fmt.Errorf("server stop returned an error:%v", err)
-		default:
-		}
-
 		e.Close()
 		select {
 		case err := <-e.Err():
-			return fmt.Errorf("closing server return an error:%v", err)
+			if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+				return fmt.Errorf("closing server returned error: %v", err)
+			}
 		default:
 		}
-		return os.Remove(cfg.Dir)
-	}, nil
+		return os.RemoveAll(cfg.Dir)
+	}
 }
 
 func findFreeEtcdUrls() (lPUrls []url.URL, lCUrls []url.URL, aPUrls []url.URL, aCUrls []url.URL) {

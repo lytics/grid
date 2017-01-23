@@ -319,25 +319,27 @@ func TestWatch(t *testing.T) {
 		}
 	}
 
-	watching := make(chan bool)
-	ctx, cancel := context.WithCancel(context.Background())
+	watching := make(chan error)
+	ctx, cancelWatch := context.WithCancel(context.Background())
 	go func() {
-		found, changes, err := r.Watch(ctx, "peer")
+		found, _, err := r.Watch(ctx, "peer")
 		if err != nil {
-			panic(err.Error())
+			watching <- err
+			return
 		}
 		for _, peer := range found {
 			if !initial[peer.Key] {
-				panic("missing initial peer: " + peer.Key)
+				watching <- fmt.Errorf("missing initial peer: " + peer.Key)
+				return
 			}
 		}
 		close(watching)
-		for change := range changes {
-			fmt.Println(">>>>>>", change)
-		}
 	}()
 
-	<-watching
+	err = <-watching
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	additions := map[string]bool{
 		"peer-4": true,
@@ -364,14 +366,14 @@ func TestWatch(t *testing.T) {
 		time.Sleep(2 * time.Second)
 	}
 
-	cancel()
+	cancelWatch()
 	time.Sleep(3 * time.Second)
 	r.Stop()
 	etcdcleanup()
 }
 
 func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, testetcd.Cleanup) {
-	client, cleanup := testetcd.StartEtcd(t)
+	client, cleanup := testetcd.StartAndConnect(t)
 
 	r, err := New(client)
 	if err != nil {

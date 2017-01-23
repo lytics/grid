@@ -9,79 +9,144 @@ import (
 	"github.com/lytics/grid/grid.v3/testetcd"
 )
 
-func TestServerExample(t *testing.T) {
-	etcd, cleanup := testetcd.StartEtcd(t)
+type startStopActor struct {
+	started chan bool
+	stopped chan bool
+}
+
+func (a *startStopActor) Act(c context.Context) {
+	a.started <- true
+	<-c.Done()
+	a.stopped <- true
+}
+
+func TestServerStartStop(t *testing.T) {
+	const (
+		timeout = 20 * time.Second
+	)
+
+	etcd, cleanup := testetcd.StartAndConnect(t)
 	defer cleanup()
 
-	grid := WorkerGrid(make(chan bool, 1))
-
-	server, err := NewServer(etcd, ServerCfg{Namespace: "example_grid"}, grid)
-	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+	a := &startStopActor{
+		started: make(chan bool),
+		stopped: make(chan bool),
 	}
 
-	lis, err := net.Listen("tcp", "localhost:0") // Let the OS pick a port for us.
-	if err != nil {
-		t.Fatalf("listen failed: %v", err)
+	g := func(*ActorDef) (Actor, error) {
+		return a, nil
 	}
 
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, Func(g))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
 	go func() {
-		err = server.Serve(lis)
+		defer close(done)
+		err := server.Serve(lis)
 		if err != nil {
-			panic(err.Error())
+			done <- err
 		}
 	}()
 
-	time.Sleep(1 * time.Second)
+	for {
+		select {
+		case <-time.After(timeout):
+			t.Fatal("timeout")
+		case <-a.started:
+			server.Stop()
+		case <-a.stopped:
+			select {
+			case <-time.After(timeout):
+				t.Fatal("timeout")
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+	}
+}
 
-	client, err := NewClient(etcd, ClientCfg{Namespace: "example_grid"})
+func TestServerStartNoEtcdRunning(t *testing.T) {
+	const (
+		timeout = 20 * time.Second
+	)
+
+	// Start etcd, but shut it down right away.
+	etcd, cleanup := testetcd.StartAndConnect(t)
+	cleanup()
+
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	peers, err := client.Query(time.Second, Peers)
+	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(peers) != 1 {
-		time.Sleep(30 * time.Second)
-		t.Fatal(peers)
+	err = server.Serve(lis)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestServerStartThenEtcdStop(t *testing.T) {
+	t.Skip()
+
+	a := &startStopActor{
+		started: make(chan bool),
+		stopped: make(chan bool),
 	}
 
-	_, err = client.Request(time.Second, peers[0], NewActorDef("worker"))
+	g := func(*ActorDef) (Actor, error) {
+		return a, nil
+	}
+
+	etcd, cleanup := testetcd.StartAndConnect(t)
+
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, Func(g))
 	if err != nil {
-		time.Sleep(30 * time.Second)
-		t.Fatal(err, peers[0])
+		t.Fatal(err)
 	}
 
-	time.Sleep(1 * time.Second)
-
-	// Stop will wait.
-	server.Stop()
-
-	select {
-	case <-grid:
-	default:
-		t.Fatal("worker did not start and stop")
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
 	}
-}
 
-type WorkerGrid chan bool
+	done := make(chan error, 1)
+	go func() {
+		defer close(done)
+		err := server.Serve(lis)
+		if err != nil {
+			done <- err
+		}
+	}()
 
-func (g WorkerGrid) MakeActor(def *ActorDef) (Actor, error) {
-	switch def.Type {
-	case "worker":
-		return &ExampleWorker{finished: g}, nil
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-a.started:
+			err := cleanup()
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(90 * time.Second):
+			t.Fatal("timeout")
+		}
 	}
-	return nil, nil
-}
-
-type ExampleWorker struct {
-	finished WorkerGrid
-}
-
-func (a *ExampleWorker) Act(c context.Context) {
-	<-c.Done()
-	a.finished <- true
 }
