@@ -6,12 +6,11 @@ import (
 	"testing"
 	"time"
 
-	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/testetcd"
 )
 
 func TestServerExample(t *testing.T) {
-	etcd, cleanup := bootstrap(t)
+	etcd, cleanup := testetcd.StartEtcd(t)
 	defer cleanup()
 
 	grid := WorkerGrid(make(chan bool, 1))
@@ -85,27 +84,4 @@ type ExampleWorker struct {
 func (a *ExampleWorker) Act(c context.Context) {
 	<-c.Done()
 	a.finished <- true
-}
-
-func bootstrap(t *testing.T) (*etcdv3.Client, testetcd.Cleanupfn) {
-	srvcfg, cleanup, err := testetcd.StartEtcd(t)
-	if err != nil {
-		t.Fatalf("err:%v", err)
-	}
-
-	endpoints := []string{}
-	for _, u := range srvcfg.LCUrls {
-		endpoints = append(endpoints, u.String())
-	}
-
-	cfg := etcdv3.Config{
-		Endpoints: endpoints,
-	}
-
-	etcd, err := etcdv3.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return etcd, cleanup
 }

@@ -9,13 +9,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/embed"
 	"github.com/coreos/pkg/capnslog"
 )
 
-type Cleanupfn func() error
+type Cleanup func() error
 
-func StartEtcd(t *testing.T) (*embed.Config, Cleanupfn, error) {
+func StartEtcd(t *testing.T) (*clientv3.Client, Cleanup) {
+	srvcfg, cleanup, err := CreateConfig(t)
+	if err != nil {
+		t.Fatalf("err:%v", err)
+	}
+
+	endpoints := []string{}
+	for _, u := range srvcfg.LCUrls {
+		endpoints = append(endpoints, u.String())
+	}
+
+	cfg := clientv3.Config{
+		Endpoints: endpoints,
+	}
+
+	etcd, err := clientv3.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return etcd, cleanup
+}
+
+func CreateConfig(t *testing.T) (*embed.Config, Cleanup, error) {
 	cfg := embed.NewConfig()
 	dir, _ := ioutil.TempDir("", "etcd.testserver.")
 	cfg.Dir = dir

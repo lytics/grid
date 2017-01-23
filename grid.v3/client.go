@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/gob"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,15 +13,8 @@ import (
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/registry"
+	"github.com/lytics/retry"
 	"google.golang.org/grpc"
-)
-
-type changeType int
-
-const (
-	entityErr        changeType = 0
-	entityDiscovered changeType = 1
-	entityLost       changeType = 2
 )
 
 type clientAndConn struct {
@@ -28,46 +22,11 @@ type clientAndConn struct {
 	client WireClient
 }
 
-// QueryResult indicating that a peer has been discovered,
-// lost, or some error has occured with a peer or the watch
-// of peers.
-type QueryResult struct {
-	entity string
-	err    error
-	change changeType
-}
-
-// Entity name that caused the event.
-func (p *QueryResult) Entity() string {
-	return p.entity
-}
-
-// Discovered entity.
-func (p *QueryResult) Discovered() bool {
-	return p.change == entityDiscovered
-}
-
-// Lost entity.
-func (p *QueryResult) Lost() bool {
-	return p.change == entityLost
-}
-
-// Err caught watching peers. The error is not
-// associated with any particular peer.
-func (p *QueryResult) Err() error {
-	return p.err
-}
-
-// String representation of peer change.
-func (p *QueryResult) String() string {
-	switch p.change {
-	case entityLost:
-		return fmt.Sprintf("entity change: lost: %v", p.entity)
-	case entityDiscovered:
-		return fmt.Sprintf("entity change: discovered: %v", p.entity)
-	default:
-		return fmt.Sprintf("entity change: error: %v", p.err)
+func (cc *clientAndConn) close() error {
+	if cc == nil {
+		return fmt.Errorf("client and conn is nil")
 	}
+	return cc.conn.Close()
 }
 
 // Client for grid-actors or non-actors to make requests to grid-actors.
@@ -102,109 +61,12 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 func (c *Client) Close() error {
 	var err error
 	for _, cc := range c.clientsAndConns {
-		clostErr := cc.conn.Close()
-		if clostErr != nil {
-			err = clostErr
+		closeErr := cc.close()
+		if closeErr != nil {
+			err = closeErr
 		}
 	}
 	return err
-}
-
-// QueryWatch monitors the entry and exit of entities in the same namespace.
-// Where entities are either peers, actors, or mailboxes.
-//
-// Example usage:
-//
-//     client, err := grid.NewClient(...)
-//     ...
-//
-//     currentpeers, watch, err := client.QueryWatch(c, grid.Peers)
-//     ...
-//
-//     for _, peer := range currentpeers {
-//         // Do work regarding peer.
-//     }
-//
-//     for event := range watch {
-//         if event.Err() != nil {
-//             // Error occured watching peers, deal with error.
-//         }
-//         if event.Lost() {
-//             // Existing peer lost, reschedule work on extant peers.
-//         }
-//         if event.Discovered() {
-//             // New peer discovered, assign work, get data, reschedule, etc.
-//         }
-//     }
-func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]string, <-chan *QueryResult, error) {
-	nsName, err := namespacePrefix(filter, c.cfg.Namespace)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	regs, changes, err := c.registry.Watch(ctx, nsName)
-	ents := nameFromRegs(filter, c.cfg.Namespace, regs)
-
-	queryResults := make(chan *QueryResult)
-	put := func(change *QueryResult) {
-		select {
-		case <-ctx.Done():
-		case queryResults <- change:
-		}
-	}
-	go func() {
-		defer close(queryResults)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case change, open := <-changes:
-				if !open {
-					put(&QueryResult{err: ErrWatchClosedUnexpectedly})
-					return
-				}
-				if change.Error != nil {
-					put(&QueryResult{err: err})
-					return
-				}
-				switch change.Type {
-				case registry.Delete:
-					ent := nameFromReg(filter, c.cfg.Namespace, change.Reg)
-					put(&QueryResult{entity: ent, change: entityLost})
-				case registry.Create, registry.Modify:
-					ent := nameFromReg(filter, c.cfg.Namespace, change.Reg)
-					put(&QueryResult{entity: ent, change: entityDiscovered})
-				}
-			}
-		}
-	}()
-
-	return ents, queryResults, nil
-}
-
-// Query in this client's namespace. The filter can be any one of
-// Peers, Actors, or Mailboxes.
-func (c *Client) Query(timeout time.Duration, filter entityType) ([]string, error) {
-	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return c.QueryC(timeoutC, filter)
-}
-
-// QueryC (query) in this client's namespace. The filter can be any
-// one of Peers, Actors, or Mailboxes. The context can be used to
-// control cancelation or timeouts.
-func (c *Client) QueryC(ctx context.Context, filter entityType) ([]string, error) {
-	nsPrefix, err := namespacePrefix(filter, c.cfg.Namespace)
-	if err != nil {
-		return nil, err
-	}
-	regs, err := c.registry.FindRegistrations(ctx, nsPrefix)
-	if err != nil {
-		return nil, err
-	}
-
-	names := nameFromRegs(filter, c.cfg.Namespace, regs)
-	return names, nil
 }
 
 // Request a response for the given message.
@@ -234,18 +96,47 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	client, err := c.getWireClient(ctx, nsReceiver)
-	if err != nil {
-		return nil, err
-	}
-
 	req := &Delivery{
 		Ver:      Delivery_V1,
 		Enc:      Delivery_Gob,
 		Data:     buf.Bytes(),
 		Receiver: nsReceiver,
 	}
-	res, err := client.Process(ctx, req)
+	var res *Delivery
+	retry.X(3, 1*time.Second, func() bool {
+		var client WireClient
+		client, err = c.getWireClient(ctx, nsReceiver)
+		if err != nil {
+			return false
+		}
+		res, err = client.Process(ctx, req)
+		if err != nil && strings.Contains(err.Error(), ErrUnknownMailbox.Error()) {
+			// Receiver possibly moved to different
+			// host for one reason or another. Get
+			// rid of old address and try discovering
+			// new host, and send again.
+			c.deleteReceiverAddress(nsReceiver)
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
+		if err != nil && strings.Contains(err.Error(), ErrReceiverBusy.Error()) {
+			// Receiver was busy, ie: the receiving channel
+			// was at capacity. Also, the reciever definitely
+			// did NOT get the message, so there is no risk
+			// of duplication if the request is tried again.
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
+		return false
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -304,6 +195,13 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 		c.clientsAndConns[address] = cc
 	}
 	return cc.client, nil
+}
+
+func (c *Client) deleteReceiverAddress(nsReceiver string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.addresses, nsReceiver)
 }
 
 // minus of sets a and b, in mathematical notation: A \ B,

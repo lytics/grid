@@ -370,23 +370,8 @@ func TestWatch(t *testing.T) {
 	etcdcleanup()
 }
 
-func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, testetcd.Cleanupfn) {
-	srvcfg, cleanup, err := testetcd.StartEtcd(t)
-	if err != nil {
-		t.Fatalf("err:%v", err)
-	}
-
-	urls := []string{}
-	for _, u := range srvcfg.LCUrls {
-		urls = append(urls, u.String())
-	}
-	cfg := etcdv3.Config{
-		Endpoints: urls,
-	}
-	client, err := etcdv3.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, testetcd.Cleanup) {
+	client, cleanup := testetcd.StartEtcd(t)
 
 	r, err := New(client)
 	if err != nil {

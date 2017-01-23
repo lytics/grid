@@ -1,14 +1,24 @@
 package grid
 
-import "fmt"
-
-type entityType string
-
-const (
-	Peers     entityType = "peer"
-	Actors    entityType = "actor"
-	Mailboxes entityType = "mailbox"
+import (
+	"fmt"
+	"regexp"
 )
+
+// isNameValid returns true if the name matches the
+// regular expression "^[a-zA-Z0-9-_]+$".
+func isNameValid(name string) bool {
+	const validActorName = "^[a-zA-Z0-9-_]+$"
+
+	if name == "" {
+		return false
+	}
+	if matched, err := regexp.MatchString(validActorName, name); err != nil {
+		return false
+	} else {
+		return matched
+	}
+}
 
 func stripNamespace(t entityType, namespace, fullname string) (string, error) {
 	plen := len(namespace) + 1 + len(t) + 1
