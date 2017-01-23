@@ -1,10 +1,8 @@
 package grid
 
 import (
-	"testing"
-
 	"net"
-
+	"testing"
 	"time"
 
 	"github.com/lytics/grid/grid.v3/testetcd"
