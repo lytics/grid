@@ -165,7 +165,10 @@ func (s *Server) Serve(lis net.Listener) error {
 				return
 			}
 		}
-		runtimeErrors <- fmt.Errorf("leader start failed: %v", err)
+		select {
+		case runtimeErrors <- fmt.Errorf("leader start failed: %v", err):
+		default:
+		}
 		s.Stop()
 	}()
 
