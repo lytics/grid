@@ -344,7 +344,7 @@ func (s *Server) monitorLeader() <-chan error {
 			}
 			time.Sleep(1 * time.Second)
 			err = s.startActor(s.cfg.Timeout, def)
-			if err == nil || (err != nil && strings.Contains(err.Error(), "already registered")) {
+			if err != nil && strings.Contains(err.Error(), ErrAlreadyRegistered.Error()) {
 				return nil
 			}
 		}
@@ -361,6 +361,12 @@ func (s *Server) monitorLeader() <-chan error {
 				return
 			case <-timer.C:
 				err := start(NewActorDef("leader"))
+				if err == ErrActorCreationNotSupported {
+					if Logger != nil {
+						Logger.Printf("skipping leader startup since actor creation not supported")
+					}
+					return
+				}
 				if err == ErrGridReturnedNilActor {
 					if Logger != nil {
 						Logger.Printf("skipping leader startup since leader definition returned nil actor")

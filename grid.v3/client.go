@@ -110,12 +110,25 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 			return false
 		}
 		res, err = client.Process(ctx, req)
+		if err != nil && strings.Contains(err.Error(), ErrConnectionIsUnavailable.Error()) {
+			// Receiver is on a host that may have died.
+			// The error "connection is unavailable"
+			// comes from gRPC itself. In such a case
+			// it's best to try and replace the client.
+			c.deleteClientAndConn(nsReceiver)
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
 		if err != nil && strings.Contains(err.Error(), ErrUnknownMailbox.Error()) {
 			// Receiver possibly moved to different
 			// host for one reason or another. Get
 			// rid of old address and try discovering
 			// new host, and send again.
-			c.deleteReceiverAddress(nsReceiver)
+			c.deleteAddress(nsReceiver)
 			select {
 			case <-ctx.Done():
 				return false
@@ -197,50 +210,29 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	return cc.client, nil
 }
 
-func (c *Client) deleteReceiverAddress(nsReceiver string) {
+func (c *Client) deleteAddress(nsReceiver string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	delete(c.addresses, nsReceiver)
 }
 
-// minus of sets a and b, in mathematical notation: A \ B,
-// ie: all elements in A that are not in B.
-//
-// See: https://www.techonthenet.com/sql/minus.php
-//
-// Example:
-//    lostPeers := difference(oldPeers, currentPeers)
-//    discoveredPeers := difference(currentPeers, oldPeers)
-//
-func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
-	res := map[string]struct{}{}
-	for in := range a {
-		if _, skip := b[in]; !skip {
-			res[in] = struct{}{}
-		}
-	}
-	return res
-}
+func (c *Client) deleteClientAndConn(nsReceiver string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-func nameFromRegs(filter entityType, namespace string, regs []*registry.Registration) []string {
-	peers := make([]string, 0)
-	for _, reg := range regs {
-		peer := nameFromReg(filter, namespace, reg)
-		peers = append(peers, peer)
+	address, ok := c.addresses[nsReceiver]
+	if !ok {
+		return
 	}
-	return peers
-}
 
-func nameFromReg(filter entityType, namespace string, reg *registry.Registration) string {
-	peer, err := stripNamespace(filter, namespace, reg.Key)
-	// INVARIANT
-	// Under all circumstances if a registration is returned
-	// from the prefix scan above, ie: FindRegistrations,
-	// then each registration must contain the namespace
-	// as a prefix of the key.
-	if err != nil {
-		panic("registry key without proper namespace prefix: " + reg.Key)
+	cc, ok := c.clientsAndConns[address]
+	if !ok {
+		return
 	}
-	return peer
+	err := cc.close()
+	if err != nil && Logger != nil {
+		Logger.Printf("error closing client and connection: %v", err)
+	}
+	delete(c.clientsAndConns, address)
 }

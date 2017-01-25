@@ -27,9 +27,8 @@ const (
 	entityLost       changeType = 2
 )
 
-// QueryEvent indicating that a peer has been discovered,
-// lost, or some error has occured with a peer or the watch
-// of peers.
+// QueryEvent indicating that an entity has been discovered,
+// lost, or some error has occured with the watch.
 type QueryEvent struct {
 	name   string
 	err    error
@@ -38,35 +37,35 @@ type QueryEvent struct {
 }
 
 // Name of entity that caused the event.
-func (p *QueryEvent) Name() string {
-	return p.name
+func (e *QueryEvent) Name() string {
+	return e.name
 }
 
 // Discovered entity.
-func (p *QueryEvent) Discovered() bool {
-	return p.change == entityDiscovered
+func (e *QueryEvent) Discovered() bool {
+	return e.change == entityDiscovered
 }
 
 // Lost entity.
-func (p *QueryEvent) Lost() bool {
-	return p.change == entityLost
+func (e *QueryEvent) Lost() bool {
+	return e.change == entityLost
 }
 
-// Err caught watching peers. The error is not
-// associated with any particular peer.
-func (p *QueryEvent) Err() error {
-	return p.err
+// Err caught watching query events. The error
+// is not associated with any particular entity.
+func (e *QueryEvent) Err() error {
+	return e.err
 }
 
-// String representation of peer change.
-func (p *QueryEvent) String() string {
-	switch p.change {
+// String representation of query event.
+func (e *QueryEvent) String() string {
+	switch e.change {
 	case entityLost:
-		return fmt.Sprintf("query event: %v change: lost: %v", p.entity, p.name)
+		return fmt.Sprintf("query event: %v change: lost: %v", e.entity, e.name)
 	case entityDiscovered:
-		return fmt.Sprintf("query event: %v change: discovered: %v", p.entity, p.name)
+		return fmt.Sprintf("query event: %v change: discovered: %v", e.entity, e.name)
 	default:
-		return fmt.Sprintf("query event: error: %v", p.err)
+		return fmt.Sprintf("query event: error: %v", e.err)
 	}
 }
 
@@ -164,4 +163,30 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]string, error
 
 	names := nameFromRegs(filter, c.cfg.Namespace, regs)
 	return names, nil
+}
+
+// nameFromRegs returns a slice of names from many registrations.
+// Used by query to return just simple string data.
+func nameFromRegs(filter entityType, namespace string, regs []*registry.Registration) []string {
+	names := make([]string, 0)
+	for _, reg := range regs {
+		name := nameFromReg(filter, namespace, reg)
+		names = append(names, name)
+	}
+	return names
+}
+
+// nameFromReg returns the name from the data field of a registration.
+// Used by query to return just simple string data.
+func nameFromReg(filter entityType, namespace string, reg *registry.Registration) string {
+	name, err := stripNamespace(filter, namespace, reg.Key)
+	// INVARIANT
+	// Under all circumstances if a registration is returned
+	// from the prefix scan above, ie: FindRegistrations,
+	// then each registration must contain the namespace
+	// as a prefix of the key.
+	if err != nil {
+		panic("registry key without proper namespace prefix: " + reg.Key)
+	}
+	return name
 }
