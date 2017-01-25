@@ -23,6 +23,8 @@ type clientAndConn struct {
 }
 
 func (cc *clientAndConn) close() error {
+	// Testing hook, used easily check
+	// a code path in the client.
 	if cc == nil {
 		return fmt.Errorf("client and conn is nil")
 	}

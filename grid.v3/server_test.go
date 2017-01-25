@@ -37,7 +37,7 @@ func TestServerStartStop(t *testing.T) {
 		return a, nil
 	}
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, Func(g))
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, MakerFunc(g))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 
 	etcd, cleanup := testetcd.StartAndConnect(t)
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, Func(g))
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, MakerFunc(g))
 	if err != nil {
 		t.Fatal(err)
 	}

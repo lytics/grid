@@ -74,7 +74,7 @@ func TestValidContext(t *testing.T) {
 		return nil, nil
 	}
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, Func(g))
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, MakerFunc(g))
 	if err != nil {
 		t.Fatal(err)
 	}
