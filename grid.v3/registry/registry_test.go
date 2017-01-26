@@ -9,6 +9,8 @@ import (
 
 	"encoding/json"
 
+	"net"
+
 	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/testetcd"
 )
@@ -19,7 +21,7 @@ const (
 )
 
 func TestInitialLeaseID(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, dontStart)
+	client, r, _, etcdcleanup := bootstrap(t, dontStart)
 	defer etcdcleanup()
 	defer client.Close()
 
@@ -29,7 +31,7 @@ func TestInitialLeaseID(t *testing.T) {
 }
 
 func TestStartStop(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, start)
+	client, r, _, etcdcleanup := bootstrap(t, start)
 	defer etcdcleanup()
 	defer client.Close()
 
@@ -42,7 +44,7 @@ func TestStartStop(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, start)
+	client, r, _, etcdcleanup := bootstrap(t, start)
 	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
@@ -64,13 +66,16 @@ func TestRegister(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reg.Address != r.Address {
+	if reg.Address != r.Address() {
 		t.Fatal("wrong address")
+	}
+	if reg.Name != r.Name() {
+		t.Fatal("wrong name")
 	}
 }
 
 func TestDeregistration(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, start)
+	client, r, _, etcdcleanup := bootstrap(t, start)
 	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
@@ -94,8 +99,11 @@ func TestDeregistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reg.Address != r.Address {
+	if reg.Address != r.Address() {
 		t.Fatal("wrong address")
+	}
+	if reg.Name != r.Name() {
+		t.Fatal("wrong name")
 	}
 
 	timeout, cancel = timeoutContext()
@@ -117,7 +125,7 @@ func TestDeregistration(t *testing.T) {
 }
 
 func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, dontStart)
+	client, r, _, etcdcleanup := bootstrap(t, dontStart)
 	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
@@ -138,7 +146,7 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 }
 
 func TestRegisterTwiceAllowed(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, start)
+	client, r, _, etcdcleanup := bootstrap(t, start)
 	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
@@ -154,7 +162,7 @@ func TestRegisterTwiceAllowed(t *testing.T) {
 }
 
 func TestRegisterTwiceNotAllowed(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, start)
+	client, r, _, etcdcleanup := bootstrap(t, start)
 	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
@@ -170,7 +178,7 @@ func TestRegisterTwiceNotAllowed(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, start)
+	client, r, _, etcdcleanup := bootstrap(t, start)
 	defer etcdcleanup()
 	defer client.Close()
 
@@ -192,7 +200,7 @@ func TestStop(t *testing.T) {
 }
 
 func TestFindRegistration(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, start)
+	client, r, _, etcdcleanup := bootstrap(t, start)
 	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
@@ -223,7 +231,7 @@ func TestFindRegistration(t *testing.T) {
 }
 
 func TestFindRegistrations(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, start)
+	client, r, _, etcdcleanup := bootstrap(t, start)
 	defer etcdcleanup()
 	defer client.Close()
 	defer r.Stop()
@@ -265,7 +273,7 @@ func TestFindRegistrations(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, dontStart)
+	client, r, addr, etcdcleanup := bootstrap(t, dontStart)
 	defer etcdcleanup()
 	defer client.Close()
 
@@ -274,7 +282,7 @@ func TestKeepAlive(t *testing.T) {
 
 	// Use the minimum.
 	r.LeaseDuration = 1 * time.Second
-	_, err := r.Start()
+	_, err := r.Start(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +298,7 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestWatch(t *testing.T) {
-	client, r, etcdcleanup := bootstrap(t, dontStart)
+	client, r, addr, etcdcleanup := bootstrap(t, dontStart)
 	defer etcdcleanup()
 	defer client.Close()
 
@@ -299,7 +307,7 @@ func TestWatch(t *testing.T) {
 
 	// Use the minimum.
 	r.LeaseDuration = 1 * time.Second
-	_, err := r.Start()
+	_, err := r.Start(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,24 +380,28 @@ func TestWatch(t *testing.T) {
 	etcdcleanup()
 }
 
-func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, testetcd.Cleanup) {
+func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.TCPAddr, testetcd.Cleanup) {
 	client, cleanup := testetcd.StartAndConnect(t)
+
+	addr := &net.TCPAddr{
+		IP:   []byte("localhost"),
+		Port: 2000 + rand.Intn(2000),
+	}
 
 	r, err := New(client)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.Address = fmt.Sprintf("localhost:%v", 2000+rand.Intn(2000))
 	r.LeaseDuration = 10 * time.Second
 
 	if shouldStart {
-		_, err = r.Start()
+		_, err = r.Start(addr)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	return client, r, cleanup
+	return client, r, addr, cleanup
 }
 
 func timeoutContext() (context.Context, func()) {

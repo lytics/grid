@@ -26,7 +26,10 @@ func (box *Mailbox) String() string {
 // Example Usage:
 //
 //     func Act(c context.Context) {
-//         mailbox, err := NewMailbox(c, "incoming", 10)
+//         server, err := grid.ContextActorServer(c)
+//         ...
+//
+//         mailbox, err := NewMailbox(server, "incoming", 10)
 //         ...
 //         defer mailbox.Close()
 //

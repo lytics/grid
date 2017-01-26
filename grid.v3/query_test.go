@@ -49,7 +49,7 @@ func TestQuery(t *testing.T) {
 		time.Sleep(1 * time.Second)
 
 		// Check for server as a peer.
-		var peers []string
+		var peers []*QueryEvent
 		retry.X(6, backoff, func() bool {
 			peers, err = c.Query(timeout, Peers)
 			t.Logf("peers: %v", peers)
@@ -115,18 +115,18 @@ func TestQueryWatch(t *testing.T) {
 	}()
 
 	// Monitor the watch channel to confirm that started
-	// servers are eventually discovered.
-	discovered := make(map[string]bool)
+	// servers are eventually found.
+	found := make(map[string]bool)
 	for {
 		select {
 		case <-time.After(10 * time.Second):
-			t.Fatalf("expected number of peers: %v, found: %v", nrPeers, len(discovered))
+			t.Fatalf("expected number of peers: %v, found: %v", nrPeers, len(found))
 		case e := <-watch:
-			if e.Discovered() {
-				discovered[e.Name()] = true
-				t.Logf("discovered peer: %v", e.Name())
+			if e.Type == EntityFound {
+				found[e.Name()] = true
+				t.Logf("found peer: %v", e.Name())
 			}
-			if len(discovered) == 2 {
+			if len(found) == 2 {
 				return
 			}
 		}

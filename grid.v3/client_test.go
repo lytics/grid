@@ -192,7 +192,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 
 	// Start the echo actor on the first peer.
-	res, err := client.Request(timeout, peers[0], NewActorDef("echo"))
+	res, err := client.Request(timeout, peers[0].Name(), NewActorDef("echo"))
 	if err != nil {
 		t.Fatal(err)
 	}

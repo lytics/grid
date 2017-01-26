@@ -19,21 +19,23 @@ const (
 	Mailboxes entityType = "mailbox"
 )
 
-type changeType int
+// EventType categorizing the event.
+type EventType int
 
 const (
-	entityErr        changeType = 0
-	entityDiscovered changeType = 1
-	entityLost       changeType = 2
+	WatchError  EventType = 0
+	EntityLost  EventType = 1
+	EntityFound EventType = 2
 )
 
 // QueryEvent indicating that an entity has been discovered,
 // lost, or some error has occured with the watch.
 type QueryEvent struct {
 	name   string
+	peer   string
 	err    error
 	entity entityType
-	change changeType
+	Type   EventType
 }
 
 // Name of entity that caused the event.
@@ -41,14 +43,10 @@ func (e *QueryEvent) Name() string {
 	return e.name
 }
 
-// Discovered entity.
-func (e *QueryEvent) Discovered() bool {
-	return e.change == entityDiscovered
-}
-
-// Lost entity.
-func (e *QueryEvent) Lost() bool {
-	return e.change == entityLost
+// Peer of named entity. If the entity is of type peer
+// then methods Name and Peer return the same string.
+func (e *QueryEvent) Peer() string {
+	return e.peer
 }
 
 // Err caught watching query events. The error
@@ -59,11 +57,11 @@ func (e *QueryEvent) Err() error {
 
 // String representation of query event.
 func (e *QueryEvent) String() string {
-	switch e.change {
-	case entityLost:
-		return fmt.Sprintf("query event: %v change: lost: %v", e.entity, e.name)
-	case entityDiscovered:
-		return fmt.Sprintf("query event: %v change: discovered: %v", e.entity, e.name)
+	switch e.Type {
+	case EntityLost:
+		return fmt.Sprintf("query event: %v lost: %v", e.entity, e.name)
+	case EntityFound:
+		return fmt.Sprintf("query event: %v found: %v", e.entity, e.name)
 	default:
 		return fmt.Sprintf("query event: error: %v", e.err)
 	}
@@ -84,24 +82,31 @@ func (e *QueryEvent) String() string {
 //     }
 //
 //     for event := range watch {
-//         if event.Err() != nil {
+//         switch event.Type {
+//         case grid.WatchError:
 //             // Error occured watching peers, deal with error.
-//         }
-//         if event.Lost() {
+//         case grid.EntityLost:
 //             // Existing peer lost, reschedule work on extant peers.
-//         }
-//         if event.Discovered() {
-//             // New peer discovered, assign work, get data, reschedule, etc.
+//         case grid.EntityFound:
+//             // New peer found, assign work, get data, reschedule, etc.
 //         }
 //     }
-func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]string, <-chan *QueryEvent, error) {
+func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEvent, <-chan *QueryEvent, error) {
 	nsName, err := namespacePrefix(filter, c.cfg.Namespace)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	regs, changes, err := c.registry.Watch(ctx, nsName)
-	ents := nameFromRegs(filter, c.cfg.Namespace, regs)
+	var current []*QueryEvent
+	for _, reg := range regs {
+		current = append(current, &QueryEvent{
+			name:   nameFromReg(filter, c.cfg.Namespace, reg),
+			peer:   reg.Name,
+			entity: filter,
+			Type:   EntityFound,
+		})
+	}
 
 	queryEvents := make(chan *QueryEvent)
 	put := func(change *QueryEvent) {
@@ -127,22 +132,30 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]string, <
 				}
 				switch change.Type {
 				case registry.Delete:
-					name := nameFromReg(filter, c.cfg.Namespace, change.Reg)
-					put(&QueryEvent{name: name, entity: filter, change: entityLost})
+					put(&QueryEvent{
+						name:   nameFromReg(filter, c.cfg.Namespace, change.Reg),
+						peer:   change.Reg.Name,
+						entity: filter,
+						Type:   EntityLost,
+					})
 				case registry.Create, registry.Modify:
-					name := nameFromReg(filter, c.cfg.Namespace, change.Reg)
-					put(&QueryEvent{name: name, entity: filter, change: entityDiscovered})
+					put(&QueryEvent{
+						name:   nameFromReg(filter, c.cfg.Namespace, change.Reg),
+						peer:   change.Reg.Name,
+						entity: filter,
+						Type:   EntityFound,
+					})
 				}
 			}
 		}
 	}()
 
-	return ents, queryEvents, nil
+	return current, queryEvents, nil
 }
 
 // Query in this client's namespace. The filter can be any one of
 // Peers, Actors, or Mailboxes.
-func (c *Client) Query(timeout time.Duration, filter entityType) ([]string, error) {
+func (c *Client) Query(timeout time.Duration, filter entityType) ([]*QueryEvent, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.QueryC(timeoutC, filter)
@@ -151,7 +164,7 @@ func (c *Client) Query(timeout time.Duration, filter entityType) ([]string, erro
 // QueryC (query) in this client's namespace. The filter can be any
 // one of Peers, Actors, or Mailboxes. The context can be used to
 // control cancelation or timeouts.
-func (c *Client) QueryC(ctx context.Context, filter entityType) ([]string, error) {
+func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, error) {
 	nsPrefix, err := namespacePrefix(filter, c.cfg.Namespace)
 	if err != nil {
 		return nil, err
@@ -161,19 +174,17 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]string, error
 		return nil, err
 	}
 
-	names := nameFromRegs(filter, c.cfg.Namespace, regs)
-	return names, nil
-}
-
-// nameFromRegs returns a slice of names from many registrations.
-// Used by query to return just simple string data.
-func nameFromRegs(filter entityType, namespace string, regs []*registry.Registration) []string {
-	names := make([]string, 0)
+	var result []*QueryEvent
 	for _, reg := range regs {
-		name := nameFromReg(filter, namespace, reg)
-		names = append(names, name)
+		result = append(result, &QueryEvent{
+			name:   nameFromReg(filter, c.cfg.Namespace, reg),
+			peer:   reg.Name,
+			entity: filter,
+			Type:   EntityFound,
+		})
 	}
-	return names
+
+	return result, nil
 }
 
 // nameFromReg returns the name from the data field of a registration.

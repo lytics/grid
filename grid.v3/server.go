@@ -76,15 +76,6 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 // the grid, ie: only one will every be running. This leader can be
 // though of as an entry point.
 func (s *Server) Serve(lis net.Listener) error {
-	// Address is the address of this process, which
-	// will be placed into the data portion of each
-	// registration this process creates via the
-	// registry.
-	addr, err := formatAddress(lis.Addr())
-	if err != nil {
-		return err
-	}
-
 	// Create a registry client, through which other
 	// entities like peers, actors, and mailboxes
 	// will be discovered.
@@ -95,11 +86,10 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.registry = r
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
-	s.registry.Address = addr
 
 	// Start the registry and monitor that it is
 	// running correctly.
-	registryErrors := s.monitorRegistry()
+	registryErrors := s.monitorRegistry(lis.Addr())
 
 	// Create a context that each actor this leader creates
 	// will receive. When the server is stopped, it will
@@ -112,15 +102,8 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.ctx = ctx
 	s.cancel = cancel
 
-	// This server will be a "peer", the peer name is simply
-	// a cleaned up version of the network address that it
-	// is using.
-	name := s.registry.Address
-	name = strings.Replace(name, ":", "-", -1)
-	name = strings.Replace(name, ".", "-", -1)
-	name = strings.Replace(name, "/", "-", -1)
-	name = strings.Trim(name, "~\\!@#$%^&*()<>")
-	name = strings.TrimSpace(name)
+	// Peer's name is the registry's name.
+	name := s.registry.Name()
 
 	// Namespaced name, which just includes the namespace.
 	nsName, err := namespaceName(Peers, s.cfg.Namespace, name)
@@ -146,7 +129,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	// actors in a grid is just done via a normal request
 	// sending the message ActorDef to a listening peer's
 	// mailbox.
-	mailbox, err := NewMailbox(s, name, 10)
+	mailbox, err := NewMailbox(s, name, 100)
 	if err != nil {
 		return err
 	}
@@ -305,9 +288,9 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 }
 
 // monitorRegistry for errors in the background.
-func (s *Server) monitorRegistry() <-chan error {
+func (s *Server) monitorRegistry(addr net.Addr) <-chan error {
 	fault := make(chan error, 1)
-	regFaults, err := s.registry.Start()
+	regFaults, err := s.registry.Start(addr)
 	if err != nil {
 		fault <- err
 		s.Stop()
@@ -464,18 +447,4 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	}()
 
 	return nil
-}
-
-// formatAddress as ip:port, since just calling String()
-// on the address can return some funky formatting.
-func formatAddress(addr net.Addr) (string, error) {
-	switch addr := addr.(type) {
-	default:
-		return "", ErrUnknownNetAddressType
-	case *net.TCPAddr:
-		if addr.IP.IsUnspecified() {
-			return "", ErrUnspecifiedNetAddressIP
-		}
-		return fmt.Sprintf("%v:%v", addr.IP, addr.Port), nil
-	}
 }

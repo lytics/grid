@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
+
+	"net"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
 )
@@ -26,7 +29,9 @@ var (
 	ErrFailedRegistration      = errors.New("failed registration")
 	ErrFailedDeregistration    = errors.New("failed deregistration")
 	ErrLeaseDurationTooShort   = errors.New("lease duration too short")
+	ErrUnknownNetAddressType   = errors.New("unknown net address type")
 	ErrWatchClosedUnexpectedly = errors.New("watch closed unexpectedly")
+	ErrUnspecifiedNetAddressIP = errors.New("unspecified net address ip")
 )
 
 var (
@@ -37,7 +42,34 @@ var (
 // Registration information.
 type Registration struct {
 	Key     string `json:"key"`
+	Name    string `json:"name"`
 	Address string `json:"address"`
+}
+
+type ChangeType int
+
+const (
+	Delete ChangeType = 0
+	Modify ChangeType = 1
+	Create ChangeType = 2
+)
+
+type RegistryChange struct {
+	Key   string
+	Reg   *Registration
+	Type  ChangeType
+	Error error
+}
+
+func (rc *RegistryChange) String() string {
+	typ := "delete"
+	switch rc.Type {
+	case Modify:
+		typ = "modify"
+	case Create:
+		typ = "create"
+	}
+	return fmt.Sprintf("key: %v, type: %v, registration: %v", rc.Key, typ, rc.Reg)
 }
 
 // Registry for discovery.
@@ -49,7 +81,8 @@ type Registry struct {
 	lease         etcdv3.Lease
 	leaseID       etcdv3.LeaseID
 	client        *etcdv3.Client
-	Address       string
+	name          string
+	address       string
 	Timeout       time.Duration
 	LeaseDuration time.Duration
 	// Testing hook.
@@ -73,9 +106,16 @@ func New(client *etcdv3.Client) (*Registry, error) {
 }
 
 // Start Registry.
-func (rr *Registry) Start() (<-chan error, error) {
+func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
+
+	address, err := formatAddress(addr)
+	if err != nil {
+		return nil, err
+	}
+	rr.address = address
+	rr.name = formatName(address)
 
 	if rr.LeaseDuration < minLeaseDuration {
 		return nil, ErrLeaseDurationTooShort
@@ -141,6 +181,16 @@ func (rr *Registry) Start() (<-chan error, error) {
 	return failure, nil
 }
 
+// Address of this registry in the format of <ip>:<port>
+func (rr *Registry) Address() string {
+	return rr.address
+}
+
+// Name of the registry based off the address.
+func (rr *Registry) Name() string {
+	return rr.name
+}
+
 // Stop Registry.
 func (rr *Registry) Stop() {
 	if rr.leaseID < 0 {
@@ -148,32 +198,6 @@ func (rr *Registry) Stop() {
 	}
 	close(rr.done)
 	<-rr.exited
-}
-
-type ChangeType int
-
-const (
-	Delete ChangeType = 0
-	Modify ChangeType = 1
-	Create ChangeType = 2
-)
-
-type RegistryChange struct {
-	Key   string
-	Reg   *Registration
-	Type  ChangeType
-	Error error
-}
-
-func (rc *RegistryChange) String() string {
-	typ := "delete"
-	switch rc.Type {
-	case Modify:
-		typ = "modify"
-	case Create:
-		typ = "create"
-	}
-	return fmt.Sprintf("key: %v, type: %v, registration: %v", rc.Key, typ, rc.Reg)
 }
 
 func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-chan *RegistryChange, error) {
@@ -328,7 +352,7 @@ func (rr *Registry) Register(c context.Context, key string, options ...Option) e
 		// The caller is already registered and they
 		// have allowed just multi-registration, so
 		// return.
-		if reg.Address == rr.Address {
+		if reg.Address == rr.address {
 			return nil
 		}
 		// The caller is regestering a key that is
@@ -338,7 +362,8 @@ func (rr *Registry) Register(c context.Context, key string, options ...Option) e
 
 	value, err := json.Marshal(&Registration{
 		Key:     key,
-		Address: rr.Address,
+		Name:    rr.name,
+		Address: rr.address,
 	})
 	if err != nil {
 		return err
@@ -386,7 +411,7 @@ func (rr *Registry) Deregister(c context.Context, key string) error {
 		if err != nil {
 			return err
 		}
-		if rec.Address != rr.Address {
+		if rec.Address != rr.address {
 			return ErrNotOwner
 		}
 
@@ -407,4 +432,30 @@ func (rr *Registry) Deregister(c context.Context, key string) error {
 type keepAliveStats struct {
 	success int
 	failure int
+}
+
+// formatName formats the address into a human readable form,
+// removing any special characters.
+func formatName(address string) string {
+	name := address
+	name = strings.Replace(name, ":", "-", -1)
+	name = strings.Replace(name, ".", "-", -1)
+	name = strings.Replace(name, "/", "-", -1)
+	name = strings.Trim(name, "~\\!@#$%^&*()<>")
+	name = strings.TrimSpace(name)
+	return name
+}
+
+// formatAddress as ip:port, since just calling String()
+// on the address can return some funky formatting.
+func formatAddress(addr net.Addr) (string, error) {
+	switch addr := addr.(type) {
+	default:
+		return "", ErrUnknownNetAddressType
+	case *net.TCPAddr:
+		if addr.IP.IsUnspecified() {
+			return "", ErrUnspecifiedNetAddressIP
+		}
+		return fmt.Sprintf("%v:%v", addr.IP, addr.Port), nil
+	}
 }
