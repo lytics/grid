@@ -12,7 +12,7 @@ const (
 )
 
 func TestByInt(t *testing.T) {
-	r := New(namespace, name, 10)
+	r := New(name, 10)
 	for i := int(0); i < 100; i++ {
 		name := r.ByInt(i)
 		if name != fmt.Sprintf("reader-%v", i%10) {
@@ -22,7 +22,7 @@ func TestByInt(t *testing.T) {
 }
 
 func TestByUint32(t *testing.T) {
-	r := New(namespace, name, 10)
+	r := New(name, 10)
 	for i := uint32(0); i < 100; i++ {
 		name := r.ByUint32(i)
 		if name != fmt.Sprintf("reader-%v", i%10) {
@@ -32,7 +32,7 @@ func TestByUint32(t *testing.T) {
 }
 
 func TestByUint64(t *testing.T) {
-	r := New(namespace, name, 10)
+	r := New(name, 10)
 	for i := uint64(0); i < 100; i++ {
 		name := r.ByUint64(i)
 		if name != fmt.Sprintf("reader-%v", i%10) {
@@ -42,7 +42,7 @@ func TestByUint64(t *testing.T) {
 }
 
 func TestByHashedBytes(t *testing.T) {
-	r := New(namespace, name, 10)
+	r := New(name, 10)
 	stats := make(map[string]int)
 	for i := int(0); i < 10000; i++ {
 		name := r.ByHashedBytes([]byte(strconv.Itoa(i)))
@@ -56,7 +56,7 @@ func TestByHashedBytes(t *testing.T) {
 }
 
 func TestByHashedString(t *testing.T) {
-	r := New(namespace, name, 10)
+	r := New(name, 10)
 	stats := make(map[string]int)
 	for i := int(0); i < 10000; i++ {
 		name := r.ByHashedString(strconv.Itoa(i))
@@ -70,7 +70,7 @@ func TestByHashedString(t *testing.T) {
 }
 
 func TestByRandom(t *testing.T) {
-	r := New(namespace, name, 10)
+	r := New(name, 10)
 	stats := make(map[string]int)
 	for i := int(0); i < 10000; i++ {
 		name := r.ByRandom()

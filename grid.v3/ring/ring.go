@@ -26,17 +26,15 @@ type Ring interface {
 type ring struct {
 	dice      *rand.Rand
 	name      string
-	namespace string
 	actortype string
 	n         int
 }
 
-func New(namespace, name string, n int) Ring {
+func New(name string, n int) Ring {
 	return &ring{
 		n:         n,
 		dice:      rand.New(rand.NewSource(rand.Int63())),
 		name:      name,
-		namespace: namespace,
 		actortype: name,
 	}
 }
@@ -144,8 +142,6 @@ func (r *ring) ByHashedUint64(key uint64) string {
 func (r *ring) actorDef(i int) *grid.ActorDef {
 	a := grid.NewActorDef("%s-%d", r.name, i)
 	a.Type = r.actortype
-	a.Namespace = r.namespace
-	a.ID()
 	return a
 }
 

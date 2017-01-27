@@ -5,20 +5,16 @@ import (
 	"context"
 	"encoding/gob"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
+	"fmt"
+
 	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/registry"
+	"github.com/lytics/retry"
 	"google.golang.org/grpc"
-)
-
-type peerWatchDelta int
-
-const (
-	peerErr        peerWatchDelta = 0
-	peerDiscovered peerWatchDelta = 1
-	peerLost       peerWatchDelta = 2
 )
 
 type clientAndConn struct {
@@ -26,34 +22,13 @@ type clientAndConn struct {
 	client WireClient
 }
 
-// PeerChangeEvent indicating that a peer has been discovered,
-// lost, or some error has occured with a peer or the watch
-// of peers.
-type PeerChangeEvent struct {
-	peer        string
-	err         error
-	stateChange peerWatchDelta
-}
-
-// Peer name that caused the event.
-func (p *PeerChangeEvent) Peer() string {
-	return p.peer
-}
-
-// Discovered peer.
-func (p *PeerChangeEvent) Discovered() bool {
-	return p.stateChange == peerDiscovered
-}
-
-// Lost peer.
-func (p *PeerChangeEvent) Lost() bool {
-	return p.stateChange == peerLost
-}
-
-// Err caught watching peers. The error is not
-// associated with any particular peer.
-func (p *PeerChangeEvent) Err() error {
-	return p.err
+func (cc *clientAndConn) close() error {
+	// Testing hook, used easily check
+	// a code path in the client.
+	if cc == nil {
+		return fmt.Errorf("client and conn is nil")
+	}
+	return cc.conn.Close()
 }
 
 // Client for grid-actors or non-actors to make requests to grid-actors.
@@ -88,122 +63,12 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 func (c *Client) Close() error {
 	var err error
 	for _, cc := range c.clientsAndConns {
-		clostErr := cc.conn.Close()
-		if clostErr != nil {
-			err = clostErr
+		closeErr := cc.close()
+		if closeErr != nil {
+			err = closeErr
 		}
 	}
 	return err
-}
-
-// PeersWatch monitors the entry and exit of peers in the same namespace.
-// Example usage:
-//
-//     client, err := grid.NewClient(...)
-//     ...
-//
-//     watch, currentpeers := client.PeersWatch(c)
-//     for _, peer := range currentpeers {
-//         // Do work regarding peer.
-//     }
-//
-//     for event := range watch.C {
-//         if event.Err() != nil {
-//             // Error occured watching peers, deal with error.
-//         }
-//         if event.Lost() {
-//             // Existing peer lost, reschedule work on extant peers.
-//         }
-//         if event.Discovered() {
-//             // New peer discovered, assign work, get data, reschedule, etc.
-//         }
-//     }
-func (c *Client) PeersWatch(ctx context.Context) ([]string, <-chan *PeerChangeEvent, error) {
-	peers, err := c.Peers(c.cfg.Timeout)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	currentPeers := map[string]struct{}{}
-	for _, p := range peers {
-		currentPeers[p] = struct{}{}
-	}
-
-	watchchan := make(chan *PeerChangeEvent)
-	go func() {
-		defer close(watchchan)
-
-		ticker := time.NewTicker(c.cfg.PeersRefreshInterval)
-		defer ticker.Stop()
-
-		oldPeers := currentPeers
-		for {
-			select {
-			case <-ticker.C:
-				peers, err := c.Peers(c.cfg.Timeout)
-				if err != nil {
-					select {
-					case watchchan <- &PeerChangeEvent{err: err}:
-					case <-ctx.Done():
-					}
-					return
-				}
-
-				currentPeers := map[string]struct{}{}
-				for _, p := range peers {
-					currentPeers[p] = struct{}{}
-				}
-				lostPeers := minus(oldPeers, currentPeers)
-				discoveredPeers := minus(currentPeers, oldPeers)
-				oldPeers = currentPeers
-
-				for peer := range lostPeers {
-					watchchan <- &PeerChangeEvent{peer, nil, peerLost}
-				}
-				for peer := range discoveredPeers {
-					watchchan <- &PeerChangeEvent{peer, nil, peerDiscovered}
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return peers, watchchan, nil
-}
-
-// Peers in this client's namespace. A peer is any process that called
-// the Serve method to act as a server for the namespace.
-func (c *Client) Peers(timeout time.Duration) ([]string, error) {
-	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return c.PeersC(timeoutC)
-}
-
-// PeersC (peers) in this client's namespace. A peer is any process that called
-// the Serve method to act as a server for the namespace. The context can be
-// used to control cancelation or timeouts.
-func (c *Client) PeersC(ctx context.Context) ([]string, error) {
-	regs, err := c.registry.FindRegistrations(ctx, c.cfg.Namespace+"-grid-")
-	if err != nil {
-		return nil, err
-	}
-
-	peers := make([]string, 0)
-	for _, reg := range regs {
-		prefix := c.cfg.Namespace + "-"
-		// INVARIANT
-		// Under all circumstances if a registration is returned
-		// from the prefix scan above, ie: FindRegistrations,
-		// then each registration must contain the namespace
-		// as a prefix of the key.
-		if len(reg.Key) <= len(prefix) {
-			panic("registry key without proper namespace prefix")
-		}
-		peers = append(peers, reg.Key[len(prefix):])
-	}
-
-	return peers, nil
 }
 
 // Request a response for the given message.
@@ -221,16 +86,14 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	}
 
 	// Namespaced receiver name.
-	nsReceiver := c.cfg.Namespace + "-" + receiver
-
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(env)
+	nsReceiver, err := namespaceName(Mailboxes, c.cfg.Namespace, receiver)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := c.getWireClient(ctx, nsReceiver)
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err = enc.Encode(env)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +104,54 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		Data:     buf.Bytes(),
 		Receiver: nsReceiver,
 	}
-	res, err := client.Process(ctx, req)
+	var res *Delivery
+	retry.X(3, 1*time.Second, func() bool {
+		var client WireClient
+		client, err = c.getWireClient(ctx, nsReceiver)
+		if err != nil {
+			return false
+		}
+		res, err = client.Process(ctx, req)
+		if err != nil && strings.Contains(err.Error(), ErrConnectionIsUnavailable.Error()) {
+			// Receiver is on a host that may have died.
+			// The error "connection is unavailable"
+			// comes from gRPC itself. In such a case
+			// it's best to try and replace the client.
+			c.deleteClientAndConn(nsReceiver)
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
+		if err != nil && strings.Contains(err.Error(), ErrUnknownMailbox.Error()) {
+			// Receiver possibly moved to different
+			// host for one reason or another. Get
+			// rid of old address and try discovering
+			// new host, and send again.
+			c.deleteAddress(nsReceiver)
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
+		if err != nil && strings.Contains(err.Error(), ErrReceiverBusy.Error()) {
+			// Receiver was busy, ie: the receiving channel
+			// was at capacity. Also, the reciever definitely
+			// did NOT get the message, so there is no risk
+			// of duplication if the request is tried again.
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
+		return false
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +186,9 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	address, ok := c.addresses[nsReceiver]
 	if !ok {
 		reg, err := c.registry.FindRegistration(ctx, nsReceiver)
+		if err != nil && err == registry.ErrUnknownKey {
+			return nil, ErrUnknownMailbox
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -299,21 +212,29 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	return cc.client, nil
 }
 
-// minus of sets a and b, in mathematical notation: A \ B,
-// ie: all elements in A that are not in B.
-//
-// See: https://www.techonthenet.com/sql/minus.php
-//
-// Example:
-//    lostPeers := difference(oldPeers, currentPeers)
-//    discoveredPeers := difference(currentPeers, oldPeers)
-//
-func minus(a map[string]struct{}, b map[string]struct{}) map[string]struct{} {
-	res := map[string]struct{}{}
-	for in := range a {
-		if _, skip := b[in]; !skip {
-			res[in] = struct{}{}
-		}
+func (c *Client) deleteAddress(nsReceiver string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.addresses, nsReceiver)
+}
+
+func (c *Client) deleteClientAndConn(nsReceiver string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	address, ok := c.addresses[nsReceiver]
+	if !ok {
+		return
 	}
-	return res
+
+	cc, ok := c.clientsAndConns[address]
+	if !ok {
+		return
+	}
+	err := cc.close()
+	if err != nil && Logger != nil {
+		Logger.Printf("error closing client and connection: %v", err)
+	}
+	delete(c.clientsAndConns, address)
 }

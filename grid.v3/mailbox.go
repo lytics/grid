@@ -26,7 +26,10 @@ func (box *Mailbox) String() string {
 // Example Usage:
 //
 //     func Act(c context.Context) {
-//         mailbox, err := NewMailbox(c, "incoming", 10)
+//         server, err := grid.ContextActorServer(c)
+//         ...
+//
+//         mailbox, err := NewMailbox(server, "incoming", 10)
 //         ...
 //         defer mailbox.Close()
 //
@@ -50,19 +53,26 @@ func (box *Mailbox) String() string {
 // Using a mailbox requires that the process creating the mailbox also
 // started a grid Server.
 func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
-	if !isServerRunning(s) {
-		return nil, ErrServerNotRunning
-	}
 	if !isNameValid(name) {
 		return nil, ErrInvalidMailboxName
 	}
 
-	// Acquire lock for safe mailbox updates.
+	// Namespaced name.
+	nsName, err := namespaceName(Mailboxes, s.cfg.Namespace, name)
+	if err != nil {
+		return nil, err
+	}
+
+	return newMailbox(s, nsName, size)
+}
+
+func newMailbox(s *Server, nsName string, size int) (*Mailbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Namespaced name.
-	nsName := s.cfg.Namespace + "-" + name
+	if s.mailboxes == nil {
+		return nil, ErrServerNotRunning
+	}
 
 	_, ok := s.mailboxes[nsName]
 	if ok {
