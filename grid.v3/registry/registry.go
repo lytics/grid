@@ -46,22 +46,25 @@ type Registration struct {
 	Address string `json:"address"`
 }
 
-type ChangeType int
+// EventType of a watch event.
+type EventType int
 
 const (
-	Delete ChangeType = 0
-	Modify ChangeType = 1
-	Create ChangeType = 2
+	Delete EventType = 0
+	Modify EventType = 1
+	Create EventType = 2
 )
 
-type RegistryChange struct {
+// WatchEvent triggred by a change in the registry.
+type WatchEvent struct {
 	Key   string
 	Reg   *Registration
-	Type  ChangeType
+	Type  EventType
 	Error error
 }
 
-func (rc *RegistryChange) String() string {
+// String representation of the watch event.
+func (rc *WatchEvent) String() string {
 	typ := "delete"
 	switch rc.Type {
 	case Modify:
@@ -200,7 +203,8 @@ func (rr *Registry) Stop() {
 	<-rr.exited
 }
 
-func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-chan *RegistryChange, error) {
+// Watch a prefix in the registry.
+func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-chan *WatchEvent, error) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
@@ -219,10 +223,10 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 	}
 
 	// Channel to publish registry changes.
-	changes := make(chan *RegistryChange)
+	changes := make(chan *WatchEvent)
 
 	// Write a change or exit the watcher.
-	put := func(change *RegistryChange) {
+	put := func(change *WatchEvent) {
 		select {
 		case <-c.Done():
 			return
@@ -231,12 +235,12 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 	}
 
 	// Create a change from an event.
-	createChange := func(event *etcdv3.Event) *RegistryChange {
-		change := &RegistryChange{Key: string(event.Kv.Key)}
+	createChange := func(event *etcdv3.Event) *WatchEvent {
+		change := &WatchEvent{Key: string(event.Kv.Key)}
 		reg := &Registration{}
 		err := json.Unmarshal(event.Kv.Value, reg)
 		if err != nil {
-			change.Error = err
+			change.Error = fmt.Errorf("%v: failed unmarshaling value: '%s', of key: '%s'", err, event.Kv.Value, event.Kv.Key)
 		} else {
 			change.Reg = reg
 			if event.IsCreate() {
@@ -259,11 +263,11 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 				return
 			case delta, open := <-deltas:
 				if !open {
-					put(&RegistryChange{Error: ErrWatchClosedUnexpectedly})
+					put(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
 					return
 				}
 				if delta.Err() != nil {
-					put(&RegistryChange{Error: delta.Err()})
+					put(&WatchEvent{Error: delta.Err()})
 					return
 				}
 				for _, event := range delta.Events {
@@ -338,7 +342,10 @@ func (rr *Registry) Register(c context.Context, key string, options ...Option) e
 		// The keys mach, so check if the caller has
 		// allowed multiple registrations from the
 		// same address.
-		if len(options) == 0 {
+		if len(options) != 1 {
+			return ErrAlreadyRegistered
+		}
+		if len(options) == 1 && options[0] != OpAllowReentrantRegistration {
 			return ErrAlreadyRegistered
 		}
 		// The call HAS allowed multiple registrations

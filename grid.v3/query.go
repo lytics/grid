@@ -57,6 +57,9 @@ func (e *QueryEvent) Err() error {
 
 // String representation of query event.
 func (e *QueryEvent) String() string {
+	if e == nil {
+		return "query event: <nil>"
+	}
 	switch e.Type {
 	case EntityLost:
 		return fmt.Sprintf("query event: %v lost: %v", e.entity, e.name)
@@ -127,7 +130,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 					return
 				}
 				if change.Error != nil {
-					put(&QueryEvent{err: err})
+					put(&QueryEvent{err: change.Error})
 					return
 				}
 				switch change.Type {
