@@ -84,7 +84,7 @@ func TestClientRequestWithBadReceiverName(t *testing.T) {
 	defer cleanup()
 
 	// Create grid server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, nil)
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,10 +154,11 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 
 	// Create the server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, MakerFunc(g))
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	server.SetDefinition(FromFunc(g))
 
 	// Create the listener on a random port.
 	lis, err := net.Listen("tcp", "localhost:0")

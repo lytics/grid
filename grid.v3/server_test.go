@@ -37,10 +37,11 @@ func TestServerStartStop(t *testing.T) {
 		return a, nil
 	}
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, MakerFunc(g))
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	server.SetDefinition(FromFunc(g))
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
@@ -85,7 +86,7 @@ func TestServerStartNoEtcdRunning(t *testing.T) {
 	etcd, cleanup := testetcd.StartAndConnect(t)
 	cleanup()
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, nil)
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,10 +116,11 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 
 	etcd, cleanup := testetcd.StartAndConnect(t)
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, MakerFunc(g))
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	server.SetDefinition(FromFunc(g))
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {

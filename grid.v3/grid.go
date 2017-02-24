@@ -5,10 +5,10 @@ type Grid interface {
 	MakeActor(def *ActorDef) (Actor, error)
 }
 
-// MakerFunc that implements the Grid interface.
-type MakerFunc func(def *ActorDef) (Actor, error)
+// FromFunc that implements the Grid interface.
+type FromFunc func(def *ActorDef) (Actor, error)
 
 // MakeActor makes an actor from its definition.
-func (f MakerFunc) MakeActor(def *ActorDef) (Actor, error) {
+func (f FromFunc) MakeActor(def *ActorDef) (Actor, error) {
 	return f(def)
 }

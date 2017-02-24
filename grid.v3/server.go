@@ -51,7 +51,7 @@ type Server struct {
 //
 // If argument g is nil, then this server will not create actors, will
 // not start a leader, and can be used only for serving mailboxes.
-func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
+func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	setServerCfgDefaults(&cfg)
 
 	if !isNameValid(cfg.Namespace) {
@@ -61,11 +61,15 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg, g Grid) (*Server, error) {
 		return nil, ErrInvalidEtcd
 	}
 	return &Server{
-		g:    g,
 		cfg:  cfg,
 		etcd: etcd,
 		grpc: grpc.NewServer(),
 	}, nil
+}
+
+// SetDefinition of the server's grid.
+func (s *Server) SetDefinition(g Grid) {
+	s.g = g
 }
 
 // Serve the grid on the listener. The listener address type must be

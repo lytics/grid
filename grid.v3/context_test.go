@@ -74,10 +74,11 @@ func TestValidContext(t *testing.T) {
 		return nil, nil
 	}
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, MakerFunc(g))
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	server.SetDefinition(FromFunc(g))
 
 	// Create the listener on a random port.
 	lis, err := net.Listen("tcp", "localhost:0")

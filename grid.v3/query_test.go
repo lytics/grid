@@ -26,7 +26,7 @@ func TestQuery(t *testing.T) {
 	}
 
 	for i := 1; i <= nrPeers; i++ {
-		s, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, nil)
+		s, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,7 +90,7 @@ func TestQueryWatch(t *testing.T) {
 	// Start servers one at a time in the background.
 	go func() {
 		for i := 1; i <= nrPeers; i++ {
-			s, err := NewServer(etcd, ServerCfg{Namespace: "testing"}, nil)
+			s, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 			if err != nil {
 				t.Fatal(err)
 			}
