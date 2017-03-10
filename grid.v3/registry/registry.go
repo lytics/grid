@@ -46,13 +46,18 @@ type Registration struct {
 	Address string `json:"address"`
 }
 
+func (r *Registration) String() string {
+	return fmt.Sprintf("key: %v, name: %v, address: %v", r.Key, r.Name, r.Address)
+}
+
 // EventType of a watch event.
 type EventType int
 
 const (
-	Delete EventType = 0
-	Modify EventType = 1
-	Create EventType = 2
+	Error  EventType = 0
+	Delete EventType = 1
+	Modify EventType = 2
+	Create EventType = 3
 )
 
 // WatchEvent triggred by a change in the registry.
@@ -64,15 +69,18 @@ type WatchEvent struct {
 }
 
 // String representation of the watch event.
-func (rc *WatchEvent) String() string {
+func (we *WatchEvent) String() string {
+	if we.Error != nil {
+		return fmt.Sprintf("key: %v, error: %v", we.Key, we.Error)
+	}
 	typ := "delete"
-	switch rc.Type {
+	switch we.Type {
 	case Modify:
 		typ = "modify"
 	case Create:
 		typ = "create"
 	}
-	return fmt.Sprintf("key: %v, type: %v, registration: %v", rc.Key, typ, rc.Reg)
+	return fmt.Sprintf("key: %v, type: %v, registration: %v", we.Key, typ, we.Reg)
 }
 
 // Registry for discovery.
@@ -223,47 +231,55 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 	}
 
 	// Channel to publish registry changes.
-	changes := make(chan *WatchEvent)
+	watchEvents := make(chan *WatchEvent)
 
 	// Write a change or exit the watcher.
-	put := func(change *WatchEvent) {
+	put := func(we *WatchEvent) {
 		select {
 		case <-c.Done():
 			return
-		case changes <- change:
+		case watchEvents <- we:
 		}
 	}
 
-	// Create a change from an event.
-	createChange := func(event *etcdv3.Event) *WatchEvent {
-		change := &WatchEvent{Key: string(event.Kv.Key)}
+	// Create a watch-event from an event.
+	createWatchEvent := func(ev *etcdv3.Event) *WatchEvent {
+		wev := &WatchEvent{Key: string(ev.Kv.Key)}
 		reg := &Registration{}
-		err := json.Unmarshal(event.Kv.Value, reg)
-		if err != nil {
-			change.Error = fmt.Errorf("%v: failed unmarshaling value: '%s', of key: '%s'", err, event.Kv.Value, event.Kv.Key)
+		if ev.IsCreate() {
+			wev.Type = Create
+		} else if ev.IsModify() {
+			wev.Type = Modify
 		} else {
-			change.Reg = reg
-			if event.IsCreate() {
-				change.Type = Create
-			}
-			if event.IsModify() {
-				change.Type = Modify
-			}
+			wev.Type = Delete
+			// Need to return now because
+			// delete events don't contain
+			// any data to unmarshal.
+			return wev
 		}
-		return change
+		err := json.Unmarshal(ev.Kv.Value, reg)
+		if err != nil {
+			wev.Error = fmt.Errorf("%v: failed unmarshaling value: '%s'", err, ev.Kv.Value)
+		} else {
+			wev.Reg = reg
+		}
+		return wev
 	}
 
 	// Watch deltas in etcd, with the give prefix, starting
 	// at the revision of the get call above.
-	deltas := rr.client.Watch(c, prefix, etcdv3.WithPrefix(), etcdv3.WithRev(getRes.Header.Revision))
+	deltas := rr.client.Watch(c, prefix, etcdv3.WithPrefix(), etcdv3.WithRev(getRes.Header.Revision+1))
 	go func() {
+		defer close(watchEvents)
 		for {
 			select {
-			case <-c.Done():
-				return
 			case delta, open := <-deltas:
 				if !open {
-					put(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
+					select {
+					case <-c.Done():
+					default:
+						put(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
+					}
 					return
 				}
 				if delta.Err() != nil {
@@ -271,13 +287,13 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 					return
 				}
 				for _, event := range delta.Events {
-					put(createChange(event))
+					put(createWatchEvent(event))
 				}
 			}
 		}
 	}()
 
-	return registrations, changes, nil
+	return registrations, watchEvents, nil
 }
 
 // FindRegistrations associated with the prefix.
