@@ -139,7 +139,6 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 				case registry.Delete:
 					put(&QueryEvent{
 						name:   nameFromReg(filter, c.cfg.Namespace, change.Key),
-						peer:   change.Reg.Name,
 						entity: filter,
 						Type:   EntityLost,
 					})
