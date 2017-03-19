@@ -104,7 +104,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 	var current []*QueryEvent
 	for _, reg := range regs {
 		current = append(current, &QueryEvent{
-			name:   nameFromReg(filter, c.cfg.Namespace, reg),
+			name:   nameFromReg(filter, c.cfg.Namespace, reg.Key),
 			peer:   reg.Name,
 			entity: filter,
 			Type:   EntityFound,
@@ -138,14 +138,14 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 				switch change.Type {
 				case registry.Delete:
 					put(&QueryEvent{
-						name:   nameFromReg(filter, c.cfg.Namespace, change.Reg),
+						name:   nameFromReg(filter, c.cfg.Namespace, change.Key),
 						peer:   change.Reg.Name,
 						entity: filter,
 						Type:   EntityLost,
 					})
 				case registry.Create, registry.Modify:
 					put(&QueryEvent{
-						name:   nameFromReg(filter, c.cfg.Namespace, change.Reg),
+						name:   nameFromReg(filter, c.cfg.Namespace, change.Key),
 						peer:   change.Reg.Name,
 						entity: filter,
 						Type:   EntityFound,
@@ -182,7 +182,7 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, 
 	var result []*QueryEvent
 	for _, reg := range regs {
 		result = append(result, &QueryEvent{
-			name:   nameFromReg(filter, c.cfg.Namespace, reg),
+			name:   nameFromReg(filter, c.cfg.Namespace, reg.Key),
 			peer:   reg.Name,
 			entity: filter,
 			Type:   EntityFound,
@@ -194,15 +194,15 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, 
 
 // nameFromReg returns the name from the data field of a registration.
 // Used by query to return just simple string data.
-func nameFromReg(filter entityType, namespace string, reg *registry.Registration) string {
-	name, err := stripNamespace(filter, namespace, reg.Key)
+func nameFromReg(filter entityType, namespace string, key string) string {
+	name, err := stripNamespace(filter, namespace, key)
 	// INVARIANT
 	// Under all circumstances if a registration is returned
 	// from the prefix scan above, ie: FindRegistrations,
 	// then each registration must contain the namespace
 	// as a prefix of the key.
 	if err != nil {
-		panic("registry key without proper namespace prefix: " + reg.Key)
+		panic("registry key without proper namespace prefix: " + key)
 	}
 	return name
 }
