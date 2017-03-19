@@ -48,9 +48,6 @@ type Server struct {
 
 // NewServer for the grid. The namespace must contain only characters
 // in the set: [a-zA-Z0-9-_] and no other.
-//
-// If argument g is nil, then this server will not create actors, will
-// not start a leader, and can be used only for serving mailboxes.
 func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	setServerCfgDefaults(&cfg)
 
@@ -67,7 +64,10 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	}, nil
 }
 
-// SetDefinition of the server's grid.
+// SetDefinition of the server's grid. If never called
+// then this server will not create actors, will not
+// start a leader, and can be used only for serving
+// mailboxes.
 func (s *Server) SetDefinition(g Grid) {
 	s.g = g
 }

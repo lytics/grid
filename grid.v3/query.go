@@ -64,7 +64,7 @@ func (e *QueryEvent) String() string {
 	case EntityLost:
 		return fmt.Sprintf("query event: %v lost: %v", e.entity, e.name)
 	case EntityFound:
-		return fmt.Sprintf("query event: %v found: %v", e.entity, e.name)
+		return fmt.Sprintf("query event: %v found: %v, on peer: %v", e.entity, e.name, e.peer)
 	default:
 		return fmt.Sprintf("query event: error: %v", e.err)
 	}
@@ -122,11 +122,13 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 		defer close(queryEvents)
 		for {
 			select {
-			case <-ctx.Done():
-				return
 			case change, open := <-changes:
 				if !open {
-					put(&QueryEvent{err: ErrWatchClosedUnexpectedly})
+					select {
+					case <-ctx.Done():
+					default:
+						put(&QueryEvent{err: ErrWatchClosedUnexpectedly})
+					}
 					return
 				}
 				if change.Error != nil {
