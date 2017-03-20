@@ -9,7 +9,10 @@ import (
 	"github.com/lytics/grid/grid.v3/testetcd"
 )
 
-type echoActor chan bool
+type echoActor struct {
+	ready  chan bool
+	server *Server
+}
 
 func (a echoActor) Act(c context.Context) {
 	name, err := ContextActorName(c)
@@ -17,17 +20,12 @@ func (a echoActor) Act(c context.Context) {
 		return
 	}
 
-	server, err := ContextActorServer(c)
+	mailbox, err := NewMailbox(a.server, name, 1)
 	if err != nil {
 		return
 	}
 
-	mailbox, err := NewMailbox(server, name, 1)
-	if err != nil {
-		return
-	}
-
-	a <- true
+	a.ready <- true
 	for {
 		select {
 		case <-c.Done():
@@ -143,7 +141,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	defer cleanup()
 
 	// Create echo actor.
-	a := make(echoActor)
+	a := &echoActor{ready: make(chan bool)}
 
 	// Create the grid.
 	g := func(def *ActorDef) (Actor, error) {
@@ -159,6 +157,9 @@ func TestClientWithRunningReceiver(t *testing.T) {
 		t.Fatal(err)
 	}
 	server.SetDefinition(FromFunc(g))
+
+	// Set server on echo actor.
+	a.server = server
 
 	// Create the listener on a random port.
 	lis, err := net.Listen("tcp", "localhost:0")
@@ -202,7 +203,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 
 	// Wait for echo actor to start.
-	<-a
+	<-a.ready
 
 	// Make a request to echo actor.
 	res, err = client.Request(timeout, "echo", expected)

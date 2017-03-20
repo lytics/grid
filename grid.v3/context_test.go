@@ -49,14 +49,6 @@ func TestContextError(t *testing.T) {
 	if namespace != "" {
 		t.Fatal("expected zero value")
 	}
-
-	server, err := ContextActorServer(c)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if server != nil {
-		t.Fatal("expected zero value")
-	}
 }
 
 func TestValidContext(t *testing.T) {
@@ -127,13 +119,6 @@ func TestValidContext(t *testing.T) {
 				t.Fatal("expected non-zero value")
 			}
 
-			server, err := ContextActorServer(a.ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if server == nil {
-				t.Fatal("expected non-zero value")
-			}
 			return
 		}
 	}
