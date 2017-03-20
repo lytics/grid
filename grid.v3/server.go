@@ -91,10 +91,6 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
 
-	// Start the registry and monitor that it is
-	// running correctly.
-	registryErrors := s.monitorRegistry(lis.Addr())
-
 	// Create a context that each actor this leader creates
 	// will receive. When the server is stopped, it will
 	// call the cancel function, which should cause all the
@@ -105,6 +101,10 @@ func (s *Server) Serve(lis net.Listener) error {
 	})
 	s.ctx = ctx
 	s.cancel = cancel
+
+	// Start the registry and monitor that it is
+	// running correctly.
+	registryErrors := s.monitorRegistry(lis.Addr())
 
 	// Peer's name is the registry's name.
 	name := s.registry.Name()
