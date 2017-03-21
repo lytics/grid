@@ -91,10 +91,6 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
 
-	// Start the registry and monitor that it is
-	// running correctly.
-	registryErrors := s.monitorRegistry(lis.Addr())
-
 	// Create a context that each actor this leader creates
 	// will receive. When the server is stopped, it will
 	// call the cancel function, which should cause all the
@@ -105,6 +101,10 @@ func (s *Server) Serve(lis net.Listener) error {
 	})
 	s.ctx = ctx
 	s.cancel = cancel
+
+	// Start the registry and monitor that it is
+	// running correctly.
+	registryErrors := s.monitorRegistry(lis.Addr())
 
 	// Peer's name is the registry's name.
 	name := s.registry.Name()
@@ -349,14 +349,11 @@ func (s *Server) monitorLeader() <-chan error {
 			case <-timer.C:
 				err := start(NewActorDef("leader"))
 				if err == ErrActorCreationNotSupported {
-					if Logger != nil {
-						Logger.Printf("skipping leader startup since actor creation not supported")
-					}
 					return
 				}
-				if err == ErrGridReturnedNilActor {
+				if err == ErrNilActorDefinition {
 					if Logger != nil {
-						Logger.Printf("skipping leader startup since leader definition returned nil actor")
+						Logger.Printf("skipping leader startup since leader definition returned nil")
 					}
 					return
 				}
@@ -409,7 +406,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		return err
 	}
 	if actor == nil {
-		return ErrGridReturnedNilActor
+		return ErrNilActorDefinition
 	}
 
 	// Register the actor. This acts as a distributed mutex to

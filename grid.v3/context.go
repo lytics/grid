@@ -43,16 +43,3 @@ func ContextActorNamespace(c context.Context) (string, error) {
 	}
 	return cv.server.cfg.Namespace, nil
 }
-
-// ContextActorServer returns the server associated with this actor.
-func ContextActorServer(c context.Context) (*Server, error) {
-	v := c.Value(contextKey)
-	if v == nil {
-		return nil, ErrInvalidContext
-	}
-	cv, ok := v.(*contextVal)
-	if !ok {
-		return nil, ErrInvalidContext
-	}
-	return cv.server, nil
-}
