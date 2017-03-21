@@ -21,17 +21,17 @@ const (
 )
 
 var (
-	ErrNotOwner                = errors.New("not owner")
-	ErrNotStarted              = errors.New("not started")
-	ErrUnknownKey              = errors.New("unknown key")
-	ErrInvalidEtcd             = errors.New("invalid etcd")
-	ErrAlreadyRegistered       = errors.New("already registered")
-	ErrFailedRegistration      = errors.New("failed registration")
-	ErrFailedDeregistration    = errors.New("failed deregistration")
-	ErrLeaseDurationTooShort   = errors.New("lease duration too short")
-	ErrUnknownNetAddressType   = errors.New("unknown net address type")
-	ErrWatchClosedUnexpectedly = errors.New("watch closed unexpectedly")
-	ErrUnspecifiedNetAddressIP = errors.New("unspecified net address ip")
+	ErrNotOwner                = errors.New("registry: not owner")
+	ErrNotStarted              = errors.New("registry: not started")
+	ErrUnknownKey              = errors.New("registry: unknown key")
+	ErrInvalidEtcd             = errors.New("registry: invalid etcd")
+	ErrAlreadyRegistered       = errors.New("registry: already registered")
+	ErrFailedRegistration      = errors.New("registry: failed registration")
+	ErrFailedDeregistration    = errors.New("registry: failed deregistration")
+	ErrLeaseDurationTooShort   = errors.New("registry: lease duration too short")
+	ErrUnknownNetAddressType   = errors.New("registry: unknown net address type")
+	ErrWatchClosedUnexpectedly = errors.New("registry: watch closed unexpectedly")
+	ErrUnspecifiedNetAddressIP = errors.New("registry: unspecified net address ip")
 )
 
 var (
