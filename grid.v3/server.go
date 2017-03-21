@@ -349,14 +349,11 @@ func (s *Server) monitorLeader() <-chan error {
 			case <-timer.C:
 				err := start(NewActorDef("leader"))
 				if err == ErrActorCreationNotSupported {
-					if Logger != nil {
-						Logger.Printf("skipping leader startup since actor creation not supported")
-					}
 					return
 				}
-				if err == ErrGridReturnedNilActor {
+				if err == ErrNilActorDefinition {
 					if Logger != nil {
-						Logger.Printf("skipping leader startup since leader definition returned nil actor")
+						Logger.Printf("skipping leader startup since leader definition returned nil")
 					}
 					return
 				}
@@ -409,7 +406,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		return err
 	}
 	if actor == nil {
-		return ErrGridReturnedNilActor
+		return ErrNilActorDefinition
 	}
 
 	// Register the actor. This acts as a distributed mutex to
