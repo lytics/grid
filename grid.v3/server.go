@@ -331,7 +331,7 @@ func (s *Server) monitorLeader() <-chan error {
 			}
 			time.Sleep(1 * time.Second)
 			err = s.startActor(s.cfg.Timeout, def)
-			if err != nil && strings.Contains(err.Error(), ErrAlreadyRegistered.Error()) {
+			if err != nil && strings.Contains(err.Error(), registry.ErrAlreadyRegistered.Error()) {
 				return nil
 			}
 		}
