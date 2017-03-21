@@ -112,7 +112,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 			return false
 		}
 		res, err = client.Process(ctx, req)
-		if err != nil && strings.Contains(err.Error(), ErrConnectionIsUnavailable.Error()) {
+		if err != nil && strings.Contains(err.Error(), "the connection is unavailable") {
 			// Receiver is on a host that may have died.
 			// The error "connection is unavailable"
 			// comes from gRPC itself. In such a case
@@ -198,7 +198,7 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 
 	cc, ok := c.clientsAndConns[address]
 	if !ok {
-		conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second), grpc.WithBlock())
+		conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second))
 		if err != nil {
 			return nil, err
 		}

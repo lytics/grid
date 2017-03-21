@@ -24,6 +24,5 @@ var (
 	ErrInvalidMailboxName        = errors.New("grid: invalid mailbox name")
 	ErrNilActorDefinition        = errors.New("grid: nil actor definition")
 	ErrWatchClosedUnexpectedly   = errors.New("grid: watch closed unexpectedly")
-	ErrConnectionIsUnavailable   = errors.New("grid: connection is unavailable")
 	ErrActorCreationNotSupported = errors.New("grid: actor creation not supported")
 )
