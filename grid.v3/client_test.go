@@ -543,3 +543,31 @@ func TestClientWithBusyReceiver(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestClientStats(t *testing.T) {
+	cs := newClientStats()
+	cs.Inc(numGetWireClient)
+	cs.Inc(numDeleteAddress)
+	if cs.counters[numGetWireClient] != 1 {
+		t.Fatal("expected count of 1")
+	}
+	if cs.counters[numDeleteAddress] != 1 {
+		t.Fatal("expected count of 1")
+	}
+	switch cs.String() {
+	case "numGetWireClient:1, numDeleteAddress:1":
+	case "numDeleteAddress:1, numGetWireClient:1":
+	default:
+		t.Fatal("expected string: 'numGetWireClient:1'")
+	}
+}
+
+func TestNilClientStats(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal("expected no panic")
+		}
+	}()
+	var cs *clientStats
+	cs.Inc(numGetWireClient)
+}
