@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lytics/grid/grid.v3/registry"
+	"github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/testetcd"
 )
 
@@ -105,38 +105,13 @@ func TestClientClose(t *testing.T) {
 func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 	const timeout = 2 * time.Second
 
-	// Start etcd.
-	etcd, cleanup := testetcd.StartAndConnect(t)
+	// Bootstrap.
+	_, cleanup, server, client := bootstrapClientTest(t)
 	defer cleanup()
-
-	// Create grid server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create listener.
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Start server in background.
-	done := make(chan error, 1)
-	go func() {
-		err = server.Serve(lis)
-		if err != nil {
-			done <- err
-		}
-	}()
-	time.Sleep(timeout)
-
-	// Create client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	defer server.Stop()
 	defer client.Close()
+
+	// Set client stats.
 	client.cs = newClientStats()
 
 	// Send a request to some random name.
@@ -148,16 +123,6 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 		t.Fatal(res)
 	}
 
-	// Stop the server.
-	server.Stop()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	default:
-	}
-
 	if v := client.cs.counters[numErrUnregisteredMailbox]; v == 0 {
 		t.Fatal("expected non-zero error count")
 	}
@@ -166,53 +131,19 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 func TestClientRequestWithUnknownMailbox(t *testing.T) {
 	const timeout = 2 * time.Second
 
-	// Start etcd.
-	etcd, cleanup := testetcd.StartAndConnect(t)
+	// Bootstrap.
+	_, cleanup, server, client := bootstrapClientTest(t)
 	defer cleanup()
-
-	// Create grid server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create listener.
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Start server in background.
-	done := make(chan error, 1)
-	go func() {
-		err = server.Serve(lis)
-		if err != nil {
-			done <- err
-		}
-	}()
-	time.Sleep(timeout)
-
-	// Create client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	defer server.Stop()
 	defer client.Close()
+
+	// Set client stats.
 	client.cs = newClientStats()
 
 	// Place a bogus entry in etcd with
 	// a matching name.
-	r, err := registry.New(etcd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = r.Start(lis.Addr())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Stop()
 	timeoutC, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	err = r.Register(timeoutC, "testing.mailbox.mock")
+	err := server.registry.Register(timeoutC, "testing.mailbox.mock")
 	cancel()
 	if err != nil {
 		t.Fatal(err)
@@ -230,16 +161,6 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Stop the server.
-	server.Stop()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	default:
-	}
-
 	if v := client.cs.counters[numErrUnknownMailbox]; v == 0 {
 		t.Fatal("expected non-zero error count")
 	}
@@ -251,9 +172,14 @@ func TestClientWithRunningReceiver(t *testing.T) {
 		expected = "testing 1, 2, 3"
 	)
 
-	// Start etcd.
-	etcd, cleanup := testetcd.StartAndConnect(t)
+	// Bootstrap.
+	_, cleanup, server, client := bootstrapClientTest(t)
 	defer cleanup()
+	defer server.Stop()
+	defer client.Close()
+
+	// Set client stats.
+	client.cs = newClientStats()
 
 	// Create echo actor.
 	a := &echoActor{ready: make(chan bool)}
@@ -266,40 +192,11 @@ func TestClientWithRunningReceiver(t *testing.T) {
 		return nil, nil
 	}
 
-	// Create the server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer server.Stop()
+	// Set grid definition.
 	server.SetDefinition(FromFunc(g))
 
 	// Set server on echo actor.
 	a.server = server
-
-	// Create the listener on a random port.
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Start the server in the background.
-	done := make(chan error, 1)
-	go func() {
-		err = server.Serve(lis)
-		if err != nil {
-			done <- err
-		}
-	}()
-	time.Sleep(timeout)
-
-	// Create a grid client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	client.cs = newClientStats()
 
 	// Discover some peers.
 	peers, err := client.Query(timeout, Peers)
@@ -352,9 +249,13 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 		expected = "hello"
 	)
 
-	// Start etcd.
-	etcd, cleanup := testetcd.StartAndConnect(t)
+	// Bootstrap.
+	_, cleanup, server, client := bootstrapClientTest(t)
 	defer cleanup()
+	defer client.Close()
+
+	// Set client stats.
+	client.cs = newClientStats()
 
 	// Create echo actor.
 	a := &echoActor{ready: make(chan bool)}
@@ -367,39 +268,11 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 		return nil, nil
 	}
 
-	// Create the server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Set grid definition.
 	server.SetDefinition(FromFunc(g))
 
 	// Set server on echo actor.
 	a.server = server
-
-	// Create the listener on a random port.
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Start the server in the background.
-	done := make(chan error, 1)
-	go func() {
-		err = server.Serve(lis)
-		if err != nil {
-			done <- err
-		}
-	}()
-	time.Sleep(timeout)
-
-	// Create a grid client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	client.cs = newClientStats()
 
 	// Discover some peers.
 	peers, err := client.Query(timeout, Peers)
@@ -435,7 +308,7 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 	server.Stop()
 
 	// Wait for the gRPC to be really stopped.
-	time.Sleep(2 * time.Second)
+	time.Sleep(timeout)
 
 	// Make the request again.
 	res, err = client.Request(timeout, "echo", expected)
@@ -460,9 +333,14 @@ func TestClientWithBusyReceiver(t *testing.T) {
 		expected = "testing 1, 2, 3"
 	)
 
-	// Start etcd.
-	etcd, cleanup := testetcd.StartAndConnect(t)
+	// Bootstrap.
+	_, cleanup, server, client := bootstrapClientTest(t)
 	defer cleanup()
+	defer server.Stop()
+	defer client.Close()
+
+	// Set client stats.
+	client.cs = newClientStats()
 
 	// Create busy actor.
 	a := &busyActor{ready: make(chan bool)}
@@ -474,41 +352,10 @@ func TestClientWithBusyReceiver(t *testing.T) {
 		}
 		return nil, nil
 	}
-
-	// Create the server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer server.Stop()
 	server.SetDefinition(FromFunc(g))
 
 	// Set server on busy actor.
 	a.server = server
-
-	// Create the listener on a random port.
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Start the server in the background.
-	done := make(chan error, 1)
-	go func() {
-		err = server.Serve(lis)
-		if err != nil {
-			done <- err
-		}
-	}()
-	time.Sleep(timeout)
-
-	// Create a grid client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	client.cs = newClientStats()
 
 	// Discover some peers.
 	peers, err := client.Query(timeout, Peers)
@@ -570,4 +417,39 @@ func TestNilClientStats(t *testing.T) {
 	}()
 	var cs *clientStats
 	cs.Inc(numGetWireClient)
+}
+
+func bootstrapClientTest(t *testing.T) (*clientv3.Client, testetcd.Cleanup, *Server, *Client) {
+	// Start etcd.
+	etcd, cleanup := testetcd.StartAndConnect(t)
+
+	// Create the server.
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create the listener on a random port.
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Start the server in the background.
+	done := make(chan error, 1)
+	go func() {
+		err = server.Serve(lis)
+		if err != nil {
+			done <- err
+		}
+	}()
+	time.Sleep(2 * time.Second)
+
+	// Create a grid client.
+	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return etcd, cleanup, server, client
 }
