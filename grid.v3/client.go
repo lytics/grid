@@ -18,11 +18,14 @@ import (
 	"google.golang.org/grpc"
 )
 
+// clientAndConn of the generated gRPC client
+// plus the actual gRPC client connection.
 type clientAndConn struct {
 	conn   *grpc.ClientConn
 	client WireClient
 }
 
+// close the gRPC connection.
 func (cc *clientAndConn) close() error {
 	// Testing hook, used easily check
 	// a code path in the client.
@@ -36,11 +39,12 @@ func (cc *clientAndConn) close() error {
 // The client can be used by multiple go-routines.
 type Client struct {
 	mu              sync.Mutex
-	cs              *clientStats
 	cfg             ClientCfg
 	registry        *registry.Registry
 	addresses       map[string]string
 	clientsAndConns map[string]*clientAndConn
+	// Test hook.
+	cs *clientStats
 }
 
 // NewClient using the given etcd client and configuration.
@@ -115,6 +119,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		}
 		res, err = client.Process(ctx, req)
 		if err != nil && strings.Contains(err.Error(), "the connection is unavailable") {
+			// Test hook.
 			c.cs.Inc(numErrConnectionUnavailable)
 			// Receiver is on a host that may have died.
 			// The error "connection is unavailable"
@@ -129,6 +134,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 			}
 		}
 		if err != nil && strings.Contains(err.Error(), ErrUnknownMailbox.Error()) {
+			// Test hook.
 			c.cs.Inc(numErrUnknownMailbox)
 			// Receiver possibly moved to different
 			// host for one reason or another. Get
@@ -143,6 +149,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 			}
 		}
 		if err != nil && strings.Contains(err.Error(), ErrReceiverBusy.Error()) {
+			// Test hook.
 			c.cs.Inc(numErrReceiverBusy)
 			// Receiver was busy, ie: the receiving channel
 			// was at capacity. Also, the reciever definitely
@@ -195,6 +202,7 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	if !ok {
 		reg, err := c.registry.FindRegistration(ctx, nsReceiver)
 		if err != nil && err == registry.ErrUnknownKey {
+			// Test hook.
 			c.cs.Inc(numErrUnregisteredMailbox)
 			return nil, ErrUnregisteredMailbox
 		}
@@ -207,7 +215,10 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 
 	cc, ok := c.clientsAndConns[address]
 	if !ok {
+		// Test hook.
 		c.cs.Inc(numGRPCDial)
+
+		// Dial the destination.
 		conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second))
 		if err != nil {
 			return nil, err
@@ -255,6 +266,8 @@ func (c *Client) deleteClientAndConn(nsReceiver string) {
 	delete(c.clientsAndConns, address)
 }
 
+// statName of interesting statistic to track
+// during testing for validation.
 type statName string
 
 const (
@@ -268,6 +281,7 @@ const (
 	numGRPCDial                 statName = "numGRPCDial"
 )
 
+// newClientStats for use during testing.
 func newClientStats() *clientStats {
 	return &clientStats{
 		counters: map[statName]int{},
