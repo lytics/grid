@@ -8,11 +8,12 @@ var (
 )
 
 var (
-	ErrReceiverBusy     = errors.New("grid: receiver busy")
-	ErrUnknownMailbox   = errors.New("grid: unknown mailbox")
-	ErrContextFinished  = errors.New("grid: context finished")
-	ErrInvalidActorType = errors.New("grid: invalid actor type")
-	ErrInvalidActorName = errors.New("grid: invalid actor name")
+	ErrReceiverBusy        = errors.New("grid: receiver busy")
+	ErrUnknownMailbox      = errors.New("grid: unknown mailbox")
+	ErrUnregisteredMailbox = errors.New("grid: unregistered mailbox")
+	ErrContextFinished     = errors.New("grid: context finished")
+	ErrInvalidActorType    = errors.New("grid: invalid actor type")
+	ErrInvalidActorName    = errors.New("grid: invalid actor name")
 )
 
 var (

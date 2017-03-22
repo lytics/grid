@@ -11,12 +11,36 @@ import (
 	"github.com/lytics/grid/grid.v3/testetcd"
 )
 
+type busyActor struct {
+	ready  chan bool
+	server *Server
+}
+
+func (a *busyActor) Act(c context.Context) {
+	name, err := ContextActorName(c)
+	if err != nil {
+		return
+	}
+
+	mailbox, err := NewMailbox(a.server, name, 0)
+	if err != nil {
+		return
+	}
+	defer mailbox.Close()
+
+	// Don't bother listening
+	// to the mailbox, too
+	// busy.
+	a.ready <- true
+	<-c.Done()
+}
+
 type echoActor struct {
 	ready  chan bool
 	server *Server
 }
 
-func (a echoActor) Act(c context.Context) {
+func (a *echoActor) Act(c context.Context) {
 	name, err := ContextActorName(c)
 	if err != nil {
 		return
@@ -67,6 +91,7 @@ func TestClientClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	client.cs = newClientStats()
 
 	// The type clientAndConn checks if it is nil
 	// in its close method, and returns an error.
@@ -77,7 +102,7 @@ func TestClientClose(t *testing.T) {
 	}
 }
 
-func TestClientRequestWithUnknownMailboxOnClient(t *testing.T) {
+func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 	const timeout = 2 * time.Second
 
 	// Start etcd.
@@ -112,10 +137,11 @@ func TestClientRequestWithUnknownMailboxOnClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	client.cs = newClientStats()
 
 	// Send a request to some random name.
 	res, err := client.Request(timeout, "mock", NewActorDef("mock"))
-	if err != ErrUnknownMailbox {
+	if err != ErrUnregisteredMailbox {
 		t.Fatal(err)
 	}
 	if res != nil {
@@ -131,9 +157,13 @@ func TestClientRequestWithUnknownMailboxOnClient(t *testing.T) {
 		}
 	default:
 	}
+
+	if v := client.cs.counters[numErrUnregisteredMailbox]; v == 0 {
+		t.Fatal("expected non-zero error count")
+	}
 }
 
-func TestClientRequestWithUnknownMailboxOnServer(t *testing.T) {
+func TestClientRequestWithUnknownMailbox(t *testing.T) {
 	const timeout = 2 * time.Second
 
 	// Start etcd.
@@ -168,6 +198,7 @@ func TestClientRequestWithUnknownMailboxOnServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	client.cs = newClientStats()
 
 	// Place a bogus entry in etcd with
 	// a matching name.
@@ -207,6 +238,10 @@ func TestClientRequestWithUnknownMailboxOnServer(t *testing.T) {
 			t.Fatal(err)
 		}
 	default:
+	}
+
+	if v := client.cs.counters[numErrUnknownMailbox]; v == 0 {
+		t.Fatal("expected non-zero error count")
 	}
 }
 
@@ -264,6 +299,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	client.cs = newClientStats()
 
 	// Discover some peers.
 	peers, err := client.Query(timeout, Peers)
@@ -303,6 +339,10 @@ func TestClientWithRunningReceiver(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected type: string, received type: %T", res)
+	}
+
+	if v := client.cs.counters[numErrConnectionUnavailable]; v != 0 {
+		t.Fatal("expected zero error count")
 	}
 }
 
@@ -359,6 +399,7 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	client.cs = newClientStats()
 
 	// Discover some peers.
 	peers, err := client.Query(timeout, Peers)
@@ -405,6 +446,100 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 		t.Fatal(res)
 	}
 	if !strings.Contains(err.Error(), "the connection is unavailable") {
+		t.Fatal(err)
+	}
+
+	if v := client.cs.counters[numErrConnectionUnavailable]; v == 0 {
+		t.Fatal("expected non-zero error count")
+	}
+}
+
+func TestClientWithBusyReceiver(t *testing.T) {
+	const (
+		timeout  = 2 * time.Second
+		expected = "testing 1, 2, 3"
+	)
+
+	// Start etcd.
+	etcd, cleanup := testetcd.StartAndConnect(t)
+	defer cleanup()
+
+	// Create busy actor.
+	a := &busyActor{ready: make(chan bool)}
+
+	// Create the grid.
+	g := func(def *ActorDef) (Actor, error) {
+		if def.Type == "busy" {
+			return a, nil
+		}
+		return nil, nil
+	}
+
+	// Create the server.
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Stop()
+	server.SetDefinition(FromFunc(g))
+
+	// Set server on busy actor.
+	a.server = server
+
+	// Create the listener on a random port.
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Start the server in the background.
+	done := make(chan error, 1)
+	go func() {
+		err = server.Serve(lis)
+		if err != nil {
+			done <- err
+		}
+	}()
+	time.Sleep(timeout)
+
+	// Create a grid client.
+	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	client.cs = newClientStats()
+
+	// Discover some peers.
+	peers, err := client.Query(timeout, Peers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 1 {
+		t.Fatal("expected 1 peer")
+	}
+
+	// Start the busy actor on the first peer.
+	res, err := client.Request(timeout, peers[0].Name(), NewActorDef("busy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res == nil {
+		t.Fatal("expected response")
+	}
+
+	// Wait for busy actor to start.
+	<-a.ready
+
+	// Make a request to busy actor.
+	res, err = client.Request(timeout, "busy", expected)
+	if err == nil {
+		t.Fatal(err)
+	}
+	if res != nil {
+		t.Fatal("expected response")
+	}
+	if !strings.Contains(err.Error(), ErrReceiverBusy.Error()) {
 		t.Fatal(err)
 	}
 }
