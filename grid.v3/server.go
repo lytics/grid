@@ -234,13 +234,7 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	if err != nil {
 		return nil, err
 	}
-	// This actually converts between the "context" and
-	// "golang.org/x/net/context" types of Context so
-	// that method signatures are satisfied.
-	req := &request{}
-	req.msg = env.Msg
-	req.context = context.WithValue(c, "", "")
-	req.response = make(chan []byte)
+	req := newRequest(c, env.Msg)
 
 	// Send the filled envelope to the actual
 	// receiver. Also note that the receiver
