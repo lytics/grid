@@ -21,17 +21,17 @@ const (
 )
 
 var (
-	ErrNotOwner                = errors.New("not owner")
-	ErrNotStarted              = errors.New("not started")
-	ErrUnknownKey              = errors.New("unknown key")
-	ErrInvalidEtcd             = errors.New("invalid etcd")
-	ErrAlreadyRegistered       = errors.New("already registered")
-	ErrFailedRegistration      = errors.New("failed registration")
-	ErrFailedDeregistration    = errors.New("failed deregistration")
-	ErrLeaseDurationTooShort   = errors.New("lease duration too short")
-	ErrUnknownNetAddressType   = errors.New("unknown net address type")
-	ErrWatchClosedUnexpectedly = errors.New("watch closed unexpectedly")
-	ErrUnspecifiedNetAddressIP = errors.New("unspecified net address ip")
+	ErrNotOwner                = errors.New("registry: not owner")
+	ErrNotStarted              = errors.New("registry: not started")
+	ErrUnknownKey              = errors.New("registry: unknown key")
+	ErrInvalidEtcd             = errors.New("registry: invalid etcd")
+	ErrAlreadyRegistered       = errors.New("registry: already registered")
+	ErrFailedRegistration      = errors.New("registry: failed registration")
+	ErrFailedDeregistration    = errors.New("registry: failed deregistration")
+	ErrLeaseDurationTooShort   = errors.New("registry: lease duration too short")
+	ErrUnknownNetAddressType   = errors.New("registry: unknown net address type")
+	ErrWatchClosedUnexpectedly = errors.New("registry: watch closed unexpectedly")
+	ErrUnspecifiedNetAddressIP = errors.New("registry: unspecified net address ip")
 )
 
 var (
@@ -241,7 +241,14 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 		case watchEvents <- we:
 		}
 	}
-
+	putTerminalError := func(we *WatchEvent) {
+		go func() {
+			select {
+			case <-time.After(10 * time.Minute):
+			case watchEvents <- we:
+			}
+		}()
+	}
 	// Create a watch-event from an event.
 	createWatchEvent := func(ev *etcdv3.Event) *WatchEvent {
 		wev := &WatchEvent{Key: string(ev.Kv.Key)}
@@ -278,12 +285,12 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 					select {
 					case <-c.Done():
 					default:
-						put(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
+						putTerminalError(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
 					}
 					return
 				}
 				if delta.Err() != nil {
-					put(&WatchEvent{Error: delta.Err()})
+					putTerminalError(&WatchEvent{Error: delta.Err()})
 					return
 				}
 				for _, event := range delta.Events {
