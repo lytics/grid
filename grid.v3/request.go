@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"errors"
+	"sync"
 
 	netcontext "golang.org/x/net/context"
 )
@@ -11,6 +13,10 @@ import (
 // Ack is the message sent back when the Ack() method of a
 // request is called.
 const Ack = "__ACK__"
+
+var (
+	ErrAlreadyResponded = errors.New("already responded")
+)
 
 // envelope for delivered request and response messages.
 type envelope struct {
@@ -21,7 +27,7 @@ type envelope struct {
 type Request interface {
 	Context() context.Context
 	Msg() interface{}
-	Ack()
+	Ack() error
 	Respond(msg interface{}) error
 }
 
@@ -37,9 +43,11 @@ func newRequest(ctx netcontext.Context, msg interface{}) *request {
 }
 
 type request struct {
+	mu       sync.Mutex
 	msg      interface{}
 	ctx      context.Context
 	response chan []byte
+	finished bool
 }
 
 // Context of request.
@@ -54,12 +62,20 @@ func (req *request) Msg() interface{} {
 
 // Ack request, same as responding with Respond
 // and constant "Ack".
-func (req *request) Ack() {
-	req.Respond(Ack)
+func (req *request) Ack() error {
+	return req.Respond(Ack)
 }
 
 // Respond to request with a message.
 func (req *request) Respond(msg interface{}) error {
+	req.mu.Lock()
+	defer req.mu.Unlock()
+
+	if req.finished {
+		return ErrAlreadyResponded
+	}
+	req.finished = true
+
 	env := &envelope{
 		Msg: msg,
 	}
