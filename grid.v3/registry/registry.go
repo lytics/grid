@@ -241,7 +241,14 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 		case watchEvents <- we:
 		}
 	}
-
+	putTerminalError := func(we *WatchEvent) {
+		go func() {
+			select {
+			case <-time.After(10 * time.Minute):
+			case watchEvents <- we:
+			}
+		}()
+	}
 	// Create a watch-event from an event.
 	createWatchEvent := func(ev *etcdv3.Event) *WatchEvent {
 		wev := &WatchEvent{Key: string(ev.Kv.Key)}
@@ -278,12 +285,12 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 					select {
 					case <-c.Done():
 					default:
-						put(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
+						putTerminalError(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
 					}
 					return
 				}
 				if delta.Err() != nil {
-					put(&WatchEvent{Error: delta.Err()})
+					putTerminalError(&WatchEvent{Error: delta.Err()})
 					return
 				}
 				for _, event := range delta.Events {

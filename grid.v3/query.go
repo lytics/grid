@@ -118,8 +118,15 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 		case queryEvents <- change:
 		}
 	}
+	putTerminalError := func(change *QueryEvent) {
+		go func() {
+			select {
+			case <-time.After(10 * time.Minute):
+			case queryEvents <- change:
+			}
+		}()
+	}
 	go func() {
-		defer close(queryEvents)
 		for {
 			select {
 			case change, open := <-changes:
@@ -127,12 +134,12 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 					select {
 					case <-ctx.Done():
 					default:
-						put(&QueryEvent{err: ErrWatchClosedUnexpectedly})
+						putTerminalError(&QueryEvent{err: ErrWatchClosedUnexpectedly})
 					}
 					return
 				}
 				if change.Error != nil {
-					put(&QueryEvent{err: change.Error})
+					putTerminalError(&QueryEvent{err: change.Error})
 					return
 				}
 				switch change.Type {
