@@ -104,8 +104,8 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 	var current []*QueryEvent
 	for _, reg := range regs {
 		current = append(current, &QueryEvent{
-			name:   nameFromReg(filter, c.cfg.Namespace, reg.Key),
-			peer:   reg.Name,
+			name:   nameFromKey(filter, c.cfg.Namespace, reg.Key),
+			peer:   reg.Registry,
 			entity: filter,
 			Type:   EntityFound,
 		})
@@ -144,18 +144,42 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 				}
 				switch change.Type {
 				case registry.Delete:
-					put(&QueryEvent{
-						name:   nameFromReg(filter, c.cfg.Namespace, change.Key),
+					qe := &QueryEvent{
+						name:   nameFromKey(filter, c.cfg.Namespace, change.Key),
 						entity: filter,
 						Type:   EntityLost,
-					})
+					}
+					// Maintain contract that for peer events
+					// the Peer() and Name() methods return
+					// the same value.
+					//
+					// Also keep in mind that when the grid
+					// library registers a "peer", the peer
+					// name is in fact the string returned by
+					// the registry.Registry() method.
+					if filter == Peers {
+						qe.peer = qe.name
+					}
+					put(qe)
 				case registry.Create, registry.Modify:
-					put(&QueryEvent{
-						name:   nameFromReg(filter, c.cfg.Namespace, change.Key),
-						peer:   change.Reg.Name,
+					qe := &QueryEvent{
+						name:   nameFromKey(filter, c.cfg.Namespace, change.Key),
+						peer:   change.Reg.Registry,
 						entity: filter,
 						Type:   EntityFound,
-					})
+					}
+					// Maintain contract that for peer events
+					// the Peer() and Name() methods return
+					// the same value.
+					//
+					// Also keep in mind that when the grid
+					// library registers a "peer", the peer
+					// name is in fact the string returned by
+					// the registry.Registry() method.
+					if filter == Peers {
+						qe.peer = qe.name
+					}
+					put(qe)
 				}
 			}
 		}
@@ -188,8 +212,8 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, 
 	var result []*QueryEvent
 	for _, reg := range regs {
 		result = append(result, &QueryEvent{
-			name:   nameFromReg(filter, c.cfg.Namespace, reg.Key),
-			peer:   reg.Name,
+			name:   nameFromKey(filter, c.cfg.Namespace, reg.Key),
+			peer:   reg.Registry,
 			entity: filter,
 			Type:   EntityFound,
 		})
@@ -198,9 +222,9 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, 
 	return result, nil
 }
 
-// nameFromReg returns the name from the data field of a registration.
+// nameFromKey returns the name from the data field of a registration.
 // Used by query to return just simple string data.
-func nameFromReg(filter entityType, namespace string, key string) string {
+func nameFromKey(filter entityType, namespace string, key string) string {
 	name, err := stripNamespace(filter, namespace, key)
 	// INVARIANT
 	// Under all circumstances if a registration is returned

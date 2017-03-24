@@ -71,7 +71,7 @@ func TestRegister(t *testing.T) {
 	if reg.Address != r.Address() {
 		t.Fatal("wrong address")
 	}
-	if reg.Name != r.Name() {
+	if reg.Registry != r.Registry() {
 		t.Fatal("wrong name")
 	}
 }
@@ -104,7 +104,7 @@ func TestDeregistration(t *testing.T) {
 	if reg.Address != r.Address() {
 		t.Fatal("wrong address")
 	}
-	if reg.Name != r.Name() {
+	if reg.Registry != r.Registry() {
 		t.Fatal("wrong name")
 	}
 
@@ -416,9 +416,9 @@ func TestWatchEventString(t *testing.T) {
 		Key:  "foo",
 		Type: Create,
 		Reg: &Registration{
-			Key:     "foo",
-			Name:    "goo",
-			Address: "localhost:7777",
+			Key:      "foo",
+			Address:  "localhost:7777",
+			Registry: "goo",
 		},
 	}
 
