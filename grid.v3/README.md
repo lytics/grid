@@ -3,7 +3,7 @@ grid
 
 Grid is a library for doing distributed processing. It's main goal is to help
 in scheduling fine-grain stateful computations, which grid calls actors, and
-sending data between them. Its only external dependency is an Etcd v3 cluster.
+sending data between them. Its only service dependency is an Etcd v3 server.
 
 ## Grid
 Anything that implements the `Grid` interface is a grid. The interface defines
@@ -17,9 +17,9 @@ type Grid interface {
 ```
 
 ## Example Grid
-Below is a basic example of starting your grid application. If the `MakeActor`
-method knows how to make a "leader", the leader actor will be started for you
-when `Serve` is called. The leader can be the entry-point of you application.
+Below is a basic example of starting your grid application. If the definition
+knows how to make a "leader", the leader actor will be started for you when
+`Serve` is called. The leader can be the entry-point of you application.
 
 ```go
 func main() {
@@ -62,7 +62,7 @@ is called. No matter how many processes are participating in the grid, only one
 leader actor is started, it is a singleton. The "leader" actor can be thought of
 as an entry-point into you distributed application. You don't have to use it,
 but it is often convenient. The actor named "leader" is also special in that if
-the process currently running the leader actor dies, it will be started on another
+the process currently running the leader dies, it will be started on another
 peer, if more than one peer is participating in the grid.
 
 ```go

@@ -25,22 +25,18 @@ func (box *Mailbox) String() string {
 //
 // Example Usage:
 //
-//     func Act(c context.Context) {
-//         ...
+//     mailbox, err := NewMailbox(server, "incoming", 10)
+//     ...
+//     defer mailbox.Close()
 //
-//         mailbox, err := NewMailbox(server, "incoming", 10)
-//         ...
-//         defer mailbox.Close()
-//
-//         for {
-//             select {
-//             case req := <-mailbox.C:
-//                 // Do something with request, and then respond
-//                 // or ack. A response or ack is required.
-//                 switch m := req.Msg().(type) {
-//                 case *HiMsg:
-//                     req.Respond(&HelloMsg{...})
-//                 }
+//     for {
+//         select {
+//         case req := <-mailbox.C:
+//             // Do something with request, and then respond
+//             // or ack. A response or ack is required.
+//             switch m := req.Msg().(type) {
+//             case HiMsg:
+//                 req.Respond(&HelloMsg{})
 //             }
 //         }
 //     }
