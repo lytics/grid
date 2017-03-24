@@ -41,13 +41,14 @@ var (
 
 // Registration information.
 type Registration struct {
-	Key     string `json:"key"`
-	Name    string `json:"name"`
-	Address string `json:"address"`
+	Key      string `json:"key"`
+	Address  string `json:"address"`
+	Registry string `json:"registry"`
 }
 
+// String descritpion of registration.
 func (r *Registration) String() string {
-	return fmt.Sprintf("key: %v, name: %v, address: %v", r.Key, r.Name, r.Address)
+	return fmt.Sprintf("key: %v, address: %v, registry: %v", r.Key, r.Address, r.Registry)
 }
 
 // EventType of a watch event.
@@ -197,8 +198,9 @@ func (rr *Registry) Address() string {
 	return rr.address
 }
 
-// Name of the registry based off the address.
-func (rr *Registry) Name() string {
+// Registry name, which is a human readable all ASCII
+// transformation of the network address.
+func (rr *Registry) Registry() string {
 	return rr.name
 }
 
@@ -391,9 +393,9 @@ func (rr *Registry) Register(c context.Context, key string, options ...Option) e
 	}
 
 	value, err := json.Marshal(&Registration{
-		Key:     key,
-		Name:    rr.name,
-		Address: rr.address,
+		Key:      key,
+		Address:  rr.address,
+		Registry: rr.name,
 	})
 	if err != nil {
 		return err

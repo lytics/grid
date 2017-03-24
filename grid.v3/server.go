@@ -107,7 +107,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	registryErrors := s.monitorRegistry(lis.Addr())
 
 	// Peer's name is the registry's name.
-	name := s.registry.Name()
+	name := s.registry.Registry()
 
 	// Namespaced name, which just includes the namespace.
 	nsName, err := namespaceName(Peers, s.cfg.Namespace, name)
