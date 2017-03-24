@@ -33,15 +33,11 @@ func TestServerStartStop(t *testing.T) {
 		stopped: make(chan bool),
 	}
 
-	g := func(*ActorDef) (Actor, error) {
-		return a, nil
-	}
-
 	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.SetDefinition(FromFunc(g))
+	server.RegisterDef("leader", func(_ []byte) Actor { return a })
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
@@ -110,17 +106,13 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 		stopped: make(chan bool),
 	}
 
-	g := func(*ActorDef) (Actor, error) {
-		return a, nil
-	}
-
 	etcd, cleanup := testetcd.StartAndConnect(t)
 
 	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.SetDefinition(FromFunc(g))
+	server.RegisterDef("leader", func(_ []byte) Actor { return a })
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {

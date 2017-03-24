@@ -20,6 +20,7 @@ var (
 	ErrNilResponse               = errors.New("grid: nil response")
 	ErrInvalidEtcd               = errors.New("grid: invalid etcd")
 	ErrInvalidContext            = errors.New("grid: invalid context")
+	ErrDefNotRegistered          = errors.New("grid: def not registered")
 	ErrServerNotRunning          = errors.New("grid: server not running")
 	ErrAlreadyRegistered         = errors.New("grid: already registered")
 	ErrInvalidMailboxName        = errors.New("grid: invalid mailbox name")

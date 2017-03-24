@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -47,11 +46,11 @@ func (a *LeaderActor) Act(c context.Context) {
 
 				// Define a worker.
 				existing[peer.Name()] = true
-				def := grid.NewActorDef("worker-%d", len(existing))
-				def.Type = "worker"
+				start := grid.NewActorStart("worker-%d", len(existing))
+				start.Type = "worker"
 
 				// On new peers start the worker.
-				_, err := a.client.Request(timeout, peer.Name(), def)
+				_, err := a.client.Request(timeout, peer.Name(), start)
 				successOrDie(err)
 			}
 		}
@@ -92,16 +91,8 @@ func main() {
 	successOrDie(err)
 
 	// Define how actors are created.
-	server.SetDefinition(grid.FromFunc(func(def *grid.ActorDef) (grid.Actor, error) {
-		switch def.Type {
-		case "leader":
-			return &LeaderActor{client: client}, nil
-		case "worker":
-			return &WorkerActor{}, nil
-		default:
-			return nil, errors.New("unknown actor type")
-		}
-	}))
+	server.RegisterDef("leader", func(_ []byte) grid.Actor { return &LeaderActor{client: client} })
+	server.RegisterDef("worker", func(_ []byte) grid.Actor { return &WorkerActor{} })
 
 	// Check for exit signal, ie: ctrl-c
 	go func() {

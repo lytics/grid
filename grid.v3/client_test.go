@@ -115,7 +115,7 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 	client.cs = newClientStats()
 
 	// Send a request to some random name.
-	res, err := client.Request(timeout, "mock", NewActorDef("mock"))
+	res, err := client.Request(timeout, "mock", NewActorStart("mock"))
 	if err != ErrUnregisteredMailbox {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 	}
 
 	// Send a request to some random name.
-	res, err := client.Request(timeout, "mock", NewActorDef("mock"))
+	res, err := client.Request(timeout, "mock", NewActorStart("mock"))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -184,16 +184,8 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	// Create echo actor.
 	a := &echoActor{ready: make(chan bool)}
 
-	// Create the grid.
-	g := func(def *ActorDef) (Actor, error) {
-		if def.Type == "echo" {
-			return a, nil
-		}
-		return nil, nil
-	}
-
 	// Set grid definition.
-	server.SetDefinition(FromFunc(g))
+	server.RegisterDef("echo", func(_ []byte) Actor { return a })
 
 	// Set server on echo actor.
 	a.server = server
@@ -208,7 +200,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 
 	// Start the echo actor on the first peer.
-	res, err := client.Request(timeout, peers[0].Name(), NewActorDef("echo"))
+	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("echo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,16 +252,8 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 	// Create echo actor.
 	a := &echoActor{ready: make(chan bool)}
 
-	// Create the grid.
-	g := func(def *ActorDef) (Actor, error) {
-		if def.Type == "echo" {
-			return a, nil
-		}
-		return nil, nil
-	}
-
 	// Set grid definition.
-	server.SetDefinition(FromFunc(g))
+	server.RegisterDef("echo", func(_ []byte) Actor { return a })
 
 	// Set server on echo actor.
 	a.server = server
@@ -284,7 +268,7 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 	}
 
 	// Start the echo actor on the first peer.
-	res, err := client.Request(timeout, peers[0].Name(), NewActorDef("echo"))
+	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("echo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,14 +329,7 @@ func TestClientWithBusyReceiver(t *testing.T) {
 	// Create busy actor.
 	a := &busyActor{ready: make(chan bool)}
 
-	// Create the grid.
-	g := func(def *ActorDef) (Actor, error) {
-		if def.Type == "busy" {
-			return a, nil
-		}
-		return nil, nil
-	}
-	server.SetDefinition(FromFunc(g))
+	server.RegisterDef("busy", func(_ []byte) Actor { return a })
 
 	// Set server on busy actor.
 	a.server = server
@@ -367,7 +344,7 @@ func TestClientWithBusyReceiver(t *testing.T) {
 	}
 
 	// Start the busy actor on the first peer.
-	res, err := client.Request(timeout, peers[0].Name(), NewActorDef("busy"))
+	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("busy"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -38,6 +38,7 @@ func newRequest(ctx netcontext.Context, msg interface{}) *request {
 	return &request{
 		ctx:      context.WithValue(ctx, "", ""),
 		msg:      msg,
+		failure:  make(chan error, 1),
 		response: make(chan []byte, 1),
 	}
 }
@@ -46,6 +47,7 @@ type request struct {
 	mu       sync.Mutex
 	msg      interface{}
 	ctx      context.Context
+	failure  chan error
 	response chan []byte
 	finished bool
 }
@@ -76,6 +78,16 @@ func (req *request) Respond(msg interface{}) error {
 	}
 	req.finished = true
 
+	failure, ok := msg.(error)
+	if ok {
+		select {
+		case req.failure <- failure:
+			return nil
+		default:
+			panic("grid: respond called multiple times")
+		}
+	}
+
 	env := &envelope{
 		Msg: msg,
 	}
@@ -94,8 +106,8 @@ func (req *request) Respond(msg interface{}) error {
 	// the caller of Response.
 	select {
 	case req.response <- buf.Bytes():
+		return nil
 	default:
 		panic("grid: respond called multiple times")
 	}
-	return nil
 }

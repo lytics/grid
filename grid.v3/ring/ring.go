@@ -14,7 +14,7 @@ import (
 // actor in the ring.
 type Ring interface {
 	ID() string
-	ActorDefs() []*grid.ActorDef
+	Actors() []*grid.ActorStart
 	ByInt(key int) string
 	ByUint32(key uint32) string
 	ByUint64(key uint64) string
@@ -43,12 +43,12 @@ func (r *ring) ID() string {
 	return r.name
 }
 
-// ActorDefs returns the list of actor names in this ring. They
+// ActorStarts returns the list of actor names in this ring. They
 // may or may not be running.
-func (r *ring) ActorDefs() []*grid.ActorDef {
-	names := make([]*grid.ActorDef, r.n)
+func (r *ring) Actors() []*grid.ActorStart {
+	names := make([]*grid.ActorStart, r.n)
 	for i := 0; i < r.n; i++ {
-		names[i] = r.actorDef(i)
+		names[i] = r.Actor(i)
 	}
 	return names
 }
@@ -139,8 +139,8 @@ func (r *ring) ByHashedUint64(key uint64) string {
 	return r.actorName(int(i))
 }
 
-func (r *ring) actorDef(i int) *grid.ActorDef {
-	a := grid.NewActorDef("%s-%d", r.name, i)
+func (r *ring) Actor(i int) *grid.ActorStart {
+	a := grid.NewActorStart("%s-%d", r.name, i)
 	a.Type = r.actortype
 	return a
 }

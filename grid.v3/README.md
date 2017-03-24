@@ -7,18 +7,6 @@ sending data between them. Its only service dependency is an
 [Etcd v3](https://github.com/coreos/etcd) server, used for discovery and
 coordination. Grid uses [gRPC](http://www.grpc.io/) for communication.
 
-
-## Grid
-Anything that implements the `Grid` interface is a grid. The interface defines
-a method to make actors from actor definitions. Actors are explained further
-down in the readme.
-
-```go
-type Grid interface {
-    MakeActor(def *ActorDef) (Actor, error)
-}
-```
-
 ## Example Grid
 Below is a basic example of starting your grid application. If the definition
 knows how to make a "leader", the leader actor will be started for you when
@@ -32,15 +20,8 @@ func main() {
     server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "mygrid"})
     ...
 
-    server.SetDefinition(grid.FromFunc(def *grid.ActorDef) (grid.Actor, error) {
-        switch def.Type {
-        case "leader":
-            return &LeaderActor{}, nil
-        case "worker":
-            return ...
-        }
-        return nil, fmt.Errorf("unknown actor type")
-    }))
+    server.RegisterDef("leader", func(_ []byte) grid.Actor { return &LeaderActor{...} })
+    server.RegisterDef("worker", func(_ []byte) grid.Actor { return &WorkerActor{...} })
 
     lis, err := net.Listen("tcp", ...)
     ...
@@ -88,14 +69,14 @@ func (a *LeaderActor) Act(ctx context.Context) {
         // There can never be more than one actor with
         // a given name. When an actor exits or panics
         // its record is removed from etcd.
-        def := grid.NewActorDef("worker-%d", i)
-        def.Type = "worker"
+        start := grid.NewActorStart("worker-%d", i)
+        start.Type = "worker"
 
-        // Start a new actor on the given peer. The
-        // type "ActorDef" is special. When sent to
-        // the mailbox of a peer, that peer will
-        // start an actor based on the definition.
-        res, err := a.client.Request(timeout, peer.Name(), def)
+        // Start a new actor on the given peer. The message
+        // "ActorStart" is special. When sent to the mailbox
+        // of a peer, that peer will start an actor based on
+        // the definition.
+        res, err := a.client.Request(timeout, peer.Name(), start)
         ...
         i++
     }
@@ -151,7 +132,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
     // The ID of the actor in etcd.
     id, err := grid.ContextActorID(ctx)
 
-    // The name of the actor, as given in ActorDef.
+    // The name of the actor, as given in ActorStart.
     name, err := grid.ContextActorName(ctx)
 
     // The namespace of the grid this actor is associated with.
@@ -189,13 +170,14 @@ type LeaderActor struct {
 }
 
 func (a *LeaderActor) Act(ctx context.Context) {
-    def := grid.NewActorDef("worker-0")
+    start := grid.NewActorStart("worker-%d", 0)
+    start.Type = "worker"
 
     // First request to start.
-    err := a.client.Request(timeout, peer, def)
+    err := a.client.Request(timeout, peer, start)
 
     // Second request will fail, if the first succeeded.
-    err = a.client.Request(timeout, peer, def)
+    err = a.client.Request(timeout, peer, start)
 }
 ```
 

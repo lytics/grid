@@ -35,13 +35,13 @@ var Logger *log.Logger
 // Server of a grid.
 type Server struct {
 	mu        sync.Mutex
-	g         Grid
 	ctx       context.Context
 	cancel    func()
 	cfg       ServerCfg
 	etcd      *etcdv3.Client
 	grpc      *grpc.Server
 	stop      sync.Once
+	actors    map[string]func([]byte) Actor
 	registry  *registry.Registry
 	mailboxes map[string]*Mailbox
 }
@@ -58,18 +58,21 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		return nil, ErrInvalidEtcd
 	}
 	return &Server{
-		cfg:  cfg,
-		etcd: etcd,
-		grpc: grpc.NewServer(),
+		cfg:    cfg,
+		etcd:   etcd,
+		grpc:   grpc.NewServer(),
+		actors: map[string]func([]byte) Actor{},
 	}, nil
 }
 
-// SetDefinition of the server's grid. If never called
-// then this server will not create actors, will not
-// start a leader, and can be used only for serving
-// mailboxes.
-func (s *Server) SetDefinition(g Grid) {
-	s.g = g
+// RegisterDef of an actor. When a StartActorMsg is sent to
+// a peer it will use the registered definitions to make
+// and run the actor in the peer.
+func (s *Server) RegisterDef(actorType string, makeActor func(data []byte) Actor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.actors[actorType] = makeActor
 }
 
 // Serve the grid on the listener. The listener address type must be
@@ -252,6 +255,8 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	select {
 	case <-c.Done():
 		return nil, ErrContextFinished
+	case fail := <-req.failure:
+		return nil, fail
 	case data := <-req.response:
 		return &Delivery{
 			Data: data,
@@ -268,17 +273,12 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 			return
 		case req := <-mailbox.C:
 			switch msg := req.Msg().(type) {
-			case *ActorDef:
+			case *ActorStart:
 				err := s.startActorC(req.Context(), msg)
 				if err != nil {
-					req.Respond(&ResponseMsg{
-						Succeeded: false,
-						Error:     err.Error(),
-					})
+					req.Respond(err)
 				} else {
-					req.Respond(&ResponseMsg{
-						Succeeded: true,
-					})
+					req.Ack()
 				}
 			}
 		}
@@ -315,7 +315,7 @@ func (s *Server) monitorRegistry(addr net.Addr) <-chan error {
 // a leader thereafter. If the leader should die on any
 // host then some peer will eventually have it start again.
 func (s *Server) monitorLeader() <-chan error {
-	start := func(def *ActorDef) error {
+	start := func(def *ActorStart) error {
 		var err error
 		for i := 0; i < 6; i++ {
 			select {
@@ -341,11 +341,11 @@ func (s *Server) monitorLeader() <-chan error {
 			case <-s.ctx.Done():
 				return
 			case <-timer.C:
-				err := start(NewActorDef("leader"))
+				err := start(&ActorStart{Name: "leader", Type: "leader"})
 				if err == ErrActorCreationNotSupported {
 					return
 				}
-				if err == ErrNilActorDefinition {
+				if err == ErrDefNotRegistered {
 					if Logger != nil {
 						Logger.Printf("skipping leader startup since leader definition returned nil")
 					}
@@ -369,7 +369,7 @@ func (s *Server) monitorLeader() <-chan error {
 // startActor in the current process. This method does not communicate with another
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
-func (s *Server) startActor(timeout time.Duration, def *ActorDef) error {
+func (s *Server) startActor(timeout time.Duration, def *ActorStart) error {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return s.startActorC(timeoutC, def)
@@ -378,12 +378,9 @@ func (s *Server) startActor(timeout time.Duration, def *ActorDef) error {
 // startActorC in the current process. This method does not communicate with another
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
-func (s *Server) startActorC(c context.Context, def *ActorDef) error {
-	if s.g == nil {
-		return ErrActorCreationNotSupported
-	}
-
+func (s *Server) startActorC(c context.Context, def *ActorStart) error {
 	if !isNameValid(def.Type) {
+		fmt.Println(def.Type)
 		return ErrInvalidActorType
 	}
 	if !isNameValid(def.Name) {
@@ -395,10 +392,11 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		return err
 	}
 
-	actor, err := s.g.MakeActor(def)
-	if err != nil {
-		return err
+	makeActor := s.actors[def.Type]
+	if makeActor == nil {
+		return ErrDefNotRegistered
 	}
+	actor := makeActor(def.Data)
 	if actor == nil {
 		return ErrNilActorDefinition
 	}
