@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"fmt"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/registry"

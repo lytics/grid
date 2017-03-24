@@ -38,19 +38,24 @@ type QueryEvent struct {
 	Type   EventType
 }
 
-// Name of entity that caused the event.
+// Name of entity that caused the event. For example, if
+// mailboxes were queried the name is the mailbox name.
 func (e *QueryEvent) Name() string {
 	return e.name
 }
 
-// Peer of named entity. If the entity is of type peer
-// then methods Name and Peer return the same string.
+// Peer of named entity. For example, if mailboxes were
+// queried then it's the peer the mailbox is running on.
+// If the query was for peers, then methods Name and
+// Peer return the same string.
 func (e *QueryEvent) Peer() string {
 	return e.peer
 }
 
-// Err caught watching query events. The error
-// is not associated with any particular entity.
+// Err caught watching query events. The error is
+// not associated with any particular entity, it's
+// an error with the watch itself or a result of
+// the watch.
 func (e *QueryEvent) Err() error {
 	return e.err
 }
@@ -77,7 +82,7 @@ func (e *QueryEvent) String() string {
 //     client, err := grid.NewClient(...)
 //     ...
 //
-//     currentpeers, watch, err := client.QueryWatch(c, grid.Peers)
+//     currentpeers, watch, err := client.QueryWatch(ctx, grid.Peers)
 //     ...
 //
 //     for _, peer := range currentpeers {
