@@ -3,7 +3,10 @@ grid
 
 Grid is a library for doing distributed processing. It's main goal is to help
 in scheduling fine-grain stateful computations, which grid calls actors, and
-sending data between them. Its only service dependency is an Etcd v3 server.
+sending data between them. Its only service dependency is an
+[Etcd v3](https://github.com/coreos/etcd) server, used for discovery and
+coordination. Grid uses [gRPC](http://www.grpc.io/) for communication.
+
 
 ## Grid
 Anything that implements the `Grid` interface is a grid. The interface defines
