@@ -17,31 +17,29 @@ type Grid interface {
 ```
 
 ## Example Grid
-Below is a basic example of starting your grid application. The `MakeActor` method
-must always know how to make a "leader". The leader actor will be started for you
-when `Serve` is called. The leader is the entry-point of you application.
+Below is a basic example of starting your grid application. If the `MakeActor`
+method knows how to make a "leader", the leader actor will be started for you
+when `Serve` is called. The leader can be the entry-point of you application.
 
 ```go
-type MyGrid struct {
-    MakeActor(def *grid.ActorDef) (grid.Actor, error) {
-        switch def.Type {
-        case "leader":
-            return &LeaderActor{}, nil
-        }
-    }
-}
-
 func main() {
     etcd, err := etcdv3.New(...)
     ...
 
-    g, err := grid.NewServer(etcd, "mygrid", MyGrid{})
+    server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "mygrid"})
     ...
+
+    server.SetDefinition(grid.FromFunc(def *grid.ActorDef) (grid.Actor, error) {
+        switch def.Type {
+        case "leader":
+            return &LeaderActor{}, nil
+        }
+    }))
 
     lis, err := net.Listen("tcp", ...)
     ...
 
-    g.Serve(lis)
+    server.Serve(lis)
 }
 
 ```
@@ -52,31 +50,30 @@ represent the central work of you application.
 
 ```go
 type Actor interface {
-    Act(c context.Context)
+    Act(ctx context.Context)
 }
 ```
 
 ## Example Actor, Part 1
 Below is an actor that starts other actors, this is a typical way of structuring
-an application with grid. In particular grid reqires that the implementor of
-the `Grid` interface knows how to make an actor of name and type "leader", it
-is started when the `Serve` method is called. No matter how many processes are
-participating in the grid, only one leader actor is started, it is a singleton.
-The "leader" actor can be thought of as an entry-point into you distributed
-application.
+an application with grid. If the `Grid` interface knows how to make an actor by
+the name and type "leader", it is started automatically when the `Serve` method
+is called. No matter how many processes are participating in the grid, only one
+leader actor is started, it is a singleton. The "leader" actor can be thought of
+as an entry-point into you distributed application. You don't have to use it,
+but it is often convenient. The actor named "leader" is also special in that if
+the process currently running the leader actor dies, it will be started on another
+peer, if more than one peer is participating in the grid.
 
 ```go
 const timeout = 2 * time.Second
 
 type LeaderActor struct {
-    ...
+    client *grid.Client
 }
 
-func (a *LeaderActor) Act(c context.Context) {
-    client, err := grid.ContextClient(c)
-    ...
-
-    peers, err := client.Peers(...)
+func (a *LeaderActor) Act(ctx context.Context) {
+    peers, err := a.client.Query(timeout, grid.Peers)
     ...
 
     i := 0
@@ -92,7 +89,7 @@ func (a *LeaderActor) Act(c context.Context) {
         // type "ActorDef" is special. When sent to
         // the mailbox of a peer, that peer will
         // start an actor based on the definition.
-        res, err := client.Request(timeout, peer, def)
+        res, err := a.client.Request(timeout, peer.Name(), def)
         ...
         i++
     }
@@ -104,7 +101,7 @@ func (a *LeaderActor) Act(c context.Context) {
 ## Example Actor, Part 2
 An actor will typically need to receive data to work on. This may come
 from the filesystem or a database, but it can also come from messages
-sent to a mailbox. Just like actors a mailbox is unique by name. Etcd
+sent to a mailbox. Just like actors, a mailbox is unique by name. Etcd
 is used to register the name and guarantee that only one such mailbox
 exists.
 
@@ -112,14 +109,16 @@ exists.
 const size = 10
 
 type WorkerActor struct {
-    ...
+    server *grid.Server
 }
 
-func (a *WorkerActor) Act(c context.Context) {
-    id, err := grid.ContextActorID(c)
+func (a *WorkerActor) Act(ctx context.Context) {
+    name, err := grid.ContextActorName(ctx)
     ...
 
-    mailbox, err := grid.NewMailbox(c, id, size)
+    // Listen to a mailbox with the same
+    // name as the actor.
+    mailbox, err := grid.NewMailbox(a.server, name, size)
     ...
     defer mailbox.Close()
 
@@ -142,21 +141,15 @@ is created by the peer that started the actor. The context contains several
 useful values, they can be extracted using the `Context*` functions.
 
 ```go
-func (a *WorkerActor) Act(c context.Context) {
-    // The ID of the actor.
-    id, err := grid.ContextActorID(c)
+func (a *WorkerActor) Act(ctx context.Context) {
+    // The ID of the actor in etcd.
+    id, err := grid.ContextActorID(ctx)
 
     // The name of the actor, as given in ActorDef.
-    name, err := grid.ContextActorName(c)
+    name, err := grid.ContextActorName(ctx)
 
     // The namespace of the grid this actor is associated with.
-    namespace, err := grid.ContextActorNamespace(c)
-
-    // The etcd client associated with this actor.
-    etcd, err := grid.ContextEtcd(c)
-
-    // The grid client associated with this actor.
-    client, err := grid.ContextClient(c)
+    namespace, err := grid.ContextActorNamespace(ctx)
 }
 ```
 
@@ -165,10 +158,10 @@ An actor can exit whenever it wants, but it *must* exit when its context
 signals done. An actor should always monitor its context Done channel.
 
 ```go
-func (a *WorkerActor) Act(c context.Context) {
+func (a *WorkerActor) Act(ctx context.Context) {
     for {
         select {
-        case <-c.Done():
+        case <-ctx.Done():
             // Stop requested, clean up and exit.
             return
         case ...
@@ -185,16 +178,18 @@ receive an error indicating that the actor is already started.
 ```go
 const timeout = 2 * time.Second
 
-func (a *LeaderActor) Act(c context.Context) {
-    client, err := grid.ContextClient(c)
+type LeaderActor struct {
+    client *grid.Client
+}
 
+func (a *LeaderActor) Act(ctx context.Context) {
     def := grid.NewActorDef("worker-0")
 
     // First request to start.
-    err = client.Request(timeout, peer, def)
+    err := a.client.Request(timeout, peer, def)
 
     // Second request will fail, if the first succeeded.
-    err = client.Request(timeout, peer, def)
+    err = a.client.Request(timeout, peer, def)
 }
 ```
 
@@ -229,7 +224,7 @@ func Example() {
     etcd, err := etcdv3.New(...)
     ...
 
-    client, err := grid.NewClient(etcd, "myapp")
+    client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "myapp"})
     ...
 
     res, err := client.Request(timeout, "some-mailbox-name", &MyMsg{

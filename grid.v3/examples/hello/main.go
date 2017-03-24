@@ -18,10 +18,13 @@ import (
 
 const timeout = 2 * time.Second
 
+// LeaderActor is the entry point of the application.
 type LeaderActor struct {
 	client *grid.Client
 }
 
+// Act checks for peers, ie: other processes running this code,
+// in the same namespace and start the worker actor on one of them.
 func (a *LeaderActor) Act(c context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -38,25 +41,27 @@ func (a *LeaderActor) Act(c context.Context) {
 
 			// Check for new peers.
 			for _, peer := range peers {
-				if existing[peer] {
+				if existing[peer.Name()] {
 					continue
 				}
 
 				// Define a worker.
-				existing[peer] = true
+				existing[peer.Name()] = true
 				def := grid.NewActorDef("worker-%d", len(existing))
 				def.Type = "worker"
 
 				// On new peers start the worker.
-				_, err := a.client.Request(timeout, peer, def)
+				_, err := a.client.Request(timeout, peer.Name(), def)
 				successOrDie(err)
 			}
 		}
 	}
 }
 
+// WorkerActor started by the leader.
 type WorkerActor struct{}
 
+// Act says hello and then waits for the exit signal.
 func (a *WorkerActor) Act(ctx context.Context) {
 	fmt.Println("hello world")
 	for {
@@ -68,37 +73,35 @@ func (a *WorkerActor) Act(ctx context.Context) {
 	}
 }
 
-// HelloGrid is a grid, because it has the MakeActor method.
-type HelloGrid struct {
-	client *grid.Client
-}
-
-// MakeActor given the definition of the actor.
-func (hg HelloGrid) MakeActor(def *grid.ActorDef) (grid.Actor, error) {
-	switch def.Type {
-	case "leader":
-		return &LeaderActor{client: hg.client}, nil
-	case "worker":
-		return &WorkerActor{}, nil
-	default:
-		return nil, errors.New("unknown actor type")
-	}
-}
-
 func main() {
 	grid.Logger = log.New(os.Stderr, "hellogrid", log.LstdFlags)
 
 	address := flag.String("address", "", "bind address for gRPC")
 	flag.Parse()
 
+	// Connect to etcd.
 	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
 	successOrDie(err)
 
+	// Create a grid client.
 	client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "hellogrid"})
 	successOrDie(err)
 
-	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "hellogrid"}, HelloGrid{client})
+	// Create a grid server.
+	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "hellogrid"})
 	successOrDie(err)
+
+	// Define how actors are created.
+	server.SetDefinition(grid.FromFunc(func(def *grid.ActorDef) (grid.Actor, error) {
+		switch def.Type {
+		case "leader":
+			return &LeaderActor{client: client}, nil
+		case "worker":
+			return &WorkerActor{}, nil
+		default:
+			return nil, errors.New("unknown actor type")
+		}
+	}))
 
 	// Check for exit signal, ie: ctrl-c
 	go func() {

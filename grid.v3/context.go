@@ -2,8 +2,7 @@ package grid
 
 import "context"
 
-// ContextActorID returns an ID that is a concatenation of the context
-// namespace and the actor name associated with this context.
+// ContextActorID returns the ID that is used to register the actor in etcd.
 func ContextActorID(c context.Context) (string, error) {
 	v := c.Value(contextKey)
 	if v == nil {
