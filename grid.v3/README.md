@@ -33,7 +33,10 @@ func main() {
         switch def.Type {
         case "leader":
             return &LeaderActor{}, nil
+        case "worker":
+            return ...
         }
+        return nil, fmt.Errorf("unknown actor type")
     }))
 
     lis, err := net.Listen("tcp", ...)
