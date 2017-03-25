@@ -91,8 +91,8 @@ func main() {
 	successOrDie(err)
 
 	// Define how actors are created.
-	server.RegisterDef("leader", func(_ []byte) grid.Actor { return &LeaderActor{client: client} })
-	server.RegisterDef("worker", func(_ []byte) grid.Actor { return &WorkerActor{} })
+	server.RegisterDef("leader", func(_ []byte) (grid.Actor, error) { return &LeaderActor{client: client}, nil })
+	server.RegisterDef("worker", func(_ []byte) (grid.Actor, error) { return &WorkerActor{}, nil })
 
 	// Check for exit signal, ie: ctrl-c
 	go func() {

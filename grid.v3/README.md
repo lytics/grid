@@ -20,8 +20,8 @@ func main() {
     server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "mygrid"})
     ...
 
-    server.RegisterDef("leader", func(_ []byte) grid.Actor { return &LeaderActor{...} })
-    server.RegisterDef("worker", func(_ []byte) grid.Actor { return &WorkerActor{...} })
+    server.RegisterDef("leader", func(_ []byte) (grid.Actor, error) { return &LeaderActor{...}, nil })
+    server.RegisterDef("worker", func(_ []byte) (grid.Actor, error) { return &WorkerActor{...}, nil })
 
     lis, err := net.Listen("tcp", ...)
     ...
@@ -200,9 +200,9 @@ Grid comes into the picture once you start building out your application logic
 and need things like coordination and messaging, which under the hood in grid
 is done with Etcd and gRPC - taking care of some boilerplate code for you.
 
-## Client
-There are situations where you will need to talk to grid actors from non-actors,
-the `Client` can be used for this.
+## Sending Messages
+Sending messages is always done through the client. The client configuration
+has only one required parameter, the namespace of the grid to connect to.
 
 ```go
 const timeout = 2 * time.Second

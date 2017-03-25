@@ -37,7 +37,7 @@ func TestServerStartStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.RegisterDef("leader", func(_ []byte) Actor { return a })
+	server.RegisterDef("leader", func(_ []byte) (Actor, error) { return a, nil })
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
@@ -112,7 +112,7 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.RegisterDef("leader", func(_ []byte) Actor { return a })
+	server.RegisterDef("leader", func(_ []byte) (Actor, error) { return a, nil })
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {

@@ -185,7 +185,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	a := &echoActor{ready: make(chan bool)}
 
 	// Set grid definition.
-	server.RegisterDef("echo", func(_ []byte) Actor { return a })
+	server.RegisterDef("echo", func(_ []byte) (Actor, error) { return a, nil })
 
 	// Set server on echo actor.
 	a.server = server
@@ -253,7 +253,7 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 	a := &echoActor{ready: make(chan bool)}
 
 	// Set grid definition.
-	server.RegisterDef("echo", func(_ []byte) Actor { return a })
+	server.RegisterDef("echo", func(_ []byte) (Actor, error) { return a, nil })
 
 	// Set server on echo actor.
 	a.server = server
@@ -329,7 +329,7 @@ func TestClientWithBusyReceiver(t *testing.T) {
 	// Create busy actor.
 	a := &busyActor{ready: make(chan bool)}
 
-	server.RegisterDef("busy", func(_ []byte) Actor { return a })
+	server.RegisterDef("busy", func(_ []byte) (Actor, error) { return a, nil })
 
 	// Set server on busy actor.
 	a.server = server

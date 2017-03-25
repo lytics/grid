@@ -63,7 +63,7 @@ func TestValidContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.RegisterDef("leader", func(_ []byte) Actor { return a })
+	server.RegisterDef("leader", func(_ []byte) (Actor, error) { return a, nil })
 
 	// Create the listener on a random port.
 	lis, err := net.Listen("tcp", "localhost:0")
