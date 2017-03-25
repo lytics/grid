@@ -7,7 +7,7 @@ sending data between them. Its only service dependency is an
 [Etcd v3](https://github.com/coreos/etcd) server, used for discovery and
 coordination. Grid uses [gRPC](http://www.grpc.io/) for communication.
 
-## Example Grid
+## Example
 Below is a basic example of starting your grid application. If a "leader"
 definition is registered, the leader actor will be started for you when
 `Serve` is called. The "leader" actor can be thought of as an entry-point
@@ -15,9 +15,10 @@ into you distributed application. You don't have to use it, but it is often
 convenient. 
 
 No matter how many processes are participating in the grid, only one leader
-actor is started, it is a singleton.  The actor named "leader" is also special
-in that if the process currently running the leader dies, it will be started
-on another peer, if more than one peer is participating in the grid.
+actor is started per namespace, it is a singleton.  The actor named "leader"
+is also special in that if the process currently running the leader dies,
+it will be started on another peer, if more than one peer is participating
+in the grid.
 
 ```go
 func main() {
