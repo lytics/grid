@@ -10,13 +10,14 @@ coordination. Grid uses [gRPC](http://www.grpc.io/) for communication.
 ## Example Grid
 Below is a basic example of starting your grid application. If a "leader"
 definition is registered, the leader actor will be started for you when
-`Serve` is called. No matter how many processes are participating in the
-grid, only one leader actor is started, it is a singleton. The "leader"
-actor can be thought of as an entry-point into you distributed application.
-You don't have to use it, but it is often convenient. The actor named
-"leader" is also special in that if the process currently running the
-leader dies, it will be started on another peer, if more than one peer
-is participating in the grid.
+`Serve` is called. The "leader" actor can be thought of as an entry-point
+into you distributed application. You don't have to use it, but it is often
+convenient. 
+
+No matter how many processes are participating in the grid, only one leader
+actor is started, it is a singleton.  The actor named "leader" is also special
+in that if the process currently running the leader dies, it will be started
+on another peer, if more than one peer is participating in the grid.
 
 ```go
 func main() {
@@ -49,8 +50,8 @@ type Actor interface {
 
 ## Example Actor, Part 1
 Below is an actor that starts other actors, this is a typical way of structuring
-an application with grid. Here the leader actor starts a worker actor on each
-peer in the grid. Actors are started by sending a `ActorStart` message to a peer.
+an application with grid. Here the leader actor starts a worker on each peer in
+the grid. Actors are started by sending an `ActorStart` message to a peer.
 Each actor must have a unique name, per namespace. The name is registered in Etcd
 to make sure that it is unique across all the processes of a grid.
 
