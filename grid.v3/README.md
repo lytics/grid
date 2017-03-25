@@ -33,7 +33,8 @@ func main() {
     lis, err := net.Listen("tcp", ...)
     ...
 
-    server.Serve(lis)
+    err = server.Serve(lis)
+    ...
 }
 
 ```
