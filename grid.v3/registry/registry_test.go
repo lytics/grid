@@ -2,8 +2,10 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,7 +71,7 @@ func TestRegister(t *testing.T) {
 	if reg.Address != r.Address() {
 		t.Fatal("wrong address")
 	}
-	if reg.Name != r.Name() {
+	if reg.Registry != r.Registry() {
 		t.Fatal("wrong name")
 	}
 }
@@ -102,7 +104,7 @@ func TestDeregistration(t *testing.T) {
 	if reg.Address != r.Address() {
 		t.Fatal("wrong address")
 	}
-	if reg.Name != r.Name() {
+	if reg.Registry != r.Registry() {
 		t.Fatal("wrong name")
 	}
 
@@ -327,27 +329,36 @@ func TestWatch(t *testing.T) {
 		}
 	}
 
-	watching := make(chan error)
+	watchStarted := make(chan bool)
+	watchErrors := make(chan error)
+	watchAdds := make(map[string]bool)
+	watchDels := make(map[string]bool)
 	ctx, cancelWatch := context.WithCancel(context.Background())
 	go func() {
-		found, _, err := r.Watch(ctx, "peer")
+		current, events, err := r.Watch(ctx, "peer")
 		if err != nil {
-			watching <- err
+			watchErrors <- err
 			return
 		}
-		for _, peer := range found {
+		for _, peer := range current {
 			if !initial[peer.Key] {
-				watching <- fmt.Errorf("missing initial peer: " + peer.Key)
+				watchErrors <- fmt.Errorf("missing initial peer: " + peer.Key)
 				return
 			}
 		}
-		close(watching)
+		close(watchStarted)
+		for e := range events {
+			switch e.Type {
+			case Delete:
+				watchDels[e.Key] = true
+			case Create:
+				watchAdds[e.Key] = true
+			}
+		}
+		close(watchErrors)
 	}()
 
-	err = <-watching
-	if err != nil {
-		t.Fatal(err)
-	}
+	<-watchStarted
 
 	additions := map[string]bool{
 		"peer-4": true,
@@ -375,9 +386,62 @@ func TestWatch(t *testing.T) {
 	}
 
 	cancelWatch()
+
+	err = <-watchErrors
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for k := range initial {
+		delete(watchDels, k)
+	}
+	if len(watchDels) != 0 {
+		t.Fatalf("failed to watch expected deletions: %v", initial)
+	}
+
+	for k := range additions {
+		delete(watchAdds, k)
+	}
+	if len(watchAdds) != 0 {
+		t.Fatalf("failed to watch expected additions: %v", additions)
+	}
+
 	time.Sleep(3 * time.Second)
 	r.Stop()
 	etcdcleanup()
+}
+
+func TestWatchEventString(t *testing.T) {
+	we := &WatchEvent{
+		Key:  "foo",
+		Type: Create,
+		Reg: &Registration{
+			Key:      "foo",
+			Address:  "localhost:7777",
+			Registry: "goo",
+		},
+	}
+
+	// Create
+	if !strings.Contains(we.String(), "create") {
+		t.Fatal("watch event string is invalid")
+	}
+	// Modify
+	we.Type = Modify
+	if !strings.Contains(we.String(), "modify") {
+		t.Fatal("watch event string is invalid")
+	}
+	// Delete
+	we.Type = Delete
+	if !strings.Contains(we.String(), "delete") {
+		t.Fatal("watch event string is invalid")
+	}
+	// Error
+	we.Type = Error
+	we.Error = errors.New("watch event testing error")
+	if !strings.Contains(we.String(), "error") {
+		t.Fatal("watch event string is invalid")
+	}
 }
 
 func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.TCPAddr, testetcd.Cleanup) {

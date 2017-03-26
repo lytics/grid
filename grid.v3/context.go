@@ -2,8 +2,7 @@ package grid
 
 import "context"
 
-// ContextActorID returns an ID that is a concatenation of the context
-// namespace and the actor name associated with this context.
+// ContextActorID returns the ID that is used to register the actor in etcd.
 func ContextActorID(c context.Context) (string, error) {
 	v := c.Value(contextKey)
 	if v == nil {
@@ -42,17 +41,4 @@ func ContextActorNamespace(c context.Context) (string, error) {
 		return "", ErrInvalidContext
 	}
 	return cv.server.cfg.Namespace, nil
-}
-
-// ContextActorServer returns the server associated with this actor.
-func ContextActorServer(c context.Context) (*Server, error) {
-	v := c.Value(contextKey)
-	if v == nil {
-		return nil, ErrInvalidContext
-	}
-	cv, ok := v.(*contextVal)
-	if !ok {
-		return nil, ErrInvalidContext
-	}
-	return cv.server, nil
 }

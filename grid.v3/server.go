@@ -48,9 +48,6 @@ type Server struct {
 
 // NewServer for the grid. The namespace must contain only characters
 // in the set: [a-zA-Z0-9-_] and no other.
-//
-// If argument g is nil, then this server will not create actors, will
-// not start a leader, and can be used only for serving mailboxes.
 func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	setServerCfgDefaults(&cfg)
 
@@ -67,7 +64,10 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	}, nil
 }
 
-// SetDefinition of the server's grid.
+// SetDefinition of the server's grid. If never called
+// then this server will not create actors, will not
+// start a leader, and can be used only for serving
+// mailboxes.
 func (s *Server) SetDefinition(g Grid) {
 	s.g = g
 }
@@ -91,10 +91,6 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
 
-	// Start the registry and monitor that it is
-	// running correctly.
-	registryErrors := s.monitorRegistry(lis.Addr())
-
 	// Create a context that each actor this leader creates
 	// will receive. When the server is stopped, it will
 	// call the cancel function, which should cause all the
@@ -106,8 +102,12 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.ctx = ctx
 	s.cancel = cancel
 
+	// Start the registry and monitor that it is
+	// running correctly.
+	registryErrors := s.monitorRegistry(lis.Addr())
+
 	// Peer's name is the registry's name.
-	name := s.registry.Name()
+	name := s.registry.Registry()
 
 	// Namespaced name, which just includes the namespace.
 	nsName, err := namespaceName(Peers, s.cfg.Namespace, name)
@@ -234,13 +234,7 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	if err != nil {
 		return nil, err
 	}
-	// This actually converts between the "context" and
-	// "golang.org/x/net/context" types of Context so
-	// that method signatures are satisfied.
-	req := &request{}
-	req.msg = env.Msg
-	req.context = context.WithValue(c, "", "")
-	req.response = make(chan []byte)
+	req := newRequest(c, env.Msg)
 
 	// Send the filled envelope to the actual
 	// receiver. Also note that the receiver
@@ -331,7 +325,7 @@ func (s *Server) monitorLeader() <-chan error {
 			}
 			time.Sleep(1 * time.Second)
 			err = s.startActor(s.cfg.Timeout, def)
-			if err != nil && strings.Contains(err.Error(), ErrAlreadyRegistered.Error()) {
+			if err != nil && strings.Contains(err.Error(), registry.ErrAlreadyRegistered.Error()) {
 				return nil
 			}
 		}
@@ -349,14 +343,11 @@ func (s *Server) monitorLeader() <-chan error {
 			case <-timer.C:
 				err := start(NewActorDef("leader"))
 				if err == ErrActorCreationNotSupported {
-					if Logger != nil {
-						Logger.Printf("skipping leader startup since actor creation not supported")
-					}
 					return
 				}
-				if err == ErrGridReturnedNilActor {
+				if err == ErrNilActorDefinition {
 					if Logger != nil {
-						Logger.Printf("skipping leader startup since leader definition returned nil actor")
+						Logger.Printf("skipping leader startup since leader definition returned nil")
 					}
 					return
 				}
@@ -409,7 +400,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 		return err
 	}
 	if actor == nil {
-		return ErrGridReturnedNilActor
+		return ErrNilActorDefinition
 	}
 
 	// Register the actor. This acts as a distributed mutex to

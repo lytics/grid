@@ -38,19 +38,24 @@ type QueryEvent struct {
 	Type   EventType
 }
 
-// Name of entity that caused the event.
+// Name of entity that caused the event. For example, if
+// mailboxes were queried the name is the mailbox name.
 func (e *QueryEvent) Name() string {
 	return e.name
 }
 
-// Peer of named entity. If the entity is of type peer
-// then methods Name and Peer return the same string.
+// Peer of named entity. For example, if mailboxes were
+// queried then it's the peer the mailbox is running on.
+// If the query was for peers, then methods Name and
+// Peer return the same string.
 func (e *QueryEvent) Peer() string {
 	return e.peer
 }
 
-// Err caught watching query events. The error
-// is not associated with any particular entity.
+// Err caught watching query events. The error is
+// not associated with any particular entity, it's
+// an error with the watch itself or a result of
+// the watch.
 func (e *QueryEvent) Err() error {
 	return e.err
 }
@@ -64,7 +69,7 @@ func (e *QueryEvent) String() string {
 	case EntityLost:
 		return fmt.Sprintf("query event: %v lost: %v", e.entity, e.name)
 	case EntityFound:
-		return fmt.Sprintf("query event: %v found: %v", e.entity, e.name)
+		return fmt.Sprintf("query event: %v found: %v, on peer: %v", e.entity, e.name, e.peer)
 	default:
 		return fmt.Sprintf("query event: error: %v", e.err)
 	}
@@ -77,7 +82,7 @@ func (e *QueryEvent) String() string {
 //     client, err := grid.NewClient(...)
 //     ...
 //
-//     currentpeers, watch, err := client.QueryWatch(c, grid.Peers)
+//     currentpeers, watch, err := client.QueryWatch(ctx, grid.Peers)
 //     ...
 //
 //     for _, peer := range currentpeers {
@@ -104,8 +109,8 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 	var current []*QueryEvent
 	for _, reg := range regs {
 		current = append(current, &QueryEvent{
-			name:   nameFromReg(filter, c.cfg.Namespace, reg),
-			peer:   reg.Name,
+			name:   nameFromKey(filter, c.cfg.Namespace, reg.Key),
+			peer:   reg.Registry,
 			entity: filter,
 			Type:   EntityFound,
 		})
@@ -118,36 +123,68 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 		case queryEvents <- change:
 		}
 	}
+	putTerminalError := func(change *QueryEvent) {
+		go func() {
+			select {
+			case <-time.After(10 * time.Minute):
+			case queryEvents <- change:
+			}
+		}()
+	}
 	go func() {
-		defer close(queryEvents)
 		for {
 			select {
-			case <-ctx.Done():
-				return
 			case change, open := <-changes:
 				if !open {
-					put(&QueryEvent{err: ErrWatchClosedUnexpectedly})
+					select {
+					case <-ctx.Done():
+					default:
+						putTerminalError(&QueryEvent{err: ErrWatchClosedUnexpectedly})
+					}
 					return
 				}
 				if change.Error != nil {
-					put(&QueryEvent{err: change.Error})
+					putTerminalError(&QueryEvent{err: change.Error})
 					return
 				}
 				switch change.Type {
 				case registry.Delete:
-					put(&QueryEvent{
-						name:   nameFromReg(filter, c.cfg.Namespace, change.Reg),
-						peer:   change.Reg.Name,
+					qe := &QueryEvent{
+						name:   nameFromKey(filter, c.cfg.Namespace, change.Key),
 						entity: filter,
 						Type:   EntityLost,
-					})
+					}
+					// Maintain contract that for peer events
+					// the Peer() and Name() methods return
+					// the same value.
+					//
+					// Also keep in mind that when the grid
+					// library registers a "peer", the peer
+					// name is in fact the string returned by
+					// the registry.Registry() method.
+					if filter == Peers {
+						qe.peer = qe.name
+					}
+					put(qe)
 				case registry.Create, registry.Modify:
-					put(&QueryEvent{
-						name:   nameFromReg(filter, c.cfg.Namespace, change.Reg),
-						peer:   change.Reg.Name,
+					qe := &QueryEvent{
+						name:   nameFromKey(filter, c.cfg.Namespace, change.Key),
+						peer:   change.Reg.Registry,
 						entity: filter,
 						Type:   EntityFound,
-					})
+					}
+					// Maintain contract that for peer events
+					// the Peer() and Name() methods return
+					// the same value.
+					//
+					// Also keep in mind that when the grid
+					// library registers a "peer", the peer
+					// name is in fact the string returned by
+					// the registry.Registry() method.
+					if filter == Peers {
+						qe.peer = qe.name
+					}
+					put(qe)
 				}
 			}
 		}
@@ -180,8 +217,8 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, 
 	var result []*QueryEvent
 	for _, reg := range regs {
 		result = append(result, &QueryEvent{
-			name:   nameFromReg(filter, c.cfg.Namespace, reg),
-			peer:   reg.Name,
+			name:   nameFromKey(filter, c.cfg.Namespace, reg.Key),
+			peer:   reg.Registry,
 			entity: filter,
 			Type:   EntityFound,
 		})
@@ -190,17 +227,17 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, 
 	return result, nil
 }
 
-// nameFromReg returns the name from the data field of a registration.
+// nameFromKey returns the name from the data field of a registration.
 // Used by query to return just simple string data.
-func nameFromReg(filter entityType, namespace string, reg *registry.Registration) string {
-	name, err := stripNamespace(filter, namespace, reg.Key)
+func nameFromKey(filter entityType, namespace string, key string) string {
+	name, err := stripNamespace(filter, namespace, key)
 	// INVARIANT
 	// Under all circumstances if a registration is returned
 	// from the prefix scan above, ie: FindRegistrations,
 	// then each registration must contain the namespace
 	// as a prefix of the key.
 	if err != nil {
-		panic("registry key without proper namespace prefix: " + reg.Key)
+		panic("registry key without proper namespace prefix: " + key)
 	}
 	return name
 }
