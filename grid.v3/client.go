@@ -34,11 +34,12 @@ func (cc *clientAndConn) close() error {
 // Client for grid-actors or non-actors to make requests to grid-actors.
 // The client can be used by multiple go-routines.
 type Client struct {
-	mu              sync.Mutex
-	cfg             ClientCfg
-	registry        *registry.Registry
-	addresses       map[string]string
-	clientsAndConns map[string]*clientAndConn
+	mu               sync.Mutex
+	cfg              ClientCfg
+	registry         *registry.Registry
+	addresses        map[string]string
+	clientsAndConns  map[string]*clientAndConn
+	preferredEncoder int32
 }
 
 // NewClient using the given etcd client and configuration.
@@ -51,11 +52,16 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 	}
 	r.Timeout = cfg.Timeout
 
+	if cfg.CodecLookup == nil {
+		cfg.CodecLookup = codec.Registry() //default registry
+	}
+
 	return &Client{
-		cfg:             cfg,
-		registry:        r,
-		addresses:       make(map[string]string),
-		clientsAndConns: make(map[string]*clientAndConn),
+		cfg:              cfg,
+		registry:         r,
+		addresses:        make(map[string]string),
+		clientsAndConns:  make(map[string]*clientAndConn),
+		preferredEncoder: 0, //TODO REPLACE with registory lookup
 	}, nil
 }
 
@@ -100,10 +106,11 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 
 	req := &Delivery{
 		Ver:      Delivery_V1,
-		Enc:      Delivery_Gob,
 		Data:     buf.Bytes(),
 		Receiver: nsReceiver,
+		Encoder:  c.preferredEncoder,
 	}
+
 	var res *Delivery
 	retry.X(3, 1*time.Second, func() bool {
 		var client WireClient

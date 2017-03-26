@@ -11,6 +11,8 @@ type ClientCfg struct {
 	Timeout time.Duration
 	// PeersRefreshInterval for polling list of peers in etcd.
 	PeersRefreshInterval time.Duration
+
+	CodecLookup codec.Registry
 }
 
 // setClientCfgDefaults for those fields that have their zero value.
