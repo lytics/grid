@@ -35,13 +35,13 @@ var Logger *log.Logger
 // Server of a grid.
 type Server struct {
 	mu        sync.Mutex
-	g         Grid
 	ctx       context.Context
 	cancel    func()
 	cfg       ServerCfg
 	etcd      *etcdv3.Client
 	grpc      *grpc.Server
 	stop      sync.Once
+	actors    map[string]MakeActor
 	registry  *registry.Registry
 	mailboxes map[string]*Mailbox
 }
@@ -58,18 +58,21 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		return nil, ErrInvalidEtcd
 	}
 	return &Server{
-		cfg:  cfg,
-		etcd: etcd,
-		grpc: grpc.NewServer(),
+		cfg:    cfg,
+		etcd:   etcd,
+		grpc:   grpc.NewServer(),
+		actors: map[string]MakeActor{},
 	}, nil
 }
 
-// SetDefinition of the server's grid. If never called
-// then this server will not create actors, will not
-// start a leader, and can be used only for serving
-// mailboxes.
-func (s *Server) SetDefinition(g Grid) {
-	s.g = g
+// RegisterDef of an actor. When a ActorStart message is sent to
+// a peer it will use the registered definitions to make
+// and run the actor.
+func (s *Server) RegisterDef(actorType string, f MakeActor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.actors[actorType] = f
 }
 
 // Serve the grid on the listener. The listener address type must be
@@ -252,6 +255,8 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	select {
 	case <-c.Done():
 		return nil, ErrContextFinished
+	case fail := <-req.failure:
+		return nil, fail
 	case data := <-req.response:
 		return &Delivery{
 			Data: data,
@@ -268,17 +273,12 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 			return
 		case req := <-mailbox.C:
 			switch msg := req.Msg().(type) {
-			case *ActorDef:
+			case *ActorStart:
 				err := s.startActorC(req.Context(), msg)
 				if err != nil {
-					req.Respond(&ResponseMsg{
-						Succeeded: false,
-						Error:     err.Error(),
-					})
+					req.Respond(err)
 				} else {
-					req.Respond(&ResponseMsg{
-						Succeeded: true,
-					})
+					req.Ack()
 				}
 			}
 		}
@@ -315,7 +315,7 @@ func (s *Server) monitorRegistry(addr net.Addr) <-chan error {
 // a leader thereafter. If the leader should die on any
 // host then some peer will eventually have it start again.
 func (s *Server) monitorLeader() <-chan error {
-	start := func(def *ActorDef) error {
+	startLeader := func() error {
 		var err error
 		for i := 0; i < 6; i++ {
 			select {
@@ -324,7 +324,7 @@ func (s *Server) monitorLeader() <-chan error {
 			default:
 			}
 			time.Sleep(1 * time.Second)
-			err = s.startActor(s.cfg.Timeout, def)
+			err = s.startActor(s.cfg.Timeout, &ActorStart{Name: "leader", Type: "leader"})
 			if err != nil && strings.Contains(err.Error(), registry.ErrAlreadyRegistered.Error()) {
 				return nil
 			}
@@ -341,13 +341,19 @@ func (s *Server) monitorLeader() <-chan error {
 			case <-s.ctx.Done():
 				return
 			case <-timer.C:
-				err := start(NewActorDef("leader"))
+				err := startLeader()
 				if err == ErrActorCreationNotSupported {
+					return
+				}
+				if err == ErrDefNotRegistered {
+					if Logger != nil {
+						Logger.Printf("skipping leader startup since leader definition not registered")
+					}
 					return
 				}
 				if err == ErrNilActorDefinition {
 					if Logger != nil {
-						Logger.Printf("skipping leader startup since leader definition returned nil")
+						Logger.Printf("skipping leader startup since make leader returned nil")
 					}
 					return
 				}
@@ -369,33 +375,34 @@ func (s *Server) monitorLeader() <-chan error {
 // startActor in the current process. This method does not communicate with another
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
-func (s *Server) startActor(timeout time.Duration, def *ActorDef) error {
+func (s *Server) startActor(timeout time.Duration, start *ActorStart) error {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return s.startActorC(timeoutC, def)
+	return s.startActorC(timeoutC, start)
 }
 
 // startActorC in the current process. This method does not communicate with another
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
-func (s *Server) startActorC(c context.Context, def *ActorDef) error {
-	if s.g == nil {
-		return ErrActorCreationNotSupported
-	}
-
-	if !isNameValid(def.Type) {
+func (s *Server) startActorC(c context.Context, start *ActorStart) error {
+	if !isNameValid(start.Type) {
+		fmt.Println(start.Type)
 		return ErrInvalidActorType
 	}
-	if !isNameValid(def.Name) {
+	if !isNameValid(start.Name) {
 		return ErrInvalidActorName
 	}
 
-	nsName, err := namespaceName(Actors, s.cfg.Namespace, def.Name)
+	nsName, err := namespaceName(Actors, s.cfg.Namespace, start.Name)
 	if err != nil {
 		return err
 	}
 
-	actor, err := s.g.MakeActor(def)
+	makeActor := s.actors[start.Type]
+	if makeActor == nil {
+		return ErrDefNotRegistered
+	}
+	actor, err := makeActor(start.Data)
 	if err != nil {
 		return err
 	}
@@ -418,7 +425,7 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 	actorCtx := context.WithValue(s.ctx, contextKey, &contextVal{
 		server:    s,
 		actorID:   nsName,
-		actorName: def.Name,
+		actorName: start.Name,
 	})
 
 	// Start the actor, unregister the actor in case of failure
@@ -433,8 +440,8 @@ func (s *Server) startActorC(c context.Context, def *ActorDef) error {
 			if err := recover(); err != nil {
 				if Logger != nil {
 					stack := niceStack(debug.Stack())
-					log.Printf("panic in namespace: %v, actor: %v, recovered from: %v, stack: %v",
-						s.cfg.Namespace, def.Name, err, stack)
+					log.Printf("panic in namespace: %v, actor: %v, recovered from: %v, stack trace: %v",
+						s.cfg.Namespace, start.Name, err, stack)
 				}
 			}
 		}()

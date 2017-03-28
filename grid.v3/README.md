@@ -7,22 +7,18 @@ sending data between them. Its only service dependency is an
 [Etcd v3](https://github.com/coreos/etcd) server, used for discovery and
 coordination. Grid uses [gRPC](http://www.grpc.io/) for communication.
 
+## Example
+Below is a basic example of starting your grid application. If a "leader"
+definition is registered, the leader actor will be started for you when
+`Serve` is called. The "leader" actor can be thought of as an entry-point
+into you distributed application. You don't have to use it, but it is often
+convenient. 
 
-## Grid
-Anything that implements the `Grid` interface is a grid. The interface defines
-a method to make actors from actor definitions. Actors are explained further
-down in the readme.
-
-```go
-type Grid interface {
-    MakeActor(def *ActorDef) (Actor, error)
-}
-```
-
-## Example Grid
-Below is a basic example of starting your grid application. If the definition
-knows how to make a "leader", the leader actor will be started for you when
-`Serve` is called. The leader can be the entry-point of you application.
+No matter how many processes are participating in the grid, only one leader
+actor is started per namespace, it is a singleton.  The actor named "leader"
+is also special in that if the process currently running the leader dies,
+it will be started on another peer, if more than one peer is participating
+in the grid.
 
 ```go
 func main() {
@@ -32,20 +28,14 @@ func main() {
     server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "mygrid"})
     ...
 
-    server.SetDefinition(grid.FromFunc(def *grid.ActorDef) (grid.Actor, error) {
-        switch def.Type {
-        case "leader":
-            return &LeaderActor{}, nil
-        case "worker":
-            return ...
-        }
-        return nil, fmt.Errorf("unknown actor type")
-    }))
+    server.RegisterDef("leader", func(_ []byte) (grid.Actor, error) { return &LeaderActor{...}, nil })
+    server.RegisterDef("worker", func(_ []byte) (grid.Actor, error) { return &WorkerActor{...}, nil })
 
     lis, err := net.Listen("tcp", ...)
     ...
 
-    server.Serve(lis)
+    err = server.Serve(lis)
+    ...
 }
 
 ```
@@ -62,14 +52,10 @@ type Actor interface {
 
 ## Example Actor, Part 1
 Below is an actor that starts other actors, this is a typical way of structuring
-an application with grid. If the `Grid` interface knows how to make an actor by
-the name and type "leader", it is started automatically when the `Serve` method
-is called. No matter how many processes are participating in the grid, only one
-leader actor is started, it is a singleton. The "leader" actor can be thought of
-as an entry-point into you distributed application. You don't have to use it,
-but it is often convenient. The actor named "leader" is also special in that if
-the process currently running the leader dies, it will be started on another
-peer, if more than one peer is participating in the grid.
+an application with grid. Here the leader actor starts a worker on each peer in
+the grid. Actors are started by sending an `ActorStart` message to a peer.
+Each actor must have a unique name, per namespace. The name is registered in Etcd
+to make sure that it is unique across all the processes of a grid.
 
 ```go
 const timeout = 2 * time.Second
@@ -79,6 +65,7 @@ type LeaderActor struct {
 }
 
 func (a *LeaderActor) Act(ctx context.Context) {
+    // Discover participating peers.
     peers, err := a.client.Query(timeout, grid.Peers)
     ...
 
@@ -88,14 +75,14 @@ func (a *LeaderActor) Act(ctx context.Context) {
         // There can never be more than one actor with
         // a given name. When an actor exits or panics
         // its record is removed from etcd.
-        def := grid.NewActorDef("worker-%d", i)
-        def.Type = "worker"
+        start := grid.NewActorStart("worker-%d", i)
+        start.Type = "worker"
 
-        // Start a new actor on the given peer. The
-        // type "ActorDef" is special. When sent to
-        // the mailbox of a peer, that peer will
-        // start an actor based on the definition.
-        res, err := a.client.Request(timeout, peer.Name(), def)
+        // Start a new actor on the given peer. The message
+        // "ActorStart" is special. When sent to the mailbox
+        // of a peer, that peer will start an actor based on
+        // the definition.
+        res, err := a.client.Request(timeout, peer.Name(), start)
         ...
         i++
     }
@@ -151,7 +138,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
     // The ID of the actor in etcd.
     id, err := grid.ContextActorID(ctx)
 
-    // The name of the actor, as given in ActorDef.
+    // The name of the actor, as given in ActorStart.
     name, err := grid.ContextActorName(ctx)
 
     // The namespace of the grid this actor is associated with.
@@ -179,7 +166,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
 ## Example Actor, Part 5
 Each actor is registered into etcd. Consequently each actor's name acts like
 a mutex. If code requests the actor to start *twice* the second request will
-receive an error indicating that the actor is already started.
+receive an error indicating that the actor is already registered.
 
 ```go
 const timeout = 2 * time.Second
@@ -189,13 +176,14 @@ type LeaderActor struct {
 }
 
 func (a *LeaderActor) Act(ctx context.Context) {
-    def := grid.NewActorDef("worker-0")
+    start := grid.NewActorStart("worker-%d", 0)
+    start.Type = "worker"
 
     // First request to start.
-    err := a.client.Request(timeout, peer, def)
+    err := a.client.Request(timeout, peer, start)
 
     // Second request will fail, if the first succeeded.
-    err = a.client.Request(timeout, peer, def)
+    err = a.client.Request(timeout, peer, start)
 }
 ```
 
@@ -218,9 +206,11 @@ Grid comes into the picture once you start building out your application logic
 and need things like coordination and messaging, which under the hood in grid
 is done with Etcd and gRPC - taking care of some boilerplate code for you.
 
-## Client
-There are situations where you will need to talk to grid actors from non-actors,
-the `Client` can be used for this.
+## Sending Messages
+Sending messages is always done through the client. The client configuration
+has only one required parameter, the namespace of the grid to connect to.
+Different namespaces can communicate by simply creating clients to the
+namespace they wish to send messages.
 
 ```go
 const timeout = 2 * time.Second
