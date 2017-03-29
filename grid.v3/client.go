@@ -166,11 +166,10 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		res, err = client.Process(ctx, req)
 		if err != nil && strings.Contains(err.Error(), "the client connection is closing") {
 			// Test hook.
-			c.cs.Inc(numErrConnectionUnavailable)
-			// Receiver is on a host that may have died.
-			// The error "connection is unavailable"
-			// comes from gRPC itself. In such a case
-			// it's best to try and replace the client.
+			c.cs.Inc(numErrClientConnectionClosing)
+			// The request is via a client that is
+			// closing and gRPC is reporting that
+			// this is not a valid operation.
 			c.deleteClientAndConn(nsReceiver)
 			select {
 			case <-ctx.Done():
@@ -321,6 +320,7 @@ func (c *Client) deleteClientAndConn(nsReceiver string) {
 	if !ok {
 		return
 	}
+	delete(c.addresses, nsReceiver)
 
 	cc, ok := c.clientsAndConns[address]
 	if !ok {
@@ -338,14 +338,15 @@ func (c *Client) deleteClientAndConn(nsReceiver string) {
 type statName string
 
 const (
-	numErrConnectionUnavailable statName = "numErrConnectionUnavailable"
-	numErrUnregisteredMailbox   statName = "numErrUnregisteredMailbox"
-	numErrUnknownMailbox        statName = "numErrUnknownMailbox"
-	numErrReceiverBusy          statName = "numErrReceiverBusy"
-	numDeleteAddress            statName = "numDeleteAddress"
-	numDeleteClientAndConn      statName = "numDeleteClientAndConn"
-	numGetWireClient            statName = "numGetWireClient"
-	numGRPCDial                 statName = "numGRPCDial"
+	numErrClientConnectionClosing statName = "numErrClientConnectionClosing"
+	numErrConnectionUnavailable   statName = "numErrConnectionUnavailable"
+	numErrUnregisteredMailbox     statName = "numErrUnregisteredMailbox"
+	numErrUnknownMailbox          statName = "numErrUnknownMailbox"
+	numErrReceiverBusy            statName = "numErrReceiverBusy"
+	numDeleteAddress              statName = "numDeleteAddress"
+	numDeleteClientAndConn        statName = "numDeleteClientAndConn"
+	numGetWireClient              statName = "numGetWireClient"
+	numGRPCDial                   statName = "numGRPCDial"
 )
 
 // newClientStats for use during testing.
