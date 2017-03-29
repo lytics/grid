@@ -2,55 +2,47 @@ package grid
 
 import (
 	"encoding/gob"
-	"errors"
 	"fmt"
 )
 
-// NewActorDef with name. The name can be a format string and its
-// arguments. For example:
+// NewActorStart message with the name of the actor
+// to start, its type will be equal to its name
+// unless its changed:
 //
-//     def := NewActorDef("leader")
+//     start := NewActorStart("worker")
 //
-// or
+// Format names can also be used for more complicated
+// names, just remember to override the type:
 //
-//     def := NewActorDef("worker-%d", i)
-//     def.Type = "worker"
+//     start := NewActorStart("worker-%d-group-%d", i, j)
+//     start.Type = "worker"
 //
-// Remeber that you will likely need to set the "Type" of actor
-// when using a format strings with arguments, like in the
-// example above.
-//
-// The name must contain only characters in the set: [a-zA-Z0-9-_]
-func NewActorDef(name string, v ...interface{}) *ActorDef {
-	fname := fmt.Sprintf(name, v...)
-	return &ActorDef{
-		Type: fname,
-		Name: fname,
+func NewActorStart(name string, v ...interface{}) *ActorStart {
+	fullName := name
+	if len(v) > 0 {
+		fullName = fmt.Sprintf(name, v...)
+	}
+	return &ActorStart{
+		Type: fullName,
+		Name: fullName,
 	}
 }
 
-// ActorDef defines the name and type of an actor.
-type ActorDef struct {
+// ActorStart can be sent via the grid client to
+// a peer to start that actor on that peer.
+//
+// Both fields Type and Name must contain only
+// characters in the set: [a-zA-Z0-9-_]
+//
+// The data in the field Data is passed to the
+// function passed to the server's RegisterDef
+// method.
+type ActorStart struct {
 	Type string
 	Name string
-}
-
-// ResponseMsg for generic responses that need only a
-// success flag or error.
-type ResponseMsg struct {
-	Succeeded bool
-	Error     string
-}
-
-// Err retured in response if any, nil otherwise.
-func (m *ResponseMsg) Err() error {
-	if !m.Succeeded && m.Error != "" {
-		return errors.New(m.Error)
-	}
-	return nil
+	Data []byte
 }
 
 func init() {
-	gob.Register(&ResponseMsg{})
-	gob.Register(&ActorDef{})
+	gob.Register(&ActorStart{})
 }

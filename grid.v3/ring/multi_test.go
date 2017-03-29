@@ -16,7 +16,7 @@ func TestMultiRing(t *testing.T) {
 
 	m := NewMultiRing(name, 2, 2, 0)
 	for _, r := range m.Rings() {
-		for _, def := range r.ActorDefs() {
+		for _, def := range r.Actors() {
 			if !expected[def.Name] {
 				t.Fatalf("expected to find: %v", def.Name)
 			}

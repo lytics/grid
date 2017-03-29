@@ -11,6 +11,10 @@ type ClientCfg struct {
 	Timeout time.Duration
 	// PeersRefreshInterval for polling list of peers in etcd.
 	PeersRefreshInterval time.Duration
+	//ConnectionsPerPeer how many gRPC connections to create per grid peer. default: max(1, numCPUs/2).
+	//More connections allow for more messages per second by increase the number of
+	//filehandles used.
+	ConnectionsPerPeer int
 
 	CodecLookup codec.Registry
 }
@@ -22,6 +26,9 @@ func setClientCfgDefaults(cfg *ClientCfg) {
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Second
+	}
+	if cfg.ConnectionsPerPeer == 0 {
+		cfg.ConnectionsPerPeer = maxInt(1, runtime.NumCPU()/2)
 	}
 }
 
@@ -46,4 +53,11 @@ func setServerCfgDefaults(cfg *ServerCfg) {
 	if cfg.LeaseDuration == 0 {
 		cfg.LeaseDuration = 60 * time.Second
 	}
+}
+
+func maxInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -59,18 +59,11 @@ func TestValidContext(t *testing.T) {
 
 	a := &contextActor{started: make(chan bool)}
 
-	g := func(def *ActorDef) (Actor, error) {
-		if def.Type == "leader" {
-			return a, nil
-		}
-		return nil, nil
-	}
-
 	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.SetDefinition(FromFunc(g))
+	server.RegisterDef("leader", func(_ []byte) (Actor, error) { return a, nil })
 
 	// Create the listener on a random port.
 	lis, err := net.Listen("tcp", "localhost:0")

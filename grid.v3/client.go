@@ -17,6 +17,44 @@ import (
 	"google.golang.org/grpc"
 )
 
+//clientAndConnPool is a pool of clientAndConn
+type clientAndConnPool struct {
+	incr        int
+	clientConns []*clientAndConn
+}
+
+func (ccp *clientAndConnPool) next() (*clientAndConn, error) {
+	// Testing hook, used easily check
+	// a code path in the client.
+	if ccp == nil || len(ccp.clientConns) == 0 {
+		return nil, fmt.Errorf("client and conn pool is nil")
+	}
+	if len(ccp.clientConns) == 0 {
+		return nil, fmt.Errorf("client and conn pool is empty")
+	}
+
+	idx := ccp.incr % len(ccp.clientConns)
+	ccp.incr++
+	return ccp.clientConns[idx], nil
+}
+
+func (ccp *clientAndConnPool) close() error {
+	// Testing hook, used easily check
+	// a code path in the client.
+	if ccp == nil {
+		return fmt.Errorf("client and conn pool is nil")
+	}
+
+	var err error
+	for _, cc := range ccp.clientConns {
+		closeErr := cc.close()
+		if closeErr != nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
 // clientAndConn of the generated gRPC client
 // plus the actual gRPC client connection.
 type clientAndConn struct {
@@ -41,7 +79,7 @@ type Client struct {
 	cfg             ClientCfg
 	registry        *registry.Registry
 	addresses       map[string]string
-	clientsAndConns map[string]*clientAndConn
+	clientsAndConns map[string]*clientAndConnPool
 	// Test hook.
 	cs *clientStats
 }
@@ -60,15 +98,15 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 		cfg:             cfg,
 		registry:        r,
 		addresses:       make(map[string]string),
-		clientsAndConns: make(map[string]*clientAndConn),
+		clientsAndConns: make(map[string]*clientAndConnPool),
 	}, nil
 }
 
 // Close all outbound connections of this client immediately.
 func (c *Client) Close() error {
 	var err error
-	for _, cc := range c.clientsAndConns {
-		closeErr := cc.close()
+	for _, ccpool := range c.clientsAndConns {
+		closeErr := ccpool.close()
 		if closeErr != nil {
 			err = closeErr
 		}
@@ -211,22 +249,30 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 		c.addresses[nsReceiver] = address
 	}
 
-	cc, ok := c.clientsAndConns[address]
+	ccpool, ok := c.clientsAndConns[address]
 	if !ok {
-		// Test hook.
-		c.cs.Inc(numGRPCDial)
+		ccpool = &clientAndConnPool{clientConns: make([]*clientAndConn, c.cfg.ConnectionsPerPeer)}
+		for i := 0; i < c.cfg.ConnectionsPerPeer; i++ {
+			// Test hook.
+			c.cs.Inc(numGRPCDial)
 
-		// Dial the destination.
-		conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second))
-		if err != nil {
-			return nil, err
+			// Dial the destination.
+			conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second))
+			if err != nil {
+				return nil, err
+			}
+			client := NewWireClient(conn)
+			cc := &clientAndConn{
+				conn:   conn,
+				client: client,
+			}
+			ccpool.clientConns[i] = cc
 		}
-		client := NewWireClient(conn)
-		cc = &clientAndConn{
-			conn:   conn,
-			client: client,
-		}
-		c.clientsAndConns[address] = cc
+		c.clientsAndConns[address] = ccpool
+	}
+	cc, err := ccpool.next()
+	if err != nil {
+		return nil, err
 	}
 	return cc.client, nil
 }
