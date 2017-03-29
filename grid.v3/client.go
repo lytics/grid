@@ -151,6 +151,15 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	retry.X(3, 1*time.Second, func() bool {
 		var client WireClient
 		client, err = c.getWireClient(ctx, nsReceiver)
+		if err != nil && strings.Contains(err.Error(), ErrUnregisteredMailbox.Error()) {
+			// Test hook.
+			c.cs.Inc(numErrUnregisteredMailbox)
+			// Receiver is currently unregistered, so
+			// clear them out of the cache and don't
+			// try finding them again.
+			c.deleteAddress(nsReceiver)
+			return false
+		}
 		if err != nil {
 			return false
 		}
@@ -254,8 +263,6 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	if !ok {
 		reg, err := c.registry.FindRegistration(ctx, nsReceiver)
 		if err != nil && err == registry.ErrUnknownKey {
-			// Test hook.
-			c.cs.Inc(numErrUnregisteredMailbox)
 			return nil, ErrUnregisteredMailbox
 		}
 		if err != nil {
