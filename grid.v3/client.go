@@ -155,6 +155,21 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 			return false
 		}
 		res, err = client.Process(ctx, req)
+		if err != nil && strings.Contains(err.Error(), "the client connection is closing") {
+			// Test hook.
+			c.cs.Inc(numErrConnectionUnavailable)
+			// Receiver is on a host that may have died.
+			// The error "connection is unavailable"
+			// comes from gRPC itself. In such a case
+			// it's best to try and replace the client.
+			c.deleteClientAndConn(nsReceiver)
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
 		if err != nil && strings.Contains(err.Error(), "the connection is unavailable") {
 			// Test hook.
 			c.cs.Inc(numErrConnectionUnavailable)
