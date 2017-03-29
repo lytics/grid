@@ -224,10 +224,10 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	switch res.(type) {
 	case string:
 		if res != expected {
-			t.Fatal("expected: %v, received: %v", expected, res)
+			t.Fatalf("expected: %v, received: %v", expected, res)
 		}
 	default:
-		t.Fatal("expected type: string, received type: %T", res)
+		t.Fatalf("expected type: string, received type: %T", res)
 	}
 
 	if v := client.cs.counters[numErrConnectionUnavailable]; v != 0 {
