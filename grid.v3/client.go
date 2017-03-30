@@ -350,10 +350,16 @@ func (c *Client) deleteClientAndConn(nsReceiver string, clientID int64) {
 		return
 	}
 	err := ccpool.close()
-	if err != nil && c.cfg.Logger != nil {
-		c.cfg.Logger.Printf("error closing client and connection: %v", err)
+	if err != nil {
+		c.logf("error closing client and connection: %v", err)
 	}
 	delete(c.clientsAndConns, address)
+}
+
+func (c *Client) logf(format string, v ...interface{}) {
+	if c.cfg.Logger != nil {
+		c.cfg.Logger.Printf(format, v...)
+	}
 }
 
 // statName of interesting statistic to track

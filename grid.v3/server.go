@@ -191,10 +191,10 @@ func (s *Server) Stop() {
 			if zeroMailboxes() {
 				break
 			}
-			if s.cfg.Logger != nil && time.Now().Sub(t0) > 20*time.Second {
+			if time.Now().Sub(t0) > 20*time.Second {
 				t0 = time.Now()
 				for _, mailbox := range s.mailboxes {
-					s.cfg.Logger.Printf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
+					s.logf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
 				}
 			}
 		}
@@ -347,15 +347,11 @@ func (s *Server) monitorLeader() <-chan error {
 					return
 				}
 				if err == ErrDefNotRegistered {
-					if s.cfg.Logger != nil {
-						s.cfg.Logger.Printf("skipping leader startup since leader definition not registered")
-					}
+					s.logf("skipping leader startup since leader definition not registered")
 					return
 				}
 				if err == ErrNilActorDefinition {
-					if s.cfg.Logger != nil {
-						s.cfg.Logger.Printf("skipping leader startup since make leader returned nil")
-					}
+					s.logf("skipping leader startup since make leader returned nil")
 					return
 				}
 				if err != nil {
@@ -439,15 +435,19 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 		}()
 		defer func() {
 			if err := recover(); err != nil {
-				if s.cfg.Logger != nil {
-					stack := niceStack(debug.Stack())
-					s.cfg.Logger.Printf("panic in namespace: %v, actor: %v, recovered from: %v, stack trace: %v",
-						s.cfg.Namespace, start.Name, err, stack)
-				}
+				stack := niceStack(debug.Stack())
+				s.logf("panic in namespace: %v, actor: %v, recovered from: %v, stack trace: %v",
+					s.cfg.Namespace, start.Name, err, stack)
 			}
 		}()
 		actor.Act(actorCtx)
 	}()
 
 	return nil
+}
+
+func (s *Server) logf(format string, v ...interface{}) {
+	if s.cfg.Logger != nil {
+		s.cfg.Logger.Printf(format, v...)
+	}
 }
