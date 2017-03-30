@@ -3,6 +3,8 @@ package grid
 import (
 	"encoding/gob"
 	"fmt"
+
+	"github.com/lytics/grid/grid.v3/codec"
 )
 
 // NewActorStart message with the name of the actor
@@ -45,4 +47,5 @@ type ActorStart struct {
 
 func init() {
 	gob.Register(&ActorStart{})
+	codec.Registry().Register(&ActorStart{}, &codec.GobCodec{})
 }

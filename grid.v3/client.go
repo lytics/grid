@@ -3,15 +3,14 @@ package grid
 import (
 	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
+	"github.com/lytics/grid/grid.v3/codec"
 	"github.com/lytics/grid/grid.v3/registry"
 	"github.com/lytics/retry"
 	"google.golang.org/grpc"
@@ -134,16 +133,15 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err = enc.Encode(env)
+	envCodec := codec.Registry().GetCodec(env) //TODO make this a field on the client (c.envelopeCodec) to avoid look up for each message
+	b, err := envCodec.Marshal(env)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &Delivery{
 		Ver:      Delivery_V1,
-		Data:     buf.Bytes(),
+		Data:     b,
 		Receiver: nsReceiver,
 	}
 	var res *Delivery
@@ -204,19 +202,8 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	buf.Reset()
-	n, err := buf.Write(res.Data)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(res.Data) {
-		return nil, io.ErrUnexpectedEOF
-	}
-
 	env = &envelope{}
-	dec := gob.NewDecoder(&buf)
-	err = dec.Decode(env)
-	if err != nil {
+	if err := envCodec.Unmarshal(res.Data, env); err != nil {
 		return nil, err
 	}
 

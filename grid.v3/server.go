@@ -1,11 +1,8 @@
 package grid
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"runtime/debug"
@@ -14,6 +11,7 @@ import (
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
+	"github.com/lytics/grid/grid.v3/codec"
 	"github.com/lytics/grid/grid.v3/registry"
 	netcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -218,25 +216,14 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 		return nil, ErrUnknownMailbox
 	}
 
-	// Write the bytes of the request into the byte
-	// buffer for decoding.
-	var buf bytes.Buffer
-	n, err := buf.Write(d.Data)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(d.Data) {
-		return nil, io.ErrUnexpectedEOF
-	}
-
 	// Decode the request into an actual
 	// type.
 	env := &envelope{}
-	dec := gob.NewDecoder(&buf)
-	err = dec.Decode(env)
-	if err != nil {
+	envCodec := codec.Registry().GetCodec(env) //TODO make this a field on the server (s.envelopeCodec) to avoid look up for each message
+	if err := envCodec.Unmarshal(d.Data, env); err != nil {
 		return nil, err
 	}
+
 	req := newRequest(c, env.Msg)
 
 	// Send the filled envelope to the actual

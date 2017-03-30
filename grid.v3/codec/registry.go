@@ -1,25 +1,41 @@
 package codec
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 )
 
-type CodecRegistry struct {
+var registry *codecRegistry = &codecRegistry{reg: map[string]Codec{}} //shared registry
+
+type CodecRegistry interface {
+	Register(v interface{}, codec Codec)
+	GetCodec(v interface{}) Codec
+}
+
+func Registry() CodecRegistry {
+	return registry
+}
+
+type codecRegistry struct {
 	reg   map[string]Codec
 	mutex sync.Mutex
 }
 
-func (cr *CodecRegistry) Register(v interface{}, codec Codec) {
+func (cr *codecRegistry) Register(v interface{}, codec Codec) {
+	n := name(v)
+	fmt.Println("reg:", n)
 	cr.mutex.Lock()
 	defer cr.mutex.Unlock()
-	cr.reg[name(v)] = codec
+	cr.reg[n] = codec
 }
 
-func (cr *CodecRegistry) CodecFor(v interface{}) Codec {
-	cr.mutex.Lock()
+func (cr *codecRegistry) GetCodec(v interface{}) Codec {
+	n := name(v)
+	fmt.Println("get:", n)
+	cr.mutex.Lock() //TODO read lock?
 	defer cr.mutex.Unlock()
-	return cr.reg[name(v)]
+	return cr.reg[n]
 }
 
 func name(v interface{}) string {
@@ -38,10 +54,4 @@ func name(v interface{}) string {
 		name = star + rt.PkgPath() + "." + rt.Name()
 	}
 	return name
-}
-
-var registry *CodecRegistry = &CodecRegistry{} //default registry
-
-func Registry() *CodecRegistry {
-	return registry
 }

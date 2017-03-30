@@ -1,6 +1,9 @@
 package grid
 
-import "time"
+import (
+	"runtime"
+	"time"
+)
 
 // ClientCfg where the only required argument is Namespace,
 // other fields with their zero value will receive defaults.
@@ -15,8 +18,6 @@ type ClientCfg struct {
 	//More connections allow for more messages per second by increase the number of
 	//filehandles used.
 	ConnectionsPerPeer int
-
-	CodecLookup codec.Registry
 }
 
 // setClientCfgDefaults for those fields that have their zero value.
