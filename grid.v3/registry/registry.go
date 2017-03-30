@@ -174,7 +174,6 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 			select {
 			case <-rr.done:
 				keepAliveCancel()
-				return
 			case res, open := <-keepAlive:
 				if !open {
 					// When the keep alive closes, check
@@ -185,18 +184,18 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 					// be closed.
 					select {
 					case <-rr.done:
+						rr.logf("registry: %v: keep alive closed", rr.name)
 					case failure <- ErrKeepAliveClosedUnexpectedly:
 						// Testing hook.
 						if stats != nil {
 							stats.failure++
 						}
+						rr.logf("registry: %v: keep alive closed unexpectedly", rr.name)
 					default:
 					}
 					return
 				}
-				if rr.Logger != nil {
-					rr.Logger.Printf("registry: %v: keep alive responded with heartbeat TTL: %vs", rr.name, res.TTL)
-				}
+				rr.logf("registry: %v: keep alive responded with heartbeat TTL: %vs", rr.name, res.TTL)
 				// Testing hook.
 				if stats != nil {
 					stats.success++
@@ -487,6 +486,12 @@ func (rr *Registry) Deregister(c context.Context, key string) error {
 		}
 	}
 	return nil
+}
+
+func (rr *Registry) logf(format string, v ...interface{}) {
+	if rr.Logger != nil {
+		rr.Logger.Printf(format, v...)
+	}
 }
 
 type keepAliveStats struct {
