@@ -15,10 +15,10 @@ type ClientCfg struct {
 	Timeout time.Duration
 	// PeersRefreshInterval for polling list of peers in etcd.
 	PeersRefreshInterval time.Duration
-	// ConnectionsPerPeer how many gRPC connections to create per
-	// grid peer, default is max(1, numCPUs/2). More connections
-	// allow for more messages per second by increase the number
-	// of filehandles used.
+	// ConnectionsPerPeer sets the number gRPC connections to
+	// establish to each remote. Default is max(1, numCPUs/2).
+	// More connections allow for more messages per second,
+	// but increases the number of file-handles used.
 	ConnectionsPerPeer int
 	// Logger optionally used for logging, default is to not log.
 	Logger *log.Logger
