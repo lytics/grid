@@ -20,6 +20,12 @@ import (
 
 //clientAndConnPool is a pool of clientAndConn
 type clientAndConnPool struct {
+	// The 'id' is used in a kind of CAS when
+	// deleting the client pool. This allows
+	// users of the pool to delete it only
+	// if the same client is being referenced.
+	// See the dunction deleteClientAndConn
+	// for more details.
 	id          int64
 	incr        int
 	clientConns []*clientAndConn
