@@ -2,7 +2,6 @@ package grid
 
 import (
 	"context"
-	"encoding/gob"
 	"errors"
 	"sync"
 
@@ -17,11 +16,6 @@ const Ack = "__ACK__"
 var (
 	ErrAlreadyResponded = errors.New("already responded")
 )
-
-// envelope for delivered request and response messages.
-type envelope struct {
-	Msg interface{}
-}
 
 // Request which must receive an ack or response.
 type Request interface {
@@ -88,8 +82,15 @@ func (req *request) Respond(msg interface{}) error {
 		}
 	}
 
+	cn := codec.Name(msg)
+	envCodec, ok := codec.Registry().GetCodecName(cn)
+	b, err := envCodec.Marshal(msg)
+	if err != nil {
+		return err
+	}
 	env := &envelope{
-		Msg: msg,
+		CodecName: cn,
+		Msg:       b,
 	}
 
 	// Encode the message here, in the thread of
@@ -109,9 +110,4 @@ func (req *request) Respond(msg interface{}) error {
 	default:
 		panic("grid: respond called multiple times")
 	}
-}
-
-func init() {
-	gob.Register(&envelope{})
-	codec.Registry().Register(&envelope{}, &codec.GobCodec{})
 }

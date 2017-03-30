@@ -123,26 +123,27 @@ func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}
 // RequestC (request) a response for the given message. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
-	env := &envelope{
-		Msg: msg,
-	}
-
 	// Namespaced receiver name.
 	nsReceiver, err := namespaceName(Mailboxes, c.cfg.Namespace, receiver)
 	if err != nil {
 		return nil, err
 	}
 
-	envCodec := codec.Registry().GetCodec(env) //TODO make this a field on the client (c.envelopeCodec) to avoid look up for each message
-	b, err := envCodec.Marshal(env)
+	cn := codec.Name(msg)
+	msgCodec, registed := codec.Registry().GetCodecName(cn)
+	if !registed {
+		return nil, ErrUnRegisteredMsgType
+	}
+	b, err := msgCodec.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &Delivery{
-		Ver:      Delivery_V1,
-		Data:     b,
-		Receiver: nsReceiver,
+		Ver:       Delivery_V1,
+		Data:      b,
+		CodecName: cn,
+		Receiver:  nsReceiver,
 	}
 	var res *Delivery
 	retry.X(3, 1*time.Second, func() bool {

@@ -27,4 +27,5 @@ var (
 	ErrNilActorDefinition        = errors.New("grid: nil actor definition")
 	ErrWatchClosedUnexpectedly   = errors.New("grid: watch closed unexpectedly")
 	ErrActorCreationNotSupported = errors.New("grid: actor creation not supported")
+	ErrUnRegisteredMsgType       = errors.New("grid: unregistered message type")
 )

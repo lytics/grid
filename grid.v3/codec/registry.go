@@ -1,7 +1,6 @@
 package codec
 
 import (
-	"fmt"
 	"reflect"
 	"sync"
 )
@@ -10,7 +9,8 @@ var registry *codecRegistry = &codecRegistry{reg: map[string]Codec{}} //shared r
 
 type CodecRegistry interface {
 	Register(v interface{}, codec Codec)
-	GetCodec(v interface{}) Codec
+	GetCodec(v interface{}) (Codec, bool)
+	GetCodecName(name string) (Codec, bool)
 }
 
 func Registry() CodecRegistry {
@@ -19,26 +19,30 @@ func Registry() CodecRegistry {
 
 type codecRegistry struct {
 	reg   map[string]Codec
-	mutex sync.Mutex
+	mutex sync.RWMutex
 }
 
 func (cr *codecRegistry) Register(v interface{}, codec Codec) {
-	n := name(v)
-	fmt.Println("reg:", n)
+	n := Name(v)
+	//fmt.Println("reg:", n)
 	cr.mutex.Lock()
 	defer cr.mutex.Unlock()
 	cr.reg[n] = codec
 }
 
-func (cr *codecRegistry) GetCodec(v interface{}) Codec {
-	n := name(v)
-	fmt.Println("get:", n)
-	cr.mutex.Lock() //TODO read lock?
-	defer cr.mutex.Unlock()
-	return cr.reg[n]
+func (cr *codecRegistry) GetCodec(v interface{}) (Codec, bool) {
+	return cr.GetCodecName(Name(v))
 }
 
-func name(v interface{}) string {
+func (cr *codecRegistry) GetCodecName(n string) (Codec, bool) {
+	//fmt.Println("get:", n)
+	cr.mutex.RLock()
+	defer cr.mutex.RUnlock()
+	c, ok := cr.reg[n]
+	return c, ok
+}
+
+func Name(v interface{}) string {
 	rt := reflect.TypeOf(v)
 	name := rt.String()
 	// But for named types (or pointers to them), qualify with import path (but see inner comment).

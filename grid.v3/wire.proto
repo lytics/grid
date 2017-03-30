@@ -9,7 +9,7 @@ message Delivery {
     Ver ver = 1;
     bytes data = 2;
     string receiver = 3;
-    int32 encoder = 4;
+    string codecName = 4;
 }
 
 service wire {
