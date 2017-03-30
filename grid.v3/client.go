@@ -24,7 +24,7 @@ type clientAndConnPool struct {
 	// deleting the client pool. This allows
 	// users of the pool to delete it only
 	// if the same client is being referenced.
-	// See the dunction deleteClientAndConn
+	// See the function deleteClientAndConn
 	// for more details.
 	id          int64
 	incr        int
