@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net"
 	"strings"
 	"sync"
 	"time"
-
-	"net"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
 )
@@ -17,26 +17,29 @@ import (
 type Option int
 
 const (
+	// OpAllowReentrantRegistration will cause a registration
+	// to the same key to succeed if it is requested by the
+	// same registry, ie: host, address, process.
 	OpAllowReentrantRegistration Option = 0
 )
 
 var (
-	ErrNotOwner                = errors.New("registry: not owner")
-	ErrNotStarted              = errors.New("registry: not started")
-	ErrUnknownKey              = errors.New("registry: unknown key")
-	ErrInvalidEtcd             = errors.New("registry: invalid etcd")
-	ErrAlreadyRegistered       = errors.New("registry: already registered")
-	ErrFailedRegistration      = errors.New("registry: failed registration")
-	ErrFailedDeregistration    = errors.New("registry: failed deregistration")
-	ErrLeaseDurationTooShort   = errors.New("registry: lease duration too short")
-	ErrUnknownNetAddressType   = errors.New("registry: unknown net address type")
-	ErrWatchClosedUnexpectedly = errors.New("registry: watch closed unexpectedly")
-	ErrUnspecifiedNetAddressIP = errors.New("registry: unspecified net address ip")
+	ErrNotOwner                    = errors.New("registry: not owner")
+	ErrNotStarted                  = errors.New("registry: not started")
+	ErrUnknownKey                  = errors.New("registry: unknown key")
+	ErrInvalidEtcd                 = errors.New("registry: invalid etcd")
+	ErrAlreadyRegistered           = errors.New("registry: already registered")
+	ErrFailedRegistration          = errors.New("registry: failed registration")
+	ErrFailedDeregistration        = errors.New("registry: failed deregistration")
+	ErrLeaseDurationTooShort       = errors.New("registry: lease duration too short")
+	ErrUnknownNetAddressType       = errors.New("registry: unknown net address type")
+	ErrWatchClosedUnexpectedly     = errors.New("registry: watch closed unexpectedly")
+	ErrUnspecifiedNetAddressIP     = errors.New("registry: unspecified net address ip")
+	ErrKeepAliveClosedUnexpectedly = errors.New("registry: keep alive closed unexpectedly")
 )
 
 var (
-	minLeaseDuration           = 10 * time.Second
-	heartbeatsPerLeaseDuration = 6
+	minLeaseDuration = 10 * time.Second
 )
 
 // Registration information.
@@ -95,6 +98,7 @@ type Registry struct {
 	client        *etcdv3.Client
 	name          string
 	address       string
+	Logger        *log.Logger
 	Timeout       time.Duration
 	LeaseDuration time.Duration
 	// Testing hook.
@@ -142,6 +146,14 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 	}
 	rr.leaseID = res.ID
 
+	// Start the keep alive for the lease.
+	keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
+	keepAlive, err := rr.lease.KeepAlive(keepAliveCtx, rr.leaseID)
+	if err != nil {
+		keepAliveCancel()
+		return nil, err
+	}
+
 	// There are two ways the Registry can exit:
 	//     1) Someone calls Stop, in which case it will cancel
 	//        its context and exit.
@@ -150,42 +162,45 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 	//        its context and exit.
 	failure := make(chan error, 1)
 	go func() {
-		ticker := time.NewTicker(rr.LeaseDuration / time.Duration(heartbeatsPerLeaseDuration))
-		defer ticker.Stop()
 		defer close(rr.exited)
 
+		// Track stats related to keep alive responses.
 		stats := &keepAliveStats{}
 		defer func() {
 			rr.keepAliveStats = stats
 		}()
 
-		errCnt := 0
 		for {
 			select {
 			case <-rr.done:
-				timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
-				rr.lease.Revoke(timeout, rr.leaseID)
-				cancel()
+				keepAliveCancel()
 				return
-			case <-ticker.C:
-				timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
-				_, err := rr.lease.KeepAliveOnce(timeout, rr.leaseID)
-				cancel()
-				if err != nil {
-					stats.failure++
-					errCnt++
-				} else {
+			case res, open := <-keepAlive:
+				if !open {
+					// When the keep alive closes, check
+					// if this was a close requested by
+					// the user of the registry, or if
+					// it was unexpected. If it was by
+					// the user, the 'done' channel should
+					// be closed.
+					select {
+					case <-rr.done:
+					case failure <- ErrKeepAliveClosedUnexpectedly:
+						// Testing hook.
+						if stats != nil {
+							stats.failure++
+						}
+					default:
+					}
+					return
+				}
+				if rr.Logger != nil {
+					rr.Logger.Printf("registry: %v: keep alive responded with heartbeat TTL: %vs", rr.name, res.TTL)
+				}
+				// Testing hook.
+				if stats != nil {
 					stats.success++
-					errCnt = 0
 				}
-				if errCnt < heartbeatsPerLeaseDuration-1 {
-					continue
-				}
-				select {
-				case failure <- fmt.Errorf("registry: keep-alive to etcd cluster failed: %v", err):
-				default:
-				}
-				return
 			}
 		}
 	}()
@@ -205,12 +220,25 @@ func (rr *Registry) Registry() string {
 }
 
 // Stop Registry.
-func (rr *Registry) Stop() {
+func (rr *Registry) Stop() error {
 	if rr.leaseID < 0 {
-		return
+		return nil
 	}
+	// Close the done channel, to indicate
+	// that this registry is done to its
+	// background go-routines, such as the
+	// keep-alive go-routine.
 	close(rr.done)
+	// Wait for those background go-routines
+	// to actually exit.
 	<-rr.exited
+	// Then revoke the lease to cleanly remove
+	// all keys associated with this registry
+	// from etcd.
+	timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
+	_, err := rr.lease.Revoke(timeout, rr.leaseID)
+	cancel()
+	return err
 }
 
 // Watch a prefix in the registry.
@@ -473,7 +501,7 @@ func formatName(address string) string {
 	name = strings.Replace(name, ":", "-", -1)
 	name = strings.Replace(name, ".", "-", -1)
 	name = strings.Replace(name, "/", "-", -1)
-	name = strings.Trim(name, "~\\!@#$%^&*()<>")
+	name = strings.Trim(name, "~\\!?@#$%^&*()<>+=|")
 	name = strings.TrimSpace(name)
 	return name
 }

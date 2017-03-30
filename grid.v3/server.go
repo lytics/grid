@@ -6,7 +6,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"runtime/debug"
 	"strings"
@@ -28,9 +27,6 @@ type contextVal struct {
 	actorID   string
 	actorName string
 }
-
-// Logger used for logging when non-nil, default is nil.
-var Logger *log.Logger
 
 // Server of a grid.
 type Server struct {
@@ -93,6 +89,11 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.registry = r
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
+
+	// Set registry logger.
+	if s.cfg.Logger != nil {
+		r.Logger = s.cfg.Logger
+	}
 
 	// Create a context that each actor this leader creates
 	// will receive. When the server is stopped, it will
@@ -190,10 +191,10 @@ func (s *Server) Stop() {
 			if zeroMailboxes() {
 				break
 			}
-			if Logger != nil && time.Now().Sub(t0) > 20*time.Second {
+			if s.cfg.Logger != nil && time.Now().Sub(t0) > 20*time.Second {
 				t0 = time.Now()
 				for _, mailbox := range s.mailboxes {
-					Logger.Printf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
+					s.cfg.Logger.Printf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
 				}
 			}
 		}
@@ -346,14 +347,14 @@ func (s *Server) monitorLeader() <-chan error {
 					return
 				}
 				if err == ErrDefNotRegistered {
-					if Logger != nil {
-						Logger.Printf("skipping leader startup since leader definition not registered")
+					if s.cfg.Logger != nil {
+						s.cfg.Logger.Printf("skipping leader startup since leader definition not registered")
 					}
 					return
 				}
 				if err == ErrNilActorDefinition {
-					if Logger != nil {
-						Logger.Printf("skipping leader startup since make leader returned nil")
+					if s.cfg.Logger != nil {
+						s.cfg.Logger.Printf("skipping leader startup since make leader returned nil")
 					}
 					return
 				}
@@ -438,9 +439,9 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 		}()
 		defer func() {
 			if err := recover(); err != nil {
-				if Logger != nil {
+				if s.cfg.Logger != nil {
 					stack := niceStack(debug.Stack())
-					log.Printf("panic in namespace: %v, actor: %v, recovered from: %v, stack trace: %v",
+					s.cfg.Logger.Printf("panic in namespace: %v, actor: %v, recovered from: %v, stack trace: %v",
 						s.cfg.Namespace, start.Name, err, stack)
 				}
 			}
