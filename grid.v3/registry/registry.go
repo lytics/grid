@@ -185,6 +185,10 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 					select {
 					case <-rr.done:
 						rr.logf("registry: %v: keep alive closed", rr.name)
+						return
+					default:
+					}
+					select {
 					case failure <- ErrKeepAliveClosedUnexpectedly:
 						// Testing hook.
 						if stats != nil {
