@@ -235,7 +235,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 }
 
-func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
+func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	const (
 		timeout  = 2 * time.Second
 		expected = "hello"
@@ -302,11 +302,11 @@ func TestClientWithErrConnectionIsUnavailable(t *testing.T) {
 	if res != nil {
 		t.Fatal(res)
 	}
-	if !strings.Contains(err.Error(), "the connection is unavailable") {
+	if !strings.Contains(err.Error(), "unregistered mailbox") {
 		t.Fatal(err)
 	}
 
-	if v := client.cs.counters[numErrConnectionUnavailable]; v == 0 {
+	if v := client.cs.counters[numErrUnregisteredMailbox]; v == 0 {
 		t.Fatal("expected non-zero error count")
 	}
 }
