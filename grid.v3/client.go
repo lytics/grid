@@ -102,6 +102,11 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 	}
 	r.Timeout = cfg.Timeout
 
+	// Set registry logger.
+	if cfg.Logger != nil {
+		r.Logger = cfg.Logger
+	}
+
 	return &Client{
 		cfg:             cfg,
 		registry:        r,
@@ -345,10 +350,16 @@ func (c *Client) deleteClientAndConn(nsReceiver string, clientID int64) {
 		return
 	}
 	err := ccpool.close()
-	if err != nil && Logger != nil {
-		Logger.Printf("error closing client and connection: %v", err)
+	if err != nil {
+		c.logf("error closing client and connection: %v", err)
 	}
 	delete(c.clientsAndConns, address)
+}
+
+func (c *Client) logf(format string, v ...interface{}) {
+	if c.cfg.Logger != nil {
+		c.cfg.Logger.Printf(format, v...)
+	}
 }
 
 // statName of interesting statistic to track

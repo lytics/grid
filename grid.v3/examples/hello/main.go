@@ -73,7 +73,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
 }
 
 func main() {
-	grid.Logger = log.New(os.Stderr, "hellogrid", log.LstdFlags)
+	logger := log.New(os.Stderr, "hellogrid: ", log.LstdFlags)
 
 	address := flag.String("address", "", "bind address for gRPC")
 	flag.Parse()
@@ -83,11 +83,11 @@ func main() {
 	successOrDie(err)
 
 	// Create a grid client.
-	client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "hellogrid"})
+	client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "hellogrid", Logger: logger})
 	successOrDie(err)
 
 	// Create a grid server.
-	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "hellogrid"})
+	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "hellogrid", Logger: logger})
 	successOrDie(err)
 
 	// Define how actors are created.
