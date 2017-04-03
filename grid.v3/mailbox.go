@@ -80,6 +80,14 @@ func newMailbox(s *Server, nsName string, size int) (*Mailbox, error) {
 	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 	err := s.registry.Register(timeout, nsName)
 	cancel()
+	// Check if the error is a particular fatal error
+	// from etcd. Some errors have no recovery. See
+	// the list of all possible errors here:
+	// 
+	// https://github.com/coreos/etcd/blob/master/etcdserver/api/v3rpc/rpctypes/error.go
+	//
+	// They are unfortunately not classidied into
+	// recoverable or non-recoverable.
 	if err != nil && strings.Contains(err.Error(), "etcdserver: requested lease not found") {
 		s.reportFatalError(err)
 		return nil, err
