@@ -1,6 +1,9 @@
 package grid
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Mailbox for receiving messages.
 type Mailbox struct {
@@ -77,6 +80,10 @@ func newMailbox(s *Server, nsName string, size int) (*Mailbox, error) {
 	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 	err := s.registry.Register(timeout, nsName)
 	cancel()
+	if err != nil && strings.Contains(err.Error(), "etcdserver: requested lease not found") {
+		s.reportFatalError(err)
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
