@@ -37,6 +37,8 @@ type Server struct {
 	etcd      *etcdv3.Client
 	grpc      *grpc.Server
 	stop      sync.Once
+	fatalErr  chan error
+	finalErr  error
 	actors    map[string]MakeActor
 	registry  *registry.Registry
 	mailboxes map[string]*Mailbox
@@ -54,10 +56,11 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		return nil, ErrInvalidEtcd
 	}
 	return &Server{
-		cfg:    cfg,
-		etcd:   etcd,
-		grpc:   grpc.NewServer(),
-		actors: map[string]MakeActor{},
+		cfg:      cfg,
+		etcd:     etcd,
+		grpc:     grpc.NewServer(),
+		actors:   map[string]MakeActor{},
+		fatalErr: make(chan error, 1),
 	}, nil
 }
 
@@ -108,7 +111,10 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Start the registry and monitor that it is
 	// running correctly.
-	registryErrors := s.monitorRegistry(lis.Addr())
+	err = s.monitorRegistry(lis.Addr())
+	if err != nil {
+		return err
+	}
 
 	// Peer's name is the registry's name.
 	name := s.registry.Registry()
@@ -145,7 +151,10 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Start the leader actor, and monitor, ie: make sure
 	// that it's running.
-	leaderErrors := s.monitorLeader()
+	s.monitorLeader()
+
+	// Monitor for fatal errors.
+	s.monitorFatalErrors()
 
 	// gRPC dance to start the gRPC server. The Serve
 	// method blocks still stopped via a call to Stop.
@@ -156,18 +165,11 @@ func (s *Server) Serve(lis net.Listener) error {
 	// error and don't pass it up.
 	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 		return err
-	} else {
-		err = nil
 	}
 
-	// If the leader or registry caused errors, report them.
-	select {
-	case err = <-leaderErrors:
-	case err = <-registryErrors:
-	default:
-	}
-
-	return err
+	// Return the final error state, which
+	// could be set by other locations.
+	return s.getFinalErr()
 }
 
 // Stop the server, blocking until all mailboxes registered with
@@ -286,36 +288,44 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 	}
 }
 
+// monitorFatalErrors and stop the server if one occurs.
+func (s *Server) monitorFatalErrors() {
+	go func() {
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			case err := <-s.fatalErr:
+				if err != nil {
+					s.putFinalErr(err)
+					s.Stop()
+				}
+			}
+		}
+	}()
+}
+
 // monitorRegistry for errors in the background.
-func (s *Server) monitorRegistry(addr net.Addr) <-chan error {
-	fault := make(chan error, 1)
+func (s *Server) monitorRegistry(addr net.Addr) error {
 	regFaults, err := s.registry.Start(addr)
 	if err != nil {
-		fault <- err
-		s.Stop()
-		return fault
+		return err
 	}
 	go func() {
 		select {
 		case <-s.ctx.Done():
+			return
 		case err := <-regFaults:
-			if err == nil {
-				return
-			}
-			select {
-			case fault <- err:
-			default:
-			}
-			s.Stop()
+			s.reportFatalError(err)
 		}
 	}()
-	return fault
+	return nil
 }
 
 // monitorLeader starts a leader and keeps tyring to start
 // a leader thereafter. If the leader should die on any
 // host then some peer will eventually have it start again.
-func (s *Server) monitorLeader() <-chan error {
+func (s *Server) monitorLeader() {
 	startLeader := func() error {
 		var err error
 		for i := 0; i < 6; i++ {
@@ -333,7 +343,6 @@ func (s *Server) monitorLeader() <-chan error {
 		return err
 	}
 
-	fault := make(chan error, 1)
 	go func() {
 		timer := time.NewTimer(0 * time.Second)
 		defer timer.Stop()
@@ -355,18 +364,37 @@ func (s *Server) monitorLeader() <-chan error {
 					return
 				}
 				if err != nil {
-					select {
-					case fault <- fmt.Errorf("leader start failed: %v", err):
-					default:
-					}
-					s.Stop()
+					s.reportFatalError(fmt.Errorf("leader start failed: %v", err))
+				} else {
+					timer.Reset(30 * time.Second)
 				}
-				timer.Reset(30 * time.Second)
 			}
 		}
-
 	}()
-	return fault
+}
+
+// reportFatalError to the fatal error monitor. The
+// consequence of a fatal error is handled by the
+// monitor itself.
+func (s *Server) reportFatalError(err error) {
+	if err != nil {
+		select {
+		case s.fatalErr <- err:
+		default:
+		}
+	}
+}
+
+func (s *Server) getFinalErr() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.finalErr
+}
+
+func (s *Server) putFinalErr(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.finalErr = err
 }
 
 // startActor in the current process. This method does not communicate with another
