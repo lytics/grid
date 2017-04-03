@@ -411,7 +411,6 @@ func (s *Server) startActor(timeout time.Duration, start *ActorStart) error {
 // actor on the current host in the current process.
 func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	if !isNameValid(start.Type) {
-		fmt.Println(start.Type)
 		return ErrInvalidActorType
 	}
 	if !isNameValid(start.Name) {
