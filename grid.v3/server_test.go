@@ -119,10 +119,10 @@ func TestServerWithFatalError(t *testing.T) {
 			case <-time.After(timeout):
 				t.Fatal("timeout")
 			case err := <-done:
-				if err == nil && err.Error() != expected.Error() {
-					t.Fatal("expected error")
+				if err != nil && err.Error() == expected.Error() {
+					return
 				}
-				return
+				t.Fatal("expected error")
 			}
 		}
 	}
