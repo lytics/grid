@@ -1,8 +1,11 @@
 package grid
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"runtime/debug"
@@ -27,9 +30,6 @@ type contextVal struct {
 	actorName string
 }
 
-// Logger used for logging when non-nil, default is nil.
-var Logger *log.Logger
-
 // Server of a grid.
 type Server struct {
 	mu        sync.Mutex
@@ -39,6 +39,8 @@ type Server struct {
 	etcd      *etcdv3.Client
 	grpc      *grpc.Server
 	stop      sync.Once
+	fatalErr  chan error
+	finalErr  error
 	actors    map[string]MakeActor
 	registry  *registry.Registry
 	mailboxes map[string]*Mailbox
@@ -56,16 +58,19 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		return nil, ErrInvalidEtcd
 	}
 	return &Server{
-		cfg:    cfg,
-		etcd:   etcd,
-		grpc:   grpc.NewServer(),
-		actors: map[string]MakeActor{},
+		cfg:      cfg,
+		etcd:     etcd,
+		grpc:     grpc.NewServer(),
+		actors:   map[string]MakeActor{},
+		fatalErr: make(chan error, 1),
 	}, nil
 }
 
 // RegisterDef of an actor. When a ActorStart message is sent to
-// a peer it will use the registered definitions to make
-// and run the actor.
+// a peer it will use the registered definitions to make and run
+// the actor. If an actor with actorType "leader" is registered
+// it will be started automatically when the Serve method is
+// called.
 func (s *Server) RegisterDef(actorType string, f MakeActor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -73,13 +78,17 @@ func (s *Server) RegisterDef(actorType string, f MakeActor) {
 	s.actors[actorType] = f
 }
 
+// Context of the server, when it reports done the
+// server is trying to shutdown. Actors automatically
+// get this context, non-actors using mailboxes bound
+// to this server should monitor this context to know
+// when the server is trying to exit.
+func (s *Server) Context() context.Context {
+	return s.ctx
+}
+
 // Serve the grid on the listener. The listener address type must be
 // net.TCPAddr, otherwise an error will be returned.
-//
-// If an actor by the definition of NewActorDef("leader") is defined
-// by the grid, it will automatically get started as a singletion in
-// the grid, ie: only one will every be running. This leader can be
-// though of as an entry point.
 func (s *Server) Serve(lis net.Listener) error {
 	// Create a registry client, through which other
 	// entities like peers, actors, and mailboxes
@@ -91,6 +100,11 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.registry = r
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
+
+	// Set registry logger.
+	if s.cfg.Logger != nil {
+		r.Logger = s.cfg.Logger
+	}
 
 	// Create a context that each actor this leader creates
 	// will receive. When the server is stopped, it will
@@ -105,7 +119,10 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Start the registry and monitor that it is
 	// running correctly.
-	registryErrors := s.monitorRegistry(lis.Addr())
+	err = s.monitorRegistry(lis.Addr())
+	if err != nil {
+		return err
+	}
 
 	// Peer's name is the registry's name.
 	name := s.registry.Registry()
@@ -142,7 +159,10 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Start the leader actor, and monitor, ie: make sure
 	// that it's running.
-	leaderErrors := s.monitorLeader()
+	s.monitorLeader()
+
+	// Monitor for fatal errors.
+	s.monitorFatalErrors()
 
 	// gRPC dance to start the gRPC server. The Serve
 	// method blocks still stopped via a call to Stop.
@@ -153,18 +173,11 @@ func (s *Server) Serve(lis net.Listener) error {
 	// error and don't pass it up.
 	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 		return err
-	} else {
-		err = nil
 	}
 
-	// If the leader or registry caused errors, report them.
-	select {
-	case err = <-leaderErrors:
-	case err = <-registryErrors:
-	default:
-	}
-
-	return err
+	// Return the final error state, which
+	// could be set by other locations.
+	return s.getFinalErr()
 }
 
 // Stop the server, blocking until all mailboxes registered with
@@ -188,10 +201,10 @@ func (s *Server) Stop() {
 			if zeroMailboxes() {
 				break
 			}
-			if Logger != nil && time.Now().Sub(t0) > 20*time.Second {
+			if time.Now().Sub(t0) > 20*time.Second {
 				t0 = time.Now()
 				for _, mailbox := range s.mailboxes {
-					Logger.Printf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
+					s.logf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
 				}
 			}
 		}
@@ -272,36 +285,44 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 	}
 }
 
+// monitorFatalErrors and stop the server if one occurs.
+func (s *Server) monitorFatalErrors() {
+	go func() {
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			case err := <-s.fatalErr:
+				if err != nil {
+					s.putFinalErr(err)
+					s.Stop()
+				}
+			}
+		}
+	}()
+}
+
 // monitorRegistry for errors in the background.
-func (s *Server) monitorRegistry(addr net.Addr) <-chan error {
-	fault := make(chan error, 1)
+func (s *Server) monitorRegistry(addr net.Addr) error {
 	regFaults, err := s.registry.Start(addr)
 	if err != nil {
-		fault <- err
-		s.Stop()
-		return fault
+		return err
 	}
 	go func() {
 		select {
 		case <-s.ctx.Done():
+			return
 		case err := <-regFaults:
-			if err == nil {
-				return
-			}
-			select {
-			case fault <- err:
-			default:
-			}
-			s.Stop()
+			s.reportFatalError(err)
 		}
 	}()
-	return fault
+	return nil
 }
 
 // monitorLeader starts a leader and keeps tyring to start
 // a leader thereafter. If the leader should die on any
 // host then some peer will eventually have it start again.
-func (s *Server) monitorLeader() <-chan error {
+func (s *Server) monitorLeader() {
 	startLeader := func() error {
 		var err error
 		for i := 0; i < 6; i++ {
@@ -319,7 +340,6 @@ func (s *Server) monitorLeader() <-chan error {
 		return err
 	}
 
-	fault := make(chan error, 1)
 	go func() {
 		timer := time.NewTimer(0 * time.Second)
 		defer timer.Stop()
@@ -333,30 +353,46 @@ func (s *Server) monitorLeader() <-chan error {
 					return
 				}
 				if err == ErrDefNotRegistered {
-					if Logger != nil {
-						Logger.Printf("skipping leader startup since leader definition not registered")
-					}
+					s.logf("skipping leader startup since leader definition not registered")
 					return
 				}
 				if err == ErrNilActorDefinition {
-					if Logger != nil {
-						Logger.Printf("skipping leader startup since make leader returned nil")
-					}
+					s.logf("skipping leader startup since make leader returned nil")
 					return
 				}
 				if err != nil {
-					select {
-					case fault <- fmt.Errorf("leader start failed: %v", err):
-					default:
-					}
-					s.Stop()
+					s.reportFatalError(fmt.Errorf("leader start failed: %v", err))
+				} else {
+					timer.Reset(30 * time.Second)
 				}
 				timer.Reset(30 * time.Second)
 			}
 		}
-
 	}()
-	return fault
+}
+
+// reportFatalError to the fatal error monitor. The
+// consequence of a fatal error is handled by the
+// monitor itself.
+func (s *Server) reportFatalError(err error) {
+	if err != nil {
+		select {
+		case s.fatalErr <- err:
+		default:
+		}
+	}
+}
+
+func (s *Server) getFinalErr() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.finalErr
+}
+
+func (s *Server) putFinalErr(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.finalErr = err
 }
 
 // startActor in the current process. This method does not communicate with another
@@ -373,7 +409,6 @@ func (s *Server) startActor(timeout time.Duration, start *ActorStart) error {
 // actor on the current host in the current process.
 func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	if !isNameValid(start.Type) {
-		fmt.Println(start.Type)
 		return ErrInvalidActorType
 	}
 	if !isNameValid(start.Name) {
@@ -425,11 +460,9 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 		}()
 		defer func() {
 			if err := recover(); err != nil {
-				if Logger != nil {
-					stack := niceStack(debug.Stack())
-					log.Printf("panic in namespace: %v, actor: %v, recovered from: %v, stack trace: %v",
-						s.cfg.Namespace, start.Name, err, stack)
-				}
+				stack := niceStack(debug.Stack())
+				s.logf("panic in namespace: %v, actor: %v, recovered from: %v, stack trace: %v",
+					s.cfg.Namespace, start.Name, err, stack)
 			}
 		}()
 		actor.Act(actorCtx)

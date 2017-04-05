@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +20,13 @@ import (
 
 //clientAndConnPool is a pool of clientAndConn
 type clientAndConnPool struct {
+	// The 'id' is used in a kind of CAS when
+	// deleting the client pool. This allows
+	// users of the pool to delete it only
+	// if the same client is being referenced.
+	// See the function deleteClientAndConn
+	// for more details.
+	id          int64
 	incr        int
 	clientConns []*clientAndConn
 }
@@ -93,6 +102,11 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 	}
 	r.Timeout = cfg.Timeout
 
+	// Set registry logger.
+	if cfg.Logger != nil {
+		r.Logger = cfg.Logger
+	}
+
 	return &Client{
 		cfg:             cfg,
 		registry:        r,
@@ -123,6 +137,10 @@ func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}
 // RequestC (request) a response for the given message. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
+	env := &envelope{
+		Msg: msg,
+	}
+
 	// Namespaced receiver name.
 	nsReceiver, err := namespaceName(Mailboxes, c.cfg.Namespace, receiver)
 	if err != nil {
@@ -148,11 +166,35 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	var res *Delivery
 	retry.X(3, 1*time.Second, func() bool {
 		var client WireClient
-		client, err = c.getWireClient(ctx, nsReceiver)
+		var clientID int64
+		client, clientID, err = c.getWireClient(ctx, nsReceiver)
+		if err != nil && strings.Contains(err.Error(), ErrUnregisteredMailbox.Error()) {
+			// Test hook.
+			c.cs.Inc(numErrUnregisteredMailbox)
+			// Receiver is currently unregistered, so
+			// clear them out of the cache and don't
+			// try finding them again.
+			c.deleteAddress(nsReceiver)
+			return false
+		}
 		if err != nil {
 			return false
 		}
 		res, err = client.Process(ctx, req)
+		if err != nil && strings.Contains(err.Error(), "the client connection is closing") {
+			// Test hook.
+			c.cs.Inc(numErrClientConnectionClosing)
+			// The request is via a client that is
+			// closing and gRPC is reporting that
+			// a request is not a valid operation.
+			c.deleteClientAndConn(nsReceiver, clientID)
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
 		if err != nil && strings.Contains(err.Error(), "the connection is unavailable") {
 			// Test hook.
 			c.cs.Inc(numErrConnectionUnavailable)
@@ -160,7 +202,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 			// The error "connection is unavailable"
 			// comes from gRPC itself. In such a case
 			// it's best to try and replace the client.
-			c.deleteClientAndConn(nsReceiver)
+			c.deleteClientAndConn(nsReceiver, clientID)
 			select {
 			case <-ctx.Done():
 				return false
@@ -215,7 +257,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 }
 
 // getWireClient for the address of the receiver.
-func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClient, error) {
+func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClient, int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -226,12 +268,10 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	if !ok {
 		reg, err := c.registry.FindRegistration(ctx, nsReceiver)
 		if err != nil && err == registry.ErrUnknownKey {
-			// Test hook.
-			c.cs.Inc(numErrUnregisteredMailbox)
-			return nil, ErrUnregisteredMailbox
+			return nil, noID, ErrUnregisteredMailbox
 		}
 		if err != nil {
-			return nil, err
+			return nil, noID, err
 		}
 		address = reg.Address
 		c.addresses[nsReceiver] = address
@@ -239,7 +279,7 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 
 	ccpool, ok := c.clientsAndConns[address]
 	if !ok {
-		ccpool = &clientAndConnPool{clientConns: make([]*clientAndConn, c.cfg.ConnectionsPerPeer)}
+		ccpool = &clientAndConnPool{id: rand.Int63(), clientConns: make([]*clientAndConn, c.cfg.ConnectionsPerPeer)}
 		for i := 0; i < c.cfg.ConnectionsPerPeer; i++ {
 			// Test hook.
 			c.cs.Inc(numGRPCDial)
@@ -247,7 +287,7 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 			// Dial the destination.
 			conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second))
 			if err != nil {
-				return nil, err
+				return nil, noID, err
 			}
 			client := NewWireClient(conn)
 			cc := &clientAndConn{
@@ -260,9 +300,9 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 	}
 	cc, err := ccpool.next()
 	if err != nil {
-		return nil, err
+		return nil, noID, err
 	}
-	return cc.client, nil
+	return cc.client, ccpool.id, nil
 }
 
 func (c *Client) deleteAddress(nsReceiver string) {
@@ -275,7 +315,7 @@ func (c *Client) deleteAddress(nsReceiver string) {
 	delete(c.addresses, nsReceiver)
 }
 
-func (c *Client) deleteClientAndConn(nsReceiver string) {
+func (c *Client) deleteClientAndConn(nsReceiver string, clientID int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -286,16 +326,30 @@ func (c *Client) deleteClientAndConn(nsReceiver string) {
 	if !ok {
 		return
 	}
+	delete(c.addresses, nsReceiver)
 
-	cc, ok := c.clientsAndConns[address]
+	ccpool, ok := c.clientsAndConns[address]
 	if !ok {
 		return
 	}
-	err := cc.close()
-	if err != nil && Logger != nil {
-		Logger.Printf("error closing client and connection: %v", err)
+	// Between the time this client was gotten
+	// and this delete operation, someone has
+	// already changed it out from under this
+	// caller, so just ignore the delete.
+	if clientID != ccpool.id {
+		return
+	}
+	err := ccpool.close()
+	if err != nil {
+		c.logf("error closing client and connection: %v", err)
 	}
 	delete(c.clientsAndConns, address)
+}
+
+func (c *Client) logf(format string, v ...interface{}) {
+	if c.cfg.Logger != nil {
+		c.cfg.Logger.Printf(format, v...)
+	}
 }
 
 // statName of interesting statistic to track
@@ -303,14 +357,15 @@ func (c *Client) deleteClientAndConn(nsReceiver string) {
 type statName string
 
 const (
-	numErrConnectionUnavailable statName = "numErrConnectionUnavailable"
-	numErrUnregisteredMailbox   statName = "numErrUnregisteredMailbox"
-	numErrUnknownMailbox        statName = "numErrUnknownMailbox"
-	numErrReceiverBusy          statName = "numErrReceiverBusy"
-	numDeleteAddress            statName = "numDeleteAddress"
-	numDeleteClientAndConn      statName = "numDeleteClientAndConn"
-	numGetWireClient            statName = "numGetWireClient"
-	numGRPCDial                 statName = "numGRPCDial"
+	numErrClientConnectionClosing statName = "numErrClientConnectionClosing"
+	numErrConnectionUnavailable   statName = "numErrConnectionUnavailable"
+	numErrUnregisteredMailbox     statName = "numErrUnregisteredMailbox"
+	numErrUnknownMailbox          statName = "numErrUnknownMailbox"
+	numErrReceiverBusy            statName = "numErrReceiverBusy"
+	numDeleteAddress              statName = "numDeleteAddress"
+	numDeleteClientAndConn        statName = "numDeleteClientAndConn"
+	numGetWireClient              statName = "numGetWireClient"
+	numGRPCDial                   statName = "numGRPCDial"
 )
 
 // newClientStats for use during testing.

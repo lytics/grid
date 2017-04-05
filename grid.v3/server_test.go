@@ -2,6 +2,7 @@ package grid
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -58,6 +59,10 @@ func TestServerStartStop(t *testing.T) {
 		case <-time.After(timeout):
 			t.Fatal("timeout")
 		case <-a.started:
+			ctx := server.Context()
+			if ctx == nil {
+				t.Fatal("expected non-nil context on running server")
+			}
 			server.Stop()
 		case <-a.stopped:
 			select {
@@ -67,7 +72,66 @@ func TestServerStartStop(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				select {
+				case <-server.Context().Done():
+				default:
+					t.Fatal("expected done context")
+				}
 				return
+			}
+		}
+	}
+}
+
+func TestServerWithFatalError(t *testing.T) {
+	const (
+		timeout = 20 * time.Second
+	)
+
+	etcd, cleanup := testetcd.StartAndConnect(t)
+	defer cleanup()
+
+	a := &startStopActor{
+		started: make(chan bool),
+		stopped: make(chan bool),
+	}
+
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.RegisterDef("leader", func(_ []byte) (Actor, error) { return a, nil })
+
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		defer close(done)
+		err := server.Serve(lis)
+		if err != nil {
+			done <- err
+		}
+	}()
+
+	expected := errors.New("testing-fatal-error")
+	for {
+		select {
+		case <-time.After(timeout):
+			t.Fatal("timeout")
+		case <-a.started:
+			server.reportFatalError(expected)
+		case <-a.stopped:
+			select {
+			case <-time.After(timeout):
+				t.Fatal("timeout")
+			case err := <-done:
+				if err != nil && err.Error() == expected.Error() {
+					return
+				}
+				t.Fatal("expected error")
 			}
 		}
 	}
