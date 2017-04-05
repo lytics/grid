@@ -59,6 +59,10 @@ func TestServerStartStop(t *testing.T) {
 		case <-time.After(timeout):
 			t.Fatal("timeout")
 		case <-a.started:
+			ctx := server.Context()
+			if ctx == nil {
+				t.Fatal("expected non-nil context on running server")
+			}
 			server.Stop()
 		case <-a.stopped:
 			select {
@@ -67,6 +71,11 @@ func TestServerStartStop(t *testing.T) {
 			case err := <-done:
 				if err != nil {
 					t.Fatal(err)
+				}
+				select {
+				case <-server.Context().Done():
+				default:
+					t.Fatal("expected done context")
 				}
 				return
 			}
