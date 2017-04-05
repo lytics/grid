@@ -72,6 +72,11 @@ func TestServerStartStop(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				select {
+				case <-server.Context().Done():
+				default:
+					t.Fatal("expected done context")
+				}
 				return
 			}
 		}
