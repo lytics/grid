@@ -65,8 +65,10 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 }
 
 // RegisterDef of an actor. When a ActorStart message is sent to
-// a peer it will use the registered definitions to make
-// and run the actor.
+// a peer it will use the registered definitions to make and run
+// the actor. If an actor with actorType "leader" is registered
+// it will be started automatically when the Serve method is
+// called.
 func (s *Server) RegisterDef(actorType string, f MakeActor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -74,13 +76,17 @@ func (s *Server) RegisterDef(actorType string, f MakeActor) {
 	s.actors[actorType] = f
 }
 
+// Context of the server, when it reports done the
+// server is trying to shutdown. Actors automatically
+// get this context, non-actors using mailboxes bound
+// to this server should monitor this context to know
+// when the server is trying to exit.
+func (s *Server) Context() context.Context {
+	return s.ctx
+}
+
 // Serve the grid on the listener. The listener address type must be
 // net.TCPAddr, otherwise an error will be returned.
-//
-// If an actor by the definition of NewActorDef("leader") is defined
-// by the grid, it will automatically get started as a singletion in
-// the grid, ie: only one will every be running. This leader can be
-// though of as an entry point.
 func (s *Server) Serve(lis net.Listener) error {
 	// Create a registry client, through which other
 	// entities like peers, actors, and mailboxes
