@@ -1,12 +1,8 @@
 package grid
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
-	"io"
-	"log"
 	"net"
 	"runtime/debug"
 	"strings"
