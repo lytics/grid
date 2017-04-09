@@ -136,10 +136,6 @@ func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}
 // RequestC (request) a response for the given message. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
-	env := &envelope{
-		Msg: msg,
-	}
-
 	// Namespaced receiver name.
 	nsReceiver, err := namespaceName(Mailboxes, c.cfg.Namespace, receiver)
 	if err != nil {
@@ -149,6 +145,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	cn := codec.Name(msg)
 	msgCodec, registed := codec.Registry().GetCodecName(cn)
 	if !registed {
+		//QUESTION we could just fall back to using a GOB decoder?
 		return nil, ErrUnRegisteredMsgType
 	}
 	b, err := msgCodec.Marshal(msg)
@@ -244,15 +241,21 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	env = &envelope{}
-	if err := envCodec.Unmarshal(res.Data, env); err != nil {
+	if len(res.Data) == 0 || res.CodecName == "" {
+		return nil, ErrNilResponse
+	}
+
+	msgCodec, registed = codec.Registry().GetCodecName(res.CodecName)
+	if !registed {
+		return nil, ErrUnRegisteredMsgType
+	}
+	var replay interface{}
+	err = msgCodec.Unmarshal(res.Data, replay)
+	if err != nil {
 		return nil, err
 	}
 
-	if env.Msg != nil {
-		return env.Msg, nil
-	}
-	return nil, ErrNilResponse
+	return replay, nil
 }
 
 // getWireClient for the address of the receiver.
