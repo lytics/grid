@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package grid;
+
+message Delivery {
+    enum Ver {
+        V1 = 0;
+    }
+    enum Enc {
+        Gob = 0;
+    }
+    Ver ver = 1;
+    Enc enc = 2;
+    bytes data = 3;
+    string receiver = 4;
+}
+
+service wire {
+    rpc Process(Delivery) returns (Delivery) {}
+}
