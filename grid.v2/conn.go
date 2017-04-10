@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nats-io/nats"
+	"github.com/nats-io/go-nats"
 )
 
 const (
