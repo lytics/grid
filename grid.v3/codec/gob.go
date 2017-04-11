@@ -6,7 +6,16 @@ import (
 	"io"
 )
 
-type GobCodec struct{}
+func GobCodecRegister(reg CodecRegistry, emptyInstance func() interface{}) {
+	blank := emptyInstance()
+	gob.Register(blank)
+	codec := &GobCodec{emptyInstance}
+	reg.Register(blank, codec)
+}
+
+type GobCodec struct {
+	EmptyInstance func() interface{}
+}
 
 // Marshal returns v as bytes.
 func (g *GobCodec) Marshal(v interface{}) ([]byte, error) {
@@ -33,6 +42,10 @@ func (g *GobCodec) Unmarshal(data []byte, v interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func (g *GobCodec) BlankSlate() interface{} {
+	return g.EmptyInstance()
 }
 
 // String returns the name of the Codec implementation. The returned

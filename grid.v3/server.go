@@ -227,13 +227,16 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 
 	// Decode the request into an actual
 	// type.
-	env := &envelope{}
-	envCodec := codec.Registry().GetCodec(env) //TODO make this a field on the server (s.envelopeCodec) to avoid look up for each message
-	if err := envCodec.Unmarshal(d.Data, env); err != nil {
+	msgCodec, registed := codec.Registry().GetCodecName(d.CodecName) //TODO make this a field on the server (s.envelopeCodec) to avoid look up for each message
+	if !registed {
+		return nil, ErrUnRegisteredMsgType
+	}
+	var msg = msgCodec.BlankSlate()
+	if err := msgCodec.Unmarshal(d.Data, msg); err != nil {
 		return nil, err
 	}
 
-	req := newRequest(c, env.Msg)
+	req := newRequest(c, msg)
 
 	// Send the filled envelope to the actual
 	// receiver. Also note that the receiver

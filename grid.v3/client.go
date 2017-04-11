@@ -145,7 +145,6 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	cn := codec.Name(msg)
 	msgCodec, registed := codec.Registry().GetCodecName(cn)
 	if !registed {
-		//QUESTION we could just fall back to using a GOB decoder?
 		return nil, ErrUnRegisteredMsgType
 	}
 	b, err := msgCodec.Marshal(msg)
@@ -241,27 +240,33 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	if len(res.Data) == 0 || res.CodecName == "" {
+	if len(res.Data) == 0 {
 		return nil, ErrNilResponse
+	}
+
+	if res.CodecName == "" {
+		return nil, ErrUnRegisteredMsgType
 	}
 
 	msgCodec, registed = codec.Registry().GetCodecName(res.CodecName)
 	if !registed {
 		return nil, ErrUnRegisteredMsgType
 	}
-	var replay interface{}
-	err = msgCodec.Unmarshal(res.Data, replay)
+	var reply = msgCodec.BlankSlate()
+	err = msgCodec.Unmarshal(res.Data, reply)
 	if err != nil {
 		return nil, err
 	}
 
-	return replay, nil
+	return reply, nil
 }
 
 // getWireClient for the address of the receiver.
 func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClient, int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	const noID = -1
 
 	// Test hook.
 	c.cs.Inc(numGetWireClient)

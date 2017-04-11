@@ -1,7 +1,6 @@
 package grid
 
 import (
-	"encoding/gob"
 	"fmt"
 
 	"github.com/lytics/grid/grid.v3/codec"
@@ -46,6 +45,6 @@ type ActorStart struct {
 }
 
 func init() {
-	gob.Register(&ActorStart{})
-	codec.Registry().Register(&ActorStart{}, &codec.GobCodec{})
+	//ActorStart messages aren't expected in replies but this interface still requies an instance constructor to register the type.
+	codec.GobCodecRegister(codec.Registry(), func() interface{} { return &ActorStart{} })
 }

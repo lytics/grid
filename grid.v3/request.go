@@ -82,21 +82,14 @@ func (req *request) Respond(msg interface{}) error {
 		}
 	}
 
-	cn := codec.Name(msg)
-	envCodec, ok := codec.Registry().GetCodecName(cn)
-	b, err := envCodec.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	env := &envelope{
-		CodecName: cn,
-		Msg:       b,
-	}
-
 	// Encode the message here, in the thread of
 	// execution of the caller.
-	envCodec := codec.Registry().GetCodec(env) //TODO make this a field on the request and copy it into the request as a ref from the client or server.
-	b, err := envCodec.Marshal(env)
+	cn := codec.Name(msg)
+	msgCodec, registed := codec.Registry().GetCodecName(cn)
+	if !registed {
+		return ErrUnRegisteredMsgType
+	}
+	b, err := msgCodec.Marshal(msg)
 	if err != nil {
 		return err
 	}
