@@ -364,7 +364,6 @@ func (s *Server) monitorLeader() {
 				} else {
 					timer.Reset(30 * time.Second)
 				}
-				timer.Reset(30 * time.Second)
 			}
 		}
 	}()
@@ -468,4 +467,10 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	}()
 
 	return nil
+}
+
+func (s *Server) logf(format string, v ...interface{}) {
+	if s.cfg.Logger != nil {
+		s.cfg.Logger.Printf(format, v...)
+	}
 }
