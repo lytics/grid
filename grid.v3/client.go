@@ -145,6 +145,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	cn := codec.Name(msg)
 	msgCodec, registed := codec.Registry().GetCodecName(cn)
 	if !registed {
+		c.logf("%v: error unresgistered message type:%v", c.cfg.Namespace, cn)
 		return nil, ErrUnRegisteredMsgType
 	}
 	b, err := msgCodec.Marshal(msg)
@@ -245,11 +246,13 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 	}
 
 	if res.CodecName == "" {
+		c.logf("%v: error no codec provided in response", c.cfg.Namespace)
 		return nil, ErrUnRegisteredMsgType
 	}
 
 	msgCodec, registed = codec.Registry().GetCodecName(res.CodecName)
 	if !registed {
+		c.logf("%v: error unresgistered message type:%v", c.cfg.Namespace, res.CodecName)
 		return nil, ErrUnRegisteredMsgType
 	}
 	var reply = msgCodec.BlankSlate()

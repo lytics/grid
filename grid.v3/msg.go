@@ -44,7 +44,35 @@ type ActorStart struct {
 	Data []byte
 }
 
+type ackmsg struct {
+	ok string
+}
+
+func (a *ackmsg) Marshal(v interface{}) ([]byte, error) {
+	return []byte("__ACK__"), nil //This will be the wire message for debugging but it'll just be thrown away in Unmarshal.
+}
+
+func (a *ackmsg) Unmarshal(data []byte, v interface{}) error {
+	if _, ok := v.(*ackmsg); !ok {
+		return fmt.Errorf("incorrect codec, not of type ackmsg")
+	}
+	v = a
+	return nil
+}
+
+func (a *ackmsg) BlankSlate() interface{} {
+	return a
+}
+
+func (a *ackmsg) String() string {
+	return "ackmsg"
+}
+
+// Ack is the message sent back when the Ack() method of a
+var Ack = &ackmsg{"__ACK__"}
+
 func init() {
 	//ActorStart messages aren't expected in replies but this interface still requies an instance constructor to register the type.
 	codec.GobCodecRegister(codec.Registry(), func() interface{} { return &ActorStart{} })
+	codec.Registry().Register(Ack, Ack) // Ack is the message and the Codec for itself.
 }

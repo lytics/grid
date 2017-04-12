@@ -2,12 +2,15 @@ package grid
 
 import (
 	"context"
+	"log"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coreos/etcd/clientv3"
+	"github.com/lytics/grid/grid.v3/codec"
 	"github.com/lytics/grid/grid.v3/testetcd"
 )
 
@@ -61,6 +64,14 @@ func (a *echoActor) Act(c context.Context) {
 			req.Respond(req.Msg())
 		}
 	}
+}
+
+type EchoMsg struct {
+	Msg string
+}
+
+func init() {
+	codec.GobCodecRegister(codec.Registry(), func() interface{} { return &EchoMsg{} })
 }
 
 func TestNewClient(t *testing.T) {
@@ -167,10 +178,8 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 }
 
 func TestClientWithRunningReceiver(t *testing.T) {
-	const (
-		timeout  = 2 * time.Second
-		expected = "testing 1, 2, 3"
-	)
+	const timeout = 2 * time.Second
+	expected := &EchoMsg{"testing 1, 2, 3"}
 
 	// Bootstrap.
 	_, cleanup, server, client := bootstrapClientTest(t)
@@ -221,9 +230,9 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 
 	// Expect the same string back as a response.
-	switch res.(type) {
-	case string:
-		if res != expected {
+	switch res := res.(type) {
+	case *EchoMsg:
+		if res.Msg != expected.Msg {
 			t.Fatalf("expected: %v, received: %v", expected, res)
 		}
 	default:
@@ -236,10 +245,8 @@ func TestClientWithRunningReceiver(t *testing.T) {
 }
 
 func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
-	const (
-		timeout  = 2 * time.Second
-		expected = "hello"
-	)
+	const timeout = 2 * time.Second
+	expected := &EchoMsg{"testing 1, 2, 3"}
 
 	// Bootstrap.
 	_, cleanup, server, client := bootstrapClientTest(t)
@@ -312,10 +319,8 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 }
 
 func TestClientWithBusyReceiver(t *testing.T) {
-	const (
-		timeout  = 2 * time.Second
-		expected = "testing 1, 2, 3"
-	)
+	const timeout = 2 * time.Second
+	expected := &EchoMsg{"testing 1, 2, 3"}
 
 	// Bootstrap.
 	_, cleanup, server, client := bootstrapClientTest(t)
@@ -400,8 +405,10 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, testetcd.Cleanup, *Ser
 	// Start etcd.
 	etcd, cleanup := testetcd.StartAndConnect(t)
 
+	var logger *log.Logger = log.New(os.Stderr, "hellogrid: ", log.LstdFlags)
+
 	// Create the server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	server, err := NewServer(etcd, ServerCfg{Namespace: "testing", Logger: logger})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +430,7 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, testetcd.Cleanup, *Ser
 	time.Sleep(2 * time.Second)
 
 	// Create a grid client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
+	client, err := NewClient(etcd, ClientCfg{Namespace: "testing", Logger: logger})
 	if err != nil {
 		t.Fatal(err)
 	}

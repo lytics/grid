@@ -229,10 +229,12 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	// type.
 	msgCodec, registed := codec.Registry().GetCodecName(d.CodecName) //TODO make this a field on the server (s.envelopeCodec) to avoid look up for each message
 	if !registed {
+		s.logf("%v: error unresgistered message type:%v", s.cfg.Namespace, d.CodecName)
 		return nil, ErrUnRegisteredMsgType
 	}
 	var msg = msgCodec.BlankSlate()
 	if err := msgCodec.Unmarshal(d.Data, msg); err != nil {
+		s.logf("%v: error unmarshaling error:%v", s.cfg.Namespace, err)
 		return nil, err
 	}
 
@@ -256,10 +258,8 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 		return nil, ErrContextFinished
 	case fail := <-req.failure:
 		return nil, fail
-	case data := <-req.response:
-		return &Delivery{
-			Data: data,
-		}, nil
+	case res := <-req.response:
+		return res, nil
 	}
 }
 
@@ -275,9 +275,15 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 			case *ActorStart:
 				err := s.startActorC(req.Context(), msg)
 				if err != nil {
-					req.Respond(err)
+					err2 := req.Respond(err)
+					if err != nil {
+						s.logf("%v: error sending respond(err:%v): err:%v", s.cfg.Namespace, err, err2)
+					}
 				} else {
-					req.Ack()
+					err := req.Ack()
+					if err != nil {
+						s.logf("%v: error sending ack: err:%v", s.cfg.Namespace, err)
+					}
 				}
 			}
 		}
