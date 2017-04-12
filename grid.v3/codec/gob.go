@@ -6,6 +6,18 @@ import (
 	"io"
 )
 
+// GobCodecRegister is a convenience method that generates and registers a 
+// gob codec for a type in one call.
+//
+// Example of registering a new type:
+//
+//   type ExampleMessage struct {
+//        Counts int
+//   }
+//   codec.GobCodecRegister(codec.Registry(), func() interface{} { return &ExampleMessage{} })
+//
+// Note more advanced Codecs (e.g. Protobuf) require code generations and
+// require that you write the entire Codec implmentation.
 func GobCodecRegister(reg CodecRegistry, emptyInstance func() interface{}) {
 	blank := emptyInstance()
 	gob.Register(blank)
@@ -13,6 +25,7 @@ func GobCodecRegister(reg CodecRegistry, emptyInstance func() interface{}) {
 	reg.Register(blank, codec)
 }
 
+// GobCodec is a generic gob based codec that'll work for any go type. 
 type GobCodec struct {
 	EmptyInstance func() interface{}
 }
