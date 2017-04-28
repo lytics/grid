@@ -1,13 +1,10 @@
 package codec
 
+// Codec for a particular class of encoding, such
+// as protobuf or gob.
 type Codec interface {
-	// Marshal returns v as bytes.
+	// Marshal v into bytes.
 	Marshal(v interface{}) ([]byte, error)
-	// Unmarshal parses data into instance v.
+	// Unmarshal byte data into v.
 	Unmarshal(data []byte, v interface{}) error
-	//This method returns an empty instance of the object used by the codec.
-	BlankSlate() interface{}
-	// String returns the name of the Codec implementation. The returned
-	// string will be used as a key and should be uniq.
-	String() string
 }

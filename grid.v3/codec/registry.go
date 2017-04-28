@@ -1,61 +1,59 @@
 package codec
 
 import (
+	"errors"
+	"fmt"
 	"reflect"
-	"sync"
 )
 
-var registry *codecRegistry = &codecRegistry{reg: map[string]Codec{}} //shared registry
+var ErrUnregisteredMessageType = errors.New("grid: unregistered message type")
 
-type CodecRegistry interface {
-	Register(v interface{}, codec Codec)
-	GetCodec(v interface{}) (Codec, bool)
-	GetCodecName(name string) (Codec, bool)
+type codecType struct {
+	proto interface{} // The "prototype".
+	codec Codec       // The codec to encode/decode such prototypes.
 }
 
-func Registry() CodecRegistry {
-	return registry
+var reg = map[string]*codecType{}
+
+func Register(v interface{}, c Codec) {
+	name := TypeName(v)
+	fmt.Printf("registering: %v\n", name)
+	reg[name] = &codecType{
+		proto: v,
+		codec: c,
+	}
 }
 
-type codecRegistry struct {
-	reg   map[string]Codec
-	mutex sync.RWMutex
+func Marshal(v interface{}) ([]byte, error) {
+	name := TypeName(v)
+	fmt.Printf("marshal: %T, %v\n", v, name)
+	c, ok := reg[name]
+	if !ok {
+		return nil, ErrUnregisteredMessageType
+	}
+	return c.codec.Marshal(v)
 }
 
-func (cr *codecRegistry) Register(v interface{}, codec Codec) {
-	n := Name(v)
-	//fmt.Println("reg:", n)
-	cr.mutex.Lock()
-	defer cr.mutex.Unlock()
-	cr.reg[n] = codec
+func Unmarshal(buf []byte, name string) (interface{}, error) {
+	fmt.Printf("registry unmarshal: %v\n", name)
+	c, ok := reg[name]
+	if !ok {
+		return nil, ErrUnregisteredMessageType
+	}
+	v := reflect.New(reflect.TypeOf(c.proto)).Interface()
+	err := c.codec.Unmarshal(buf, v)
+	if err != nil {
+		fmt.Printf(">>> codec unmarshal: %T, %v, %v\n", v, name, err)
+		return nil, err
+	}
+	return v, nil
 }
 
-func (cr *codecRegistry) GetCodec(v interface{}) (Codec, bool) {
-	return cr.GetCodecName(Name(v))
-}
-
-func (cr *codecRegistry) GetCodecName(n string) (Codec, bool) {
-	//fmt.Println("get:", n)
-	cr.mutex.RLock()
-	defer cr.mutex.RUnlock()
-	c, ok := cr.reg[n]
-	return c, ok
-}
-
-func Name(v interface{}) string {
+func TypeName(v interface{}) string {
 	rt := reflect.TypeOf(v)
 	name := rt.String()
-	// But for named types (or pointers to them), qualify with import path (but see inner comment).
-	// Dereference one pointer looking for a named type.
-	star := ""
-	if rt.Name() == "" {
-		if pt := rt; pt.Kind() == reflect.Ptr {
-			star = "*"
-			rt = pt
-		}
-	}
-	if rt.Name() != "" {
-		name = star + rt.PkgPath() + "." + rt.Name()
+	if name[0] == '*' {
+		return name[1:]
 	}
 	return name
 }

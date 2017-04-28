@@ -142,21 +142,16 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	cn := codec.Name(msg)
-	msgCodec, registed := codec.Registry().GetCodecName(cn)
-	if !registed {
-		c.logf("%v: error unresgistered message type:%v", c.cfg.Namespace, cn)
-		return nil, ErrUnRegisteredMsgType
-	}
-	b, err := msgCodec.Marshal(msg)
+	typeName := codec.TypeName(msg)
+	data, err := codec.Marshal(typeName)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &Delivery{
 		Ver:       Delivery_V1,
-		Data:      b,
-		CodecName: cn,
+		Data:      data,
+		CodecName: typeName,
 		Receiver:  nsReceiver,
 	}
 	var res *Delivery
@@ -245,18 +240,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, ErrNilResponse
 	}
 
-	if res.CodecName == "" {
-		c.logf("%v: error no codec provided in response", c.cfg.Namespace)
-		return nil, ErrUnRegisteredMsgType
-	}
-
-	msgCodec, registed = codec.Registry().GetCodecName(res.CodecName)
-	if !registed {
-		c.logf("%v: error unresgistered message type:%v", c.cfg.Namespace, res.CodecName)
-		return nil, ErrUnRegisteredMsgType
-	}
-	var reply = msgCodec.BlankSlate()
-	err = msgCodec.Unmarshal(res.Data, reply)
+	reply, err := codec.Unmarshal(res.Data, res.CodecName)
 	if err != nil {
 		return nil, err
 	}

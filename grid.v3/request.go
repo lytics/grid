@@ -82,19 +82,15 @@ func (req *request) Respond(msg interface{}) error {
 
 	// Encode the message here, in the thread of
 	// execution of the caller.
-	cn := codec.Name(msg)
-	msgCodec, registed := codec.Registry().GetCodecName(cn)
-	if !registed {
-		return ErrUnRegisteredMsgType
-	}
-	b, err := msgCodec.Marshal(msg)
+	typeName := codec.TypeName(msg)
+	data, err := codec.Marshal(msg)
 	if err != nil {
 		return err
 	}
 	res := &Delivery{
 		Ver:       Delivery_V1,
-		Data:      b,
-		CodecName: cn,
+		Data:      data,
+		CodecName: typeName,
 	}
 
 	// Send the response bytes. Again, the bytes need

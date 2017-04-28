@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"encoding/gob"
+
 	"github.com/coreos/etcd/clientv3"
 	"github.com/lytics/grid/grid.v3/codec"
 	"github.com/lytics/grid/grid.v3/testetcd"
@@ -71,7 +73,8 @@ type EchoMsg struct {
 }
 
 func init() {
-	codec.GobCodecRegister(codec.Registry(), func() interface{} { return &EchoMsg{} })
+	gob.Register(EchoMsg{})
+	codec.Register(EchoMsg{}, codec.Gob)
 }
 
 func TestNewClient(t *testing.T) {

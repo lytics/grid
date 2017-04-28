@@ -225,16 +225,9 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 		return nil, ErrUnknownMailbox
 	}
 
-	// Decode the request into an actual
-	// type.
-	msgCodec, registed := codec.Registry().GetCodecName(d.CodecName) //TODO make this a field on the server (s.envelopeCodec) to avoid look up for each message
-	if !registed {
-		s.logf("%v: error unresgistered message type:%v", s.cfg.Namespace, d.CodecName)
-		return nil, ErrUnRegisteredMsgType
-	}
-	var msg = msgCodec.BlankSlate()
-	if err := msgCodec.Unmarshal(d.Data, msg); err != nil {
-		s.logf("%v: error unmarshaling error:%v", s.cfg.Namespace, err)
+	// Decode the request into an actual msg.
+	msg, err := codec.Unmarshal(d.Data, d.CodecName)
+	if err != nil {
 		return nil, err
 	}
 
