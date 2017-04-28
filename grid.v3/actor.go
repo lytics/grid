@@ -3,8 +3,6 @@ package grid
 import (
 	"context"
 	"fmt"
-
-	"github.com/lytics/grid/grid.v3/codec"
 )
 
 // MakeActor using the given data to parameterize
@@ -40,6 +38,6 @@ func NewActorStart(name string, v ...interface{}) *ActorStart {
 }
 
 func init() {
-	codec.Register(Ack{})
-	codec.Register(ActorStart{})
+	Register(Ack{})
+	Register(ActorStart{})
 }

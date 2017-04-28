@@ -17,6 +17,18 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Register a message so it may be sent and received.
+// Value v should not be a pointer to a type, but
+// the type itself.
+//
+// For example:
+//     Register(MyMsg{})    // Correct
+//     Register(&MyMsg{})   // Incorrect
+//
+func Register(v interface{}) error {
+	return codec.Register(v)
+}
+
 //clientAndConnPool is a pool of clientAndConn
 type clientAndConnPool struct {
 	// The 'id' is used in a kind of CAS when

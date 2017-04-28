@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/clientv3"
-	"github.com/lytics/grid/grid.v3/codec"
 	"github.com/lytics/grid/grid.v3/testetcd"
 )
 
@@ -67,7 +66,7 @@ func (a *echoActor) Act(c context.Context) {
 }
 
 func init() {
-	codec.Register(EchoMsg{})
+	Register(EchoMsg{})
 }
 
 func TestNewClient(t *testing.T) {
