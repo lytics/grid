@@ -54,9 +54,9 @@ func (req *request) Msg() interface{} {
 }
 
 // Ack request, same as responding with Respond
-// and constant "Ack".
+// and "Ack" message.
 func (req *request) Ack() error {
-	return req.Respond(Ack)
+	return req.Respond(&Ack{})
 }
 
 // Respond to request with a message.
@@ -82,15 +82,14 @@ func (req *request) Respond(msg interface{}) error {
 
 	// Encode the message here, in the thread of
 	// execution of the caller.
-	typeName := codec.TypeName(msg)
-	data, err := codec.Marshal(msg)
+	typeName, data, err := codec.Marshal(msg)
 	if err != nil {
 		return err
 	}
 	res := &Delivery{
-		Ver:       Delivery_V1,
-		Data:      data,
-		CodecName: typeName,
+		Ver:      Delivery_V1,
+		Data:     data,
+		TypeName: typeName,
 	}
 
 	// Send the response bytes. Again, the bytes need

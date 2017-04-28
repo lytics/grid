@@ -4,26 +4,27 @@ import (
 	"reflect"
 	"testing"
 
-	"fmt"
-
-	"github.com/lytics/grid/grid.v3/codec/gobmessage"
 	"github.com/lytics/grid/grid.v3/codec/protomessage"
 )
 
-func TestNaming(t *testing.T) {
-	msg0 := protomessage.Person{}
-	msg1 := &protomessage.Person{}
+func TestTypeName(t *testing.T) {
+	const (
+		expected = "protomessage.Person"
+	)
 
-	rt0 := reflect.TypeOf(msg0)
-	rt1 := reflect.TypeOf(msg1)
+	msg := protomessage.Person{}
+	rt := reflect.TypeOf(msg)
 
-	fmt.Println(rt0.String())
-	fmt.Println(rt1.String())
-
+	if rt.String() != expected {
+		t.Fatal("expected:", expected, " got:", rt.String())
+	}
 }
 
-func TestProtobufRegisterAndGet(t *testing.T) {
-	Register(protomessage.Person{}, Protobuf)
+func TestRegisterMarshalUnmarshal(t *testing.T) {
+	err := Register(protomessage.Person{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	msg := &protomessage.Person{
 		Name: "James Tester",
@@ -34,32 +35,89 @@ func TestProtobufRegisterAndGet(t *testing.T) {
 			},
 		},
 	}
-	buf, err := Marshal(msg)
+	typeName, data, err := Marshal(msg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	msg1, err := Unmarshal(buf, TypeName(msg))
-	fmt.Println(msg1)
+	res, err := Unmarshal(data, typeName)
+	switch res := res.(type) {
+	case *protomessage.Person:
+		if msg.Name != res.Name {
+			t.Fatal("expected same name")
+		}
+		if msg.Phones[0].Number != res.Phones[0].Number {
+			t.Fatal("expected same phone number")
+		}
+		if msg.Phones[0].PhoneType != res.Phones[0].PhoneType {
+			t.Fatal("expected same phone type")
+		}
+	}
 }
 
-func TestGobRegisterAndGet(t *testing.T) {
-	Register(gobmessage.Person{}, Gob)
+func TestNonProtobuf(t *testing.T) {
+	notProto := "notProto"
 
-	msg := &gobmessage.Person{
-		Name: "James Tester",
-		Phones: []*gobmessage.PhoneNumber{
-			&gobmessage.PhoneNumber{
-				Number:    "555-555-5555",
-				PhoneType: gobmessage.Home,
-			},
-		},
+	err := Register(notProto)
+	if err != ErrNonProtoMessage {
+		t.Fatal("expected error")
 	}
-	buf, err := Marshal(msg)
+}
+
+// BenchmarkMarshal checks how fast it is to look up
+// a type in the registry and marshal.
+//
+// Local results:
+//     BenchmarkMarshal-4     3000000       400 ns/op
+//
+func BenchmarkMarshal(b *testing.B) {
+	err := Register(protomessage.Person{})
 	if err != nil {
-		t.Fatal(err)
+		b.Fatal(err)
 	}
 
-	msg1, err := Unmarshal(buf, TypeName(msg))
-	fmt.Println(msg1)
+	msg := &protomessage.Person{
+		Name: "James Tester",
+	}
+
+	for i := 0; i < b.N; i++ {
+		_, data, err := Marshal(msg)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(data) == 0 {
+			b.Fatal("marshal produced zero bytes")
+		}
+	}
+}
+
+// BenchmarkUnmarshal checks how fast it is to look up
+// a type in the registry and unmarshal.
+//
+// Local results:
+//     BenchmarkUnmarshal-4   3000000       463 ns/op
+//
+func BenchmarkUnmarshal(b *testing.B) {
+	err := Register(protomessage.Person{})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	msg := &protomessage.Person{
+		Name: "James Tester",
+	}
+	typeName, data, err := Marshal(msg)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		res, err := Unmarshal(data, typeName)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if res.(*protomessage.Person).Name != "James Tester" {
+			b.Fatal("wrong name")
+		}
+	}
 }

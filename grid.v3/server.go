@@ -226,7 +226,7 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	}
 
 	// Decode the request into an actual msg.
-	msg, err := codec.Unmarshal(d.Data, d.CodecName)
+	msg, err := codec.Unmarshal(d.Data, d.TypeName)
 	if err != nil {
 		return nil, err
 	}

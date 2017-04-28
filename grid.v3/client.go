@@ -142,18 +142,18 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	typeName := codec.TypeName(msg)
-	data, err := codec.Marshal(typeName)
+	typeName, data, err := codec.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &Delivery{
-		Ver:       Delivery_V1,
-		Data:      data,
-		CodecName: typeName,
-		Receiver:  nsReceiver,
+		Ver:      Delivery_V1,
+		Data:     data,
+		TypeName: typeName,
+		Receiver: nsReceiver,
 	}
+
 	var res *Delivery
 	retry.X(3, 1*time.Second, func() bool {
 		var client WireClient
@@ -236,11 +236,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	if len(res.Data) == 0 {
-		return nil, ErrNilResponse
-	}
-
-	reply, err := codec.Unmarshal(res.Data, res.CodecName)
+	reply, err := codec.Unmarshal(res.Data, res.TypeName)
 	if err != nil {
 		return nil, err
 	}
