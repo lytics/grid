@@ -181,6 +181,14 @@ func (s *Server) Serve(lis net.Listener) error {
 // Stop the server, blocking until all mailboxes registered with
 // this server have called their close method.
 func (s *Server) Stop() {
+	logMailboxes := func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, mailbox := range s.mailboxes {
+			s.logf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
+		}
+	}
+
 	zeroMailboxes := func() bool {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -201,9 +209,7 @@ func (s *Server) Stop() {
 			}
 			if time.Now().Sub(t0) > 20*time.Second {
 				t0 = time.Now()
-				for _, mailbox := range s.mailboxes {
-					s.logf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
-				}
+				logMailboxes()
 			}
 		}
 
