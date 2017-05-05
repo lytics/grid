@@ -5,7 +5,9 @@ Grid is a library for doing distributed processing. It's main goal is to help
 in scheduling fine-grain stateful computations, which grid calls actors, and
 sending data between them. Its only service dependency is an
 [Etcd v3](https://github.com/coreos/etcd) server, used for discovery and
-coordination. Grid uses [gRPC](http://www.grpc.io/) for communication.
+coordination. Grid uses [gRPC](http://www.grpc.io/) for communication, and
+sends [Protobuf](https://developers.google.com/protocol-buffers/)
+messages.
 
 ## Example
 Below is a basic example of starting your grid application. If a "leader"
@@ -228,5 +230,33 @@ func Example() {
     })
 
     ... process the response ...
+}
+```
+
+### Registering Messages
+Every type of message must be registered before use. Each message must be a
+Protobuf message. See the [Go Protobuf Tutorial](https://developers.google.com/protocol-buffers/docs/gotutorial)
+for more information, or the example below:
+
+```protobuf
+syntax = "proto3";
+package msg;
+
+message Person {
+    string name = 1;
+    string email = 2;
+    ...
+}
+```
+
+Before using the message it needs to be registered, which can be done
+inside init functions, the main function, or just before first sending
+and receiving the message.
+
+```go
+func main() {
+    grid.Register(msg.Person{})
+
+    ...
 }
 ```

@@ -2,6 +2,7 @@ package grid
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -30,15 +31,16 @@ func TestResponedWithError(t *testing.T) {
 	}
 }
 
-type badGobType struct{}
+type unregisteredMsg struct{}
 
-func TestGobEncodeError(t *testing.T) {
+func TestUnregisteredMessageError(t *testing.T) {
 	req := &request{}
-	err := req.Respond(&badGobType{})
+	err := req.Respond(&unregisteredMsg{})
+	fmt.Println(err)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "type not registered for interface") {
+	if !strings.Contains(err.Error(), "unregistered message type") {
 		t.Fatal("expected specific error")
 	}
 }

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package protomessage;
+
+message Person {
+	string name = 1;
+	string email = 2;
+
+	enum PhoneType {
+		CELL = 0;
+		HOME = 1;
+		WORK = 2;
+	}
+
+	message PhoneNumber {
+		string number = 1;
+		PhoneType phoneType = 2;
+	}
+
+	repeated PhoneNumber phones = 4;
+}

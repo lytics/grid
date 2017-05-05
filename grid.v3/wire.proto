@@ -8,8 +8,20 @@ message Delivery {
     }
     Ver ver = 1;
     bytes data = 2;
-    string receiver = 3;
-    string codecName = 4;
+    string typeName = 3;
+    string receiver = 4;
+}
+
+message ActorStart {
+	string type = 1;
+	string name = 2;
+	bytes data = 3;
+}
+
+message Ack {}
+
+message EchoMsg {
+    string msg = 1;
 }
 
 service wire {

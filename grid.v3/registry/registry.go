@@ -27,7 +27,7 @@ var (
 	ErrNotOwner                    = errors.New("registry: not owner")
 	ErrNotStarted                  = errors.New("registry: not started")
 	ErrUnknownKey                  = errors.New("registry: unknown key")
-	ErrInvalidEtcd                 = errors.New("registry: invalid etcd")
+	ErrNilEtcd                     = errors.New("registry: nil etcd")
 	ErrAlreadyRegistered           = errors.New("registry: already registered")
 	ErrFailedRegistration          = errors.New("registry: failed registration")
 	ErrFailedDeregistration        = errors.New("registry: failed deregistration")
@@ -108,7 +108,7 @@ type Registry struct {
 // New Registry.
 func New(client *etcdv3.Client) (*Registry, error) {
 	if client == nil {
-		return nil, ErrInvalidEtcd
+		return nil, ErrNilEtcd
 	}
 	return &Registry{
 		done:          make(chan bool),

@@ -51,7 +51,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		return nil, ErrInvalidNamespace
 	}
 	if etcd == nil {
-		return nil, ErrInvalidEtcd
+		return nil, ErrNilEtcd
 	}
 	return &Server{
 		cfg:      cfg,
@@ -225,16 +225,9 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 		return nil, ErrUnknownMailbox
 	}
 
-	// Decode the request into an actual
-	// type.
-	msgCodec, registed := codec.Registry().GetCodecName(d.CodecName) //TODO make this a field on the server (s.envelopeCodec) to avoid look up for each message
-	if !registed {
-		s.logf("%v: error unresgistered message type:%v", s.cfg.Namespace, d.CodecName)
-		return nil, ErrUnRegisteredMsgType
-	}
-	var msg = msgCodec.BlankSlate()
-	if err := msgCodec.Unmarshal(d.Data, msg); err != nil {
-		s.logf("%v: error unmarshaling error:%v", s.cfg.Namespace, err)
+	// Decode the request into an actual msg.
+	msg, err := codec.Unmarshal(d.Data, d.TypeName)
+	if err != nil {
 		return nil, err
 	}
 
@@ -354,14 +347,11 @@ func (s *Server) monitorLeader() {
 				return
 			case <-timer.C:
 				err := startLeader()
-				if err == ErrActorCreationNotSupported {
-					return
-				}
 				if err == ErrDefNotRegistered {
 					s.logf("skipping leader startup since leader definition not registered")
 					return
 				}
-				if err == ErrNilActorDefinition {
+				if err == ErrNilActor {
 					s.logf("skipping leader startup since make leader returned nil")
 					return
 				}
@@ -433,7 +423,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 		return err
 	}
 	if actor == nil {
-		return ErrNilActorDefinition
+		return ErrNilActor
 	}
 
 	// Register the actor. This acts as a distributed mutex to

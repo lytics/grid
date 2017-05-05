@@ -11,7 +11,13 @@ import (
 )
 
 var (
+	// ErrAlreadyResponded when respond is called multiple
+	// times on a request.
 	ErrAlreadyResponded = errors.New("already responded")
+)
+
+var (
+	constAck = &Ack{}
 )
 
 // Request which must receive an ack or response.
@@ -54,9 +60,9 @@ func (req *request) Msg() interface{} {
 }
 
 // Ack request, same as responding with Respond
-// and constant "Ack".
+// and "Ack" message.
 func (req *request) Ack() error {
-	return req.Respond(Ack)
+	return req.Respond(constAck)
 }
 
 // Respond to request with a message.
@@ -82,19 +88,14 @@ func (req *request) Respond(msg interface{}) error {
 
 	// Encode the message here, in the thread of
 	// execution of the caller.
-	cn := codec.Name(msg)
-	msgCodec, registed := codec.Registry().GetCodecName(cn)
-	if !registed {
-		return ErrUnRegisteredMsgType
-	}
-	b, err := msgCodec.Marshal(msg)
+	typeName, data, err := codec.Marshal(msg)
 	if err != nil {
 		return err
 	}
 	res := &Delivery{
-		Ver:       Delivery_V1,
-		Data:      b,
-		CodecName: cn,
+		Ver:      Delivery_V1,
+		Data:     data,
+		TypeName: typeName,
 	}
 
 	// Send the response bytes. Again, the bytes need

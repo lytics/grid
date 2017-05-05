@@ -17,6 +17,18 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Register a message so it may be sent and received.
+// Value v should not be a pointer to a type, but
+// the type itself.
+//
+// For example:
+//     Register(MyMsg{})    // Correct
+//     Register(&MyMsg{})   // Incorrect
+//
+func Register(v interface{}) error {
+	return codec.Register(v)
+}
+
 //clientAndConnPool is a pool of clientAndConn
 type clientAndConnPool struct {
 	// The 'id' is used in a kind of CAS when
@@ -142,23 +154,18 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	cn := codec.Name(msg)
-	msgCodec, registed := codec.Registry().GetCodecName(cn)
-	if !registed {
-		c.logf("%v: error unresgistered message type:%v", c.cfg.Namespace, cn)
-		return nil, ErrUnRegisteredMsgType
-	}
-	b, err := msgCodec.Marshal(msg)
+	typeName, data, err := codec.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &Delivery{
-		Ver:       Delivery_V1,
-		Data:      b,
-		CodecName: cn,
-		Receiver:  nsReceiver,
+		Ver:      Delivery_V1,
+		Data:     data,
+		TypeName: typeName,
+		Receiver: nsReceiver,
 	}
+
 	var res *Delivery
 	retry.X(3, 1*time.Second, func() bool {
 		var client WireClient
@@ -241,22 +248,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	if len(res.Data) == 0 {
-		return nil, ErrNilResponse
-	}
-
-	if res.CodecName == "" {
-		c.logf("%v: error no codec provided in response", c.cfg.Namespace)
-		return nil, ErrUnRegisteredMsgType
-	}
-
-	msgCodec, registed = codec.Registry().GetCodecName(res.CodecName)
-	if !registed {
-		c.logf("%v: error unresgistered message type:%v", c.cfg.Namespace, res.CodecName)
-		return nil, ErrUnRegisteredMsgType
-	}
-	var reply = msgCodec.BlankSlate()
-	err = msgCodec.Unmarshal(res.Data, reply)
+	reply, err := codec.Unmarshal(res.Data, res.TypeName)
 	if err != nil {
 		return nil, err
 	}
