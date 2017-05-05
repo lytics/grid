@@ -1,7 +1,6 @@
 package codec
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/lytics/grid/grid.v3/codec/protomessage"
@@ -9,14 +8,14 @@ import (
 
 func TestTypeName(t *testing.T) {
 	const (
-		expected = "protomessage.Person"
+		expected = "github.com/lytics/grid/grid.v3/codec/protomessage/Person"
 	)
 
 	msg := protomessage.Person{}
-	rt := reflect.TypeOf(msg)
+	name := TypeName(msg)
 
-	if rt.String() != expected {
-		t.Fatal("expected:", expected, " got:", rt.String())
+	if name != expected {
+		t.Fatal("expected:", expected, " got:", name)
 	}
 }
 
@@ -59,7 +58,7 @@ func TestNonProtobuf(t *testing.T) {
 	notProto := "notProto"
 
 	err := Register(notProto)
-	if err != ErrNonProtoMessage {
+	if err != ErrUnsupportedMessage {
 		t.Fatal("expected error")
 	}
 }
@@ -68,7 +67,7 @@ func TestNonProtobuf(t *testing.T) {
 // a type in the registry and marshal.
 //
 // Local results:
-//     BenchmarkMarshal-4     3000000       400 ns/op
+//     BenchmarkMarshal-4     3000000       545 ns/op
 //
 func BenchmarkMarshal(b *testing.B) {
 	err := Register(protomessage.Person{})
@@ -95,7 +94,7 @@ func BenchmarkMarshal(b *testing.B) {
 // a type in the registry and unmarshal.
 //
 // Local results:
-//     BenchmarkUnmarshal-4   3000000       463 ns/op
+//     BenchmarkUnmarshal-4   3000000       496 ns/op
 //
 func BenchmarkUnmarshal(b *testing.B) {
 	err := Register(protomessage.Person{})

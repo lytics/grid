@@ -51,7 +51,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		return nil, ErrInvalidNamespace
 	}
 	if etcd == nil {
-		return nil, ErrInvalidEtcd
+		return nil, ErrNilEtcd
 	}
 	return &Server{
 		cfg:      cfg,
@@ -347,14 +347,11 @@ func (s *Server) monitorLeader() {
 				return
 			case <-timer.C:
 				err := startLeader()
-				if err == ErrActorCreationNotSupported {
-					return
-				}
 				if err == ErrDefNotRegistered {
 					s.logf("skipping leader startup since leader definition not registered")
 					return
 				}
-				if err == ErrNilActorDefinition {
+				if err == ErrNilActor {
 					s.logf("skipping leader startup since make leader returned nil")
 					return
 				}
@@ -426,7 +423,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 		return err
 	}
 	if actor == nil {
-		return ErrNilActorDefinition
+		return ErrNilActor
 	}
 
 	// Register the actor. This acts as a distributed mutex to

@@ -11,7 +11,13 @@ import (
 )
 
 var (
+	// ErrAlreadyResponded when respond is called multiple
+	// times on a request.
 	ErrAlreadyResponded = errors.New("already responded")
+)
+
+var (
+	constAck = &Ack{}
 )
 
 // Request which must receive an ack or response.
@@ -56,7 +62,7 @@ func (req *request) Msg() interface{} {
 // Ack request, same as responding with Respond
 // and "Ack" message.
 func (req *request) Ack() error {
-	return req.Respond(&Ack{})
+	return req.Respond(constAck)
 }
 
 // Respond to request with a message.

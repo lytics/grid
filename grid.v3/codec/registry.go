@@ -9,7 +9,11 @@ import (
 )
 
 var (
-	ErrNonProtoMessage         = errors.New("codec: non proto message")
+	// ErrUnsupportedMessage when register is called with a type
+	// which cannot be en/decoded by the codec.
+	ErrUnsupportedMessage = errors.New("codec: unsupported message")
+	// ErrUnregisteredMessageType when a unregistered type is called
+	// for marshalling or unmarshalling.
 	ErrUnregisteredMessageType = errors.New("codec: unregistered message type")
 )
 
@@ -18,6 +22,8 @@ var (
 	registry = map[string]interface{}{}
 )
 
+// Register a type for marshalling and unmarshalling.
+// The type must currently implement proto.Message.
 func Register(v interface{}) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -30,7 +36,7 @@ func Register(v interface{}) error {
 
 	_, ok := pv.(proto.Message)
 	if !ok {
-		return ErrNonProtoMessage
+		return ErrUnsupportedMessage
 	}
 
 	name := TypeName(v)
@@ -38,6 +44,8 @@ func Register(v interface{}) error {
 	return nil
 }
 
+// Marshal the value into bytes. The function returns
+// the type name, the bytes, or an error.
 func Marshal(v interface{}) (string, []byte, error) {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -54,6 +62,8 @@ func Marshal(v interface{}) (string, []byte, error) {
 	return name, buf, nil
 }
 
+// Unmarshal the bytes into a value whos type is given,
+// or return an error.
 func Unmarshal(buf []byte, name string) (interface{}, error) {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -70,13 +80,18 @@ func Unmarshal(buf []byte, name string) (interface{}, error) {
 	return v, nil
 }
 
+// TypeName of a value. This name is used in the registry
+// to distinguish types.
 func TypeName(v interface{}) string {
 	rt := reflect.TypeOf(v)
-	name := rt.String()
-	if name[0] == '*' {
-		return name[1:]
+	pkg := rt.PkgPath()
+	name := rt.Name()
+	if name == "" {
+		rt = rt.Elem()
+		pkg = rt.PkgPath()
+		name = rt.Name()
 	}
-	return name
+	return pkg + "/" + name
 }
 
 func protoMarshal(v interface{}) ([]byte, error) {
