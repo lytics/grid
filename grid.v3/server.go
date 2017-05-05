@@ -1,11 +1,8 @@
 package grid
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
-	"io"
 	"net"
 	"runtime/debug"
 	"strings"
@@ -13,6 +10,7 @@ import (
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
+	"github.com/lytics/grid/grid.v3/codec"
 	"github.com/lytics/grid/grid.v3/registry"
 	netcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -53,7 +51,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		return nil, ErrInvalidNamespace
 	}
 	if etcd == nil {
-		return nil, ErrInvalidEtcd
+		return nil, ErrNilEtcd
 	}
 	return &Server{
 		cfg:      cfg,
@@ -227,26 +225,13 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 		return nil, ErrUnknownMailbox
 	}
 
-	// Write the bytes of the request into the byte
-	// buffer for decoding.
-	var buf bytes.Buffer
-	n, err := buf.Write(d.Data)
+	// Decode the request into an actual msg.
+	msg, err := codec.Unmarshal(d.Data, d.TypeName)
 	if err != nil {
 		return nil, err
-	}
-	if n != len(d.Data) {
-		return nil, io.ErrUnexpectedEOF
 	}
 
-	// Decode the request into an actual
-	// type.
-	env := &envelope{}
-	dec := gob.NewDecoder(&buf)
-	err = dec.Decode(env)
-	if err != nil {
-		return nil, err
-	}
-	req := newRequest(c, env.Msg)
+	req := newRequest(c, msg)
 
 	// Send the filled envelope to the actual
 	// receiver. Also note that the receiver
@@ -266,10 +251,8 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 		return nil, ErrContextFinished
 	case fail := <-req.failure:
 		return nil, fail
-	case data := <-req.response:
-		return &Delivery{
-			Data: data,
-		}, nil
+	case res := <-req.response:
+		return res, nil
 	}
 }
 
@@ -285,9 +268,15 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 			case *ActorStart:
 				err := s.startActorC(req.Context(), msg)
 				if err != nil {
-					req.Respond(err)
+					err2 := req.Respond(err)
+					if err != nil {
+						s.logf("%v: error sending respond(err:%v): err:%v", s.cfg.Namespace, err, err2)
+					}
 				} else {
-					req.Ack()
+					err := req.Ack()
+					if err != nil {
+						s.logf("%v: error sending ack: err:%v", s.cfg.Namespace, err)
+					}
 				}
 			}
 		}
@@ -358,14 +347,11 @@ func (s *Server) monitorLeader() {
 				return
 			case <-timer.C:
 				err := startLeader()
-				if err == ErrActorCreationNotSupported {
-					return
-				}
 				if err == ErrDefNotRegistered {
 					s.logf("skipping leader startup since leader definition not registered")
 					return
 				}
-				if err == ErrNilActorDefinition {
+				if err == ErrNilActor {
 					s.logf("skipping leader startup since make leader returned nil")
 					return
 				}
@@ -437,7 +423,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 		return err
 	}
 	if actor == nil {
-		return ErrNilActorDefinition
+		return ErrNilActor
 	}
 
 	// Register the actor. This acts as a distributed mutex to

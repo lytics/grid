@@ -6,13 +6,22 @@ message Delivery {
     enum Ver {
         V1 = 0;
     }
-    enum Enc {
-        Gob = 0;
-    }
     Ver ver = 1;
-    Enc enc = 2;
-    bytes data = 3;
+    bytes data = 2;
+    string typeName = 3;
     string receiver = 4;
+}
+
+message ActorStart {
+	string type = 1;
+	string name = 2;
+	bytes data = 3;
+}
+
+message Ack {}
+
+message EchoMsg {
+    string msg = 1;
 }
 
 service wire {

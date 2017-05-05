@@ -3,9 +3,7 @@ package grid
 import (
 	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
-	"io"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -13,10 +11,23 @@ import (
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
+	"github.com/lytics/grid/grid.v3/codec"
 	"github.com/lytics/grid/grid.v3/registry"
 	"github.com/lytics/retry"
 	"google.golang.org/grpc"
 )
+
+// Register a message so it may be sent and received.
+// Value v should not be a pointer to a type, but
+// the type itself.
+//
+// For example:
+//     Register(MyMsg{})    // Correct
+//     Register(&MyMsg{})   // Incorrect
+//
+func Register(v interface{}) error {
+	return codec.Register(v)
+}
 
 //clientAndConnPool is a pool of clientAndConn
 type clientAndConnPool struct {
@@ -137,29 +148,24 @@ func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}
 // RequestC (request) a response for the given message. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
-	env := &envelope{
-		Msg: msg,
-	}
-
 	// Namespaced receiver name.
 	nsReceiver, err := namespaceName(Mailboxes, c.cfg.Namespace, receiver)
 	if err != nil {
 		return nil, err
 	}
 
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err = enc.Encode(env)
+	typeName, data, err := codec.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &Delivery{
 		Ver:      Delivery_V1,
-		Enc:      Delivery_Gob,
-		Data:     buf.Bytes(),
+		Data:     data,
+		TypeName: typeName,
 		Receiver: nsReceiver,
 	}
+
 	var res *Delivery
 	retry.X(3, 1*time.Second, func() bool {
 		var client WireClient
@@ -242,26 +248,12 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	buf.Reset()
-	n, err := buf.Write(res.Data)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(res.Data) {
-		return nil, io.ErrUnexpectedEOF
-	}
-
-	env = &envelope{}
-	dec := gob.NewDecoder(&buf)
-	err = dec.Decode(env)
+	reply, err := codec.Unmarshal(res.Data, res.TypeName)
 	if err != nil {
 		return nil, err
 	}
 
-	if env.Msg != nil {
-		return env.Msg, nil
-	}
-	return nil, ErrNilResponse
+	return reply, nil
 }
 
 // getWireClient for the address of the receiver.
