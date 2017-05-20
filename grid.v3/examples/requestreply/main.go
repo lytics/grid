@@ -107,6 +107,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
 }
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 	logger := log.New(os.Stderr, "reqrep: ", log.LstdFlags)
 
 	flag.StringVar(&grpcAddress, "address", grpcAddress, "bind address for gRPC")
@@ -212,7 +213,7 @@ func (m *apiServer) loadWorkers() {
 }
 
 func (m *apiServer) RandomWorker() string {
-	val := rand.Int31n(int32(m.workerCt - 1))
+	val := rand.Int31n(int32(m.workerCt))
 	return fmt.Sprintf("worker-%d", val+1)
 }
 
