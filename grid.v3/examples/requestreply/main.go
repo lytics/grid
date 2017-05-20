@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,13 +20,15 @@ import (
 )
 
 var (
-	runApi bool
+	runApi      bool   = false
+	grpcAddress string = "localhost:0"
+	etcdServers string = "localhost:2379"
 )
 
 const timeout = 2 * time.Second
 
-// LeaderActor is the scheduler to watch the workers but the "work"
-// comes from requests
+// LeaderActor is the scheduler to create and watch
+// the workers but the work comes from http requests
 type LeaderActor struct {
 	client *grid.Client
 }
@@ -75,7 +78,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
 
 	name, _ := grid.ContextActorName(ctx)
 
-	fmt.Printf("worker: %q\n", name)
+	fmt.Printf("starting %q\n", name)
 
 	// Listen to a mailbox with the same
 	// name as the actor.
@@ -104,25 +107,27 @@ func (a *WorkerActor) Act(ctx context.Context) {
 }
 
 func main() {
-	logger := log.New(os.Stderr, "hellogrid: ", log.LstdFlags)
+	logger := log.New(os.Stderr, "reqrep: ", log.LstdFlags)
 
-	address := flag.String("address", "localhost:0", "bind address for gRPC")
+	flag.StringVar(&grpcAddress, "address", grpcAddress, "bind address for gRPC")
+	flag.StringVar(&etcdServers, "etcd", etcdServers, "etcd servers, comma delimited")
 	flag.BoolVar(&runApi, "api", false, "run api?")
 	flag.Parse()
 
+	// Register our Message Types.
 	grid.Register(Event{})
 	grid.Register(EventResponse{})
 
 	// Connect to etcd.
-	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: []string{"localhost:2379"}})
+	etcd, err := etcdv3.New(etcdv3.Config{Endpoints: strings.Split(etcdServers, ",")})
 	successOrDie(err)
 
 	// Create a grid client.
-	client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "hellogrid", Logger: logger})
+	client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "reqrep", Logger: logger})
 	successOrDie(err)
 
 	// Create a grid server.
-	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "hellogrid", Logger: logger})
+	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: "reqrep", Logger: logger})
 	successOrDie(err)
 
 	// Define how actors are created.
@@ -143,7 +148,7 @@ func main() {
 		go api.Run()
 	}
 
-	lis, err := net.Listen("tcp", *address)
+	lis, err := net.Listen("tcp", grpcAddress)
 	successOrDie(err)
 
 	// The "leader" actor is special, it will automatically
@@ -176,11 +181,14 @@ func NewApi(c *grid.Client) *apiServer {
 	a.ctx = context.Background()
 	return a
 }
+
+// Keep watching for changes to workers
 func (m *apiServer) loadWorkers() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	//m.c.QueryWatch(ctx, filter)
+	// TODO:  use querywatch instead
+	// m.c.QueryWatch(ctx, filter)
 
 	for {
 		select {
@@ -204,12 +212,12 @@ func (m *apiServer) loadWorkers() {
 }
 
 func (m *apiServer) RandomWorker() string {
-	val := rand.Int31n(m.workerCt - 1)
+	val := rand.Int31n(int32(m.workerCt - 1))
 	return fmt.Sprintf("worker-%d", val+1)
 }
 
 func (m *apiServer) Run() {
-	// Ensure we have a current list
+	// Ensure we have a current list of workers.
 	go m.loadWorkers()
 
 	http.HandleFunc("/work", func(w http.ResponseWriter, r *http.Request) {
