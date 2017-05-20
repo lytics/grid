@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -91,7 +92,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
 			switch req.Msg().(type) {
 			case *Event:
 				fmt.Printf("msg %+v\n", req.Msg())
-				err := req.Respond(&EventResponse{Id: "123"})
+				err := req.Respond(&EventResponse{Id: name})
 				if err != nil {
 					fmt.Printf("error on message response %v\n", err)
 				}
@@ -163,10 +164,11 @@ func successOrDie(err error) {
 }
 
 type apiServer struct {
-	c     *grid.Client
-	ctx   context.Context
-	peers map[string]bool
-	mu    sync.Mutex
+	c        *grid.Client
+	ctx      context.Context
+	peers    map[string]bool
+	workerCt int
+	mu       sync.Mutex
 }
 
 func NewApi(c *grid.Client) *apiServer {
@@ -194,18 +196,25 @@ func (m *apiServer) loadWorkers() {
 				existing[peer.Name()] = true
 			}
 			m.peers = existing
+			m.workerCt = len(existing)
 			fmt.Println("found peers ", m.peers)
 			m.mu.Unlock()
 		}
 	}
 }
+
+func (m *apiServer) RandomWorker() string {
+	val := rand.Int31n(m.workerCt - 1)
+	return fmt.Sprintf("worker-%d", val+1)
+}
+
 func (m *apiServer) Run() {
 	// Ensure we have a current list
 	go m.loadWorkers()
 
 	http.HandleFunc("/work", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("in /work handler")
-		res, err := m.c.Request(timeout, "worker-2", &Event{User: "Aaron"})
+		res, err := m.c.Request(timeout, m.RandomWorker(), &Event{User: "Aaron"})
 		fmt.Printf("%#v  %v\n", res, err)
 		if er, ok := res.(*EventResponse); ok {
 			fmt.Fprintf(w, "Response %s\n\n", er.Id)
