@@ -1,0 +1,12 @@
+syntax = "proto3";
+package main;
+
+message Event {
+	string timestamp = 1;
+	string user = 2;
+	string url = 3;
+}
+
+message EventResponse {
+	string id = 1;
+}
