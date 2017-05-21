@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"math/rand"
 	"net"
@@ -20,9 +21,9 @@ import (
 )
 
 var (
-	runApi      bool   = false
 	grpcAddress string = "localhost:0"
 	etcdServers string = "localhost:2379"
+	httpAddress string = "localhost:8080"
 )
 
 const timeout = 2 * time.Second
@@ -38,6 +39,8 @@ type LeaderActor struct {
 func (a *LeaderActor) Act(c context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+
+	fmt.Println("Starting Leader Actor")
 
 	existing := make(map[string]bool)
 	for {
@@ -73,7 +76,8 @@ type WorkerActor struct {
 	server *grid.Server
 }
 
-// Act says hello and then waits for the exit signal.
+// Act listens for messages from an http agent, and
+// does its work and responds.
 func (a *WorkerActor) Act(ctx context.Context) {
 
 	name, _ := grid.ContextActorName(ctx)
@@ -110,9 +114,9 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	logger := log.New(os.Stderr, "reqrep: ", log.LstdFlags)
 
-	flag.StringVar(&grpcAddress, "address", grpcAddress, "bind address for gRPC")
+	flag.StringVar(&grpcAddress, "grpcaddress", grpcAddress, "bind address for gRPC")
 	flag.StringVar(&etcdServers, "etcd", etcdServers, "etcd servers, comma delimited")
-	flag.BoolVar(&runApi, "api", false, "run api?")
+	flag.StringVar(&httpAddress, "httpaddress", httpAddress, "http listener address")
 	flag.Parse()
 
 	// Register our Message Types.
@@ -144,10 +148,10 @@ func main() {
 		fmt.Println("shutdown complete")
 	}()
 
-	if runApi {
-		api := NewApi(client)
-		go api.Run()
-	}
+	// Only one http listener per Node, as it binds to port
+	// 2nd will die quietly, which is fine
+	api := NewApi(client)
+	go api.Run()
 
 	lis, err := net.Listen("tcp", grpcAddress)
 	successOrDie(err)
@@ -170,23 +174,25 @@ func successOrDie(err error) {
 }
 
 type apiServer struct {
-	c        *grid.Client
-	ctx      context.Context
-	peers    map[string]bool
-	workerCt int
-	mu       sync.Mutex
+	c                *grid.Client
+	ctx              context.Context
+	peers            map[string]bool
+	workerCt         int
+	mu               sync.Mutex
+	workerLoadTicker *time.Ticker
 }
 
 func NewApi(c *grid.Client) *apiServer {
 	a := &apiServer{c: c}
 	a.ctx = context.Background()
+	a.workerLoadTicker = time.NewTicker(2 * time.Second)
 	return a
 }
 
 // Keep watching for changes to workers
 func (m *apiServer) loadWorkers() {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+
+	defer m.workerLoadTicker.Stop()
 
 	// TODO:  use querywatch instead
 	// m.c.QueryWatch(ctx, filter)
@@ -195,7 +201,11 @@ func (m *apiServer) loadWorkers() {
 		select {
 		case <-m.ctx.Done():
 			return
-		case <-ticker.C:
+		case _, ok := <-m.workerLoadTicker.C:
+			if !ok {
+				fmt.Println("Got exit in ticket")
+				return
+			}
 			// Ask for current peers.
 			peers, err := m.c.Query(timeout, grid.Peers)
 			successOrDie(err)
@@ -212,19 +222,42 @@ func (m *apiServer) loadWorkers() {
 	}
 }
 
+func (m *apiServer) ConsistentWorker(user string) string {
+	h := fnv.New32a()
+	h.Write([]byte(user))
+	val := h.Sum32()
+	fmt.Printf("val: %d   modulo:%d \n\n", val, val%uint32(m.workerCt))
+	return fmt.Sprintf("worker-%d", (val%uint32(m.workerCt))+1)
+}
+
 func (m *apiServer) RandomWorker() string {
 	val := rand.Int31n(int32(m.workerCt))
 	return fmt.Sprintf("worker-%d", val+1)
 }
 
 func (m *apiServer) Run() {
+
 	// Ensure we have a current list of workers.
 	go m.loadWorkers()
 
 	http.HandleFunc("/work", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("in /work handler")
-		res, err := m.c.Request(timeout, m.RandomWorker(), &Event{User: "Aaron"})
-		fmt.Printf("%#v  %v\n", res, err)
+
+		// Use data in request to use consistent hashing
+		// to ensure requests get routed
+		// to same server for same xxxx in request
+
+		user := r.URL.Query().Get("user")
+		var worker string
+		if user == "" {
+			user = "World"
+			worker = m.RandomWorker()
+		} else {
+			worker = m.ConsistentWorker(user)
+		}
+
+		res, err := m.c.Request(timeout, worker, &Event{User: user})
+		fmt.Printf("request user: %q   response: %#v  err=%v\n", user, res, err)
 		if er, ok := res.(*EventResponse); ok {
 			fmt.Fprintf(w, "Response %s\n\n", er.Id)
 		} else {
@@ -232,5 +265,11 @@ func (m *apiServer) Run() {
 		}
 	})
 
-	log.Fatal(http.ListenAndServe(":8087", nil))
+	err := http.ListenAndServe(httpAddress, nil)
+	if err != nil {
+		// In event this server/node already has other
+		// workers, we won't run api on this one as we
+		// only need one per server.
+		m.workerLoadTicker.Stop()
+	}
 }
