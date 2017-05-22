@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/clientv3"
-	"github.com/lytics/grid/grid.v3/testetcd"
+	"github.com/lytics/grid/testetcd"
 )
 
 type busyActor struct {
@@ -204,7 +204,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 
 	// Start the echo actor on the first peer.
-	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("mock"))
+	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("echo"))
 	if err != nil {
 		t.Fatal(err)
 	}
