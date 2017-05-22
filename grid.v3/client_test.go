@@ -204,7 +204,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 
 	// Start the echo actor on the first peer.
-	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("echo"))
+	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("mock"))
 	if err != nil {
 		t.Fatal(err)
 	}
