@@ -17,7 +17,7 @@ import (
 
 type Cleanup func() error
 
-func StartAndConnect(t *testing.T) (*clientv3.Client, Cleanup) {
+func StartAndConnect(t testing.TB) (*clientv3.Client, Cleanup) {
 	srvCfg, cleanup := Start(t)
 
 	endpoints := []string{}
@@ -37,7 +37,7 @@ func StartAndConnect(t *testing.T) (*clientv3.Client, Cleanup) {
 	return etcd, cleanup
 }
 
-func Start(t *testing.T) (*embed.Config, Cleanup) {
+func Start(t testing.TB) (*embed.Config, Cleanup) {
 	cfg := embed.NewConfig()
 	dir, _ := ioutil.TempDir("", "etcd.testserver.")
 	cfg.Dir = dir
