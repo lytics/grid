@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lytics/grid/grid.v3/testetcd"
+	"github.com/lytics/grid/testetcd"
 )
 
 type contextActor struct {

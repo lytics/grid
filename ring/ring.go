@@ -6,7 +6,7 @@ import (
 	"hash/fnv"
 	"math/rand"
 
-	"github.com/lytics/grid/grid.v3"
+	"github.com/lytics/grid"
 )
 
 // Ring represents a set of actor members used to divide a data

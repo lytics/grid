@@ -12,7 +12,7 @@ import (
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
-	"github.com/lytics/grid/grid.v3/testetcd"
+	"github.com/lytics/grid/testetcd"
 )
 
 const (

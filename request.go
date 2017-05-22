@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/lytics/grid/grid.v3/codec"
+	"github.com/lytics/grid/codec"
 	netcontext "golang.org/x/net/context"
 )
 

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
-	"github.com/lytics/grid/grid.v3/codec"
-	"github.com/lytics/grid/grid.v3/registry"
+	"github.com/lytics/grid/codec"
+	"github.com/lytics/grid/registry"
 	"github.com/lytics/retry"
 	"google.golang.org/grpc"
 )

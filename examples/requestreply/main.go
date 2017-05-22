@@ -17,7 +17,7 @@ import (
 	"time"
 
 	etcdv3 "github.com/coreos/etcd/clientv3"
-	"github.com/lytics/grid/grid.v3"
+	"github.com/lytics/grid"
 )
 
 var (
