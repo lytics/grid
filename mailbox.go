@@ -8,6 +8,7 @@ import (
 // Mailbox for receiving messages.
 type Mailbox struct {
 	name    string
+	nsName  string
 	C       <-chan Request
 	c       chan Request
 	cleanup func() error
@@ -18,9 +19,14 @@ func (box *Mailbox) Close() error {
 	return box.cleanup()
 }
 
-// String of mailbox name.
-func (box *Mailbox) String() string {
+// Name of mailbox, without namespace.
+func (box *Mailbox) Name() string {
 	return box.name
+}
+
+// String of mailbox name, with full namespace.
+func (box *Mailbox) String() string {
+	return box.nsName
 }
 
 // NewMailbox for requests addressed to name. Size will be the mailbox's
@@ -61,10 +67,10 @@ func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 		return nil, err
 	}
 
-	return newMailbox(s, nsName, size)
+	return newMailbox(s, name, nsName, size)
 }
 
-func newMailbox(s *Server, nsName string, size int) (*Mailbox, error) {
+func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -83,7 +89,7 @@ func newMailbox(s *Server, nsName string, size int) (*Mailbox, error) {
 	// Check if the error is a particular fatal error
 	// from etcd. Some errors have no recovery. See
 	// the list of all possible errors here:
-	// 
+	//
 	// https://github.com/coreos/etcd/blob/master/etcdserver/api/v3rpc/rpctypes/error.go
 	//
 	// They are unfortunately not classidied into
@@ -114,7 +120,8 @@ func newMailbox(s *Server, nsName string, size int) (*Mailbox, error) {
 	}
 	boxC := make(chan Request, size)
 	box := &Mailbox{
-		name:    nsName,
+		name:    name,
+		nsName:  nsName,
 		C:       boxC,
 		c:       boxC,
 		cleanup: cleanup,
