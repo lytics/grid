@@ -1,9 +1,10 @@
 package grid
 
 import (
-	"log"
 	"runtime"
 	"time"
+
+	"github.com/lytics/grid/registry"
 )
 
 // ClientCfg where the only required argument is Namespace,
@@ -21,7 +22,7 @@ type ClientCfg struct {
 	// but increases the number of file-handles used.
 	ConnectionsPerPeer int
 	// Logger optionally used for logging, default is to not log.
-	Logger *log.Logger
+	Logger registry.LogPrinter
 }
 
 // setClientCfgDefaults for those fields that have their zero value.
@@ -49,7 +50,7 @@ type ServerCfg struct {
 	// LeaseDuration for data in etcd.
 	LeaseDuration time.Duration
 	// Logger optionally used for logging, default is to not log.
-	Logger *log.Logger
+	Logger registry.LogPrinter
 }
 
 // setServerCfgDefaults for those fields that have their zero value.
