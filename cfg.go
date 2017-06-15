@@ -3,9 +3,13 @@ package grid
 import (
 	"runtime"
 	"time"
-
-	"github.com/lytics/grid/registry"
 )
+
+// Logger hides the logging function Printf behind a simple
+// interface so libraries such as logrus can be used.
+type Logger interface {
+	Printf(string, ...interface{})
+}
 
 // ClientCfg where the only required argument is Namespace,
 // other fields with their zero value will receive defaults.
@@ -22,7 +26,7 @@ type ClientCfg struct {
 	// but increases the number of file-handles used.
 	ConnectionsPerPeer int
 	// Logger optionally used for logging, default is to not log.
-	Logger registry.LogPrinter
+	Logger Logger
 }
 
 // setClientCfgDefaults for those fields that have their zero value.
@@ -50,7 +54,7 @@ type ServerCfg struct {
 	// LeaseDuration for data in etcd.
 	LeaseDuration time.Duration
 	// Logger optionally used for logging, default is to not log.
-	Logger registry.LogPrinter
+	Logger Logger
 }
 
 // setServerCfgDefaults for those fields that have their zero value.

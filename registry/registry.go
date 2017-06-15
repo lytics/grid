@@ -15,9 +15,10 @@ import (
 
 type Option int
 
-// LogPrinter hides the logging function Printf behind a simple
+// Logger hides the logging function Printf behind a simple
 // interface so libraries such as logrus can be used.
-type LogPrinter interface {
+// Copied from package grid to avoid interndependencies.
+type Logger interface {
 	Printf(string, ...interface{})
 }
 
@@ -103,7 +104,7 @@ type Registry struct {
 	client        *etcdv3.Client
 	name          string
 	address       string
-	Logger        LogPrinter
+	Logger        Logger
 	Timeout       time.Duration
 	LeaseDuration time.Duration
 	// Testing hook.
