@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"strings"
 	"sync"
@@ -15,6 +14,13 @@ import (
 )
 
 type Option int
+
+// Logger hides the logging function Printf behind a simple
+// interface so libraries such as logrus can be used.
+// Copied from package grid to avoid interndependencies.
+type Logger interface {
+	Printf(string, ...interface{})
+}
 
 const (
 	// OpAllowReentrantRegistration will cause a registration
@@ -98,7 +104,7 @@ type Registry struct {
 	client        *etcdv3.Client
 	name          string
 	address       string
-	Logger        *log.Logger
+	Logger        Logger
 	Timeout       time.Duration
 	LeaseDuration time.Duration
 	// Testing hook.
