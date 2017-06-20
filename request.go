@@ -3,7 +3,6 @@ package grid
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/lytics/grid/codec"
@@ -71,7 +70,6 @@ func (req *request) Respond(msg interface{}) error {
 	defer req.mu.Unlock()
 
 	if req.finished {
-		fmt.Printf("exit 1\n")
 		return ErrAlreadyResponded
 	}
 	req.finished = true
