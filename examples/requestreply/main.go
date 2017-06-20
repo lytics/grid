@@ -112,7 +112,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-	logger := log.New(os.Stderr, "reqrep: ", log.LstdFlags)
+	logger := log.New(os.Stderr, "requestreply: ", log.LstdFlags)
 
 	flag.StringVar(&grpcAddress, "grpcaddress", grpcAddress, "bind address for gRPC")
 	flag.StringVar(&etcdServers, "etcd", etcdServers, "etcd servers, comma delimited")

@@ -400,7 +400,8 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, testetcd.Cleanup, *Ser
 	// Start etcd.
 	etcd, cleanup := testetcd.StartAndConnect(t)
 
-	var logger *log.Logger = log.New(os.Stderr, "hellogrid: ", log.LstdFlags)
+	// Logger for actors.
+	logger := log.New(os.Stderr, "testing: ", log.LstdFlags)
 
 	// Create the server.
 	server, err := NewServer(etcd, ServerCfg{Namespace: "testing", Logger: logger})

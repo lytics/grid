@@ -8,26 +8,21 @@ micro-service.
 
 ### What You Will Learn
 
-1. How to Send/Receive messages to existing workers.
-
-
-Assumes you have already read **Hello** example.
-
-```
+How to Send/Receive messages to existing workers. Assumes
+you have already read `hello` example.
 
 ### Running the Example
 
-In a terminal run the following command from inside the requestreply
+In a terminal run the following commands from inside the requestreply
 directory:
 
 ```sh
 # Start an api server
 go run main.go
 
-# start n worker nodes
+# Start n worker nodes
 go run main.go
 
-
+# Make request to worker pool
 curl -sS locahost:8080/work
-
 ```
