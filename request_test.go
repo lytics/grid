@@ -2,7 +2,6 @@ package grid
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -36,7 +35,6 @@ type unregisteredMsg struct{}
 func TestUnregisteredMessageError(t *testing.T) {
 	req := &request{}
 	err := req.Respond(&unregisteredMsg{})
-	fmt.Println(err)
 	if err == nil {
 		t.Fatal("expected error")
 	}
