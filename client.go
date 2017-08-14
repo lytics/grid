@@ -128,6 +128,8 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 
 // Close all outbound connections of this client immediately.
 func (c *Client) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var err error
 	for _, ccpool := range c.clientsAndConns {
 		closeErr := ccpool.close()

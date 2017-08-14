@@ -408,6 +408,9 @@ func (s *Server) startActor(timeout time.Duration, start *ActorStart) error {
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
 func (s *Server) startActorC(c context.Context, start *ActorStart) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if !isNameValid(start.Type) {
 		return ErrInvalidActorType
 	}
