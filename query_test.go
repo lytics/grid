@@ -17,16 +17,19 @@ func TestQuery(t *testing.T) {
 		timeout = 1 * time.Second
 	)
 
-	etcd, cleanup := testetcd.StartAndConnect(t)
-	defer cleanup()
+	namespace := newNamespace()
 
-	c, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
+	etcd := testetcd.StartAndConnect(t)
+	defer etcd.Close()
+
+	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.Close()
 
 	for i := 1; i <= nrPeers; i++ {
-		s, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+		s, err := NewServer(etcd, ServerCfg{Namespace: namespace})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,9 +54,9 @@ func TestQuery(t *testing.T) {
 		// Check for server as a peer.
 		var peers []*QueryEvent
 		retry.X(6, backoff, func() bool {
-			peers, err = c.Query(timeout, Peers)
+			peers, err = client.Query(timeout, Peers)
 			t.Logf("peers: %v", peers)
-			return err != nil
+			return err != nil || len(peers) != i
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -71,15 +74,18 @@ func TestQueryWatch(t *testing.T) {
 		timeout = 1 * time.Second
 	)
 
-	etcd, cleanup := testetcd.StartAndConnect(t)
-	defer cleanup()
+	namespace := newNamespace()
 
-	c, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
+	etcd := testetcd.StartAndConnect(t)
+	defer etcd.Close()
+
+	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.Close()
 
-	initialPeers, watch, err := c.QueryWatch(context.Background(), Peers)
+	initialPeers, watch, err := client.QueryWatch(context.Background(), Peers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +96,7 @@ func TestQueryWatch(t *testing.T) {
 	// Start servers one at a time in the background.
 	go func() {
 		for i := 1; i <= nrPeers; i++ {
-			s, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+			s, err := NewServer(etcd, ServerCfg{Namespace: namespace})
 			if err != nil {
 				t.Fatal(err)
 			}

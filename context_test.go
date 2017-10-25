@@ -54,12 +54,12 @@ func TestContextError(t *testing.T) {
 func TestValidContext(t *testing.T) {
 	const timeout = 2 * time.Second
 
-	etcd, cleanup := testetcd.StartAndConnect(t)
-	defer cleanup()
+	etcd := testetcd.StartAndConnect(t)
+	defer etcd.Close()
 
 	a := &contextActor{started: make(chan bool)}
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	if err != nil {
 		t.Fatal(err)
 	}

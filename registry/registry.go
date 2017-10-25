@@ -282,6 +282,7 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 	}
 	putTerminalError := func(we *WatchEvent) {
 		go func() {
+			defer close(watchEvents)
 			select {
 			case <-time.After(10 * time.Minute):
 			case watchEvents <- we:
@@ -316,17 +317,18 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 	// at the revision of the get call above.
 	deltas := rr.client.Watch(c, prefix, etcdv3.WithPrefix(), etcdv3.WithRev(getRes.Header.Revision+1))
 	go func() {
-		defer close(watchEvents)
 		for {
 			select {
 			case delta, open := <-deltas:
 				if !open {
 					select {
 					case <-c.Done():
+						close(watchEvents)
+						return
 					default:
 						putTerminalError(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
+						return
 					}
-					return
 				}
 				if delta.Err() != nil {
 					putTerminalError(&WatchEvent{Error: delta.Err()})
