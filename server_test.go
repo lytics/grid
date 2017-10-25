@@ -26,8 +26,8 @@ func TestServerStartStop(t *testing.T) {
 		timeout = 20 * time.Second
 	)
 
-	etcd, cleanup := testetcd.StartAndConnect(t)
-	defer cleanup()
+	etcd := testetcd.StartAndConnect(t)
+	defer etcd.Close()
 
 	a := &startStopActor{
 		started: make(chan bool),
@@ -88,8 +88,8 @@ func TestServerWithFatalError(t *testing.T) {
 		timeout = 20 * time.Second
 	)
 
-	etcd, cleanup := testetcd.StartAndConnect(t)
-	defer cleanup()
+	etcd := testetcd.StartAndConnect(t)
+	defer etcd.Close()
 
 	a := &startStopActor{
 		started: make(chan bool),
@@ -143,8 +143,8 @@ func TestServerStartNoEtcdRunning(t *testing.T) {
 	)
 
 	// Start etcd, but shut it down right away.
-	etcd, cleanup := testetcd.StartAndConnect(t)
-	cleanup()
+	etcd := testetcd.StartAndConnect(t)
+	etcd.Close()
 
 	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	if err != nil {
@@ -170,7 +170,8 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 		stopped: make(chan bool),
 	}
 
-	etcd, cleanup := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t)
+	defer etcd.Close()
 
 	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	if err != nil {
@@ -199,7 +200,7 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 				t.Fatal(err)
 			}
 		case <-a.started:
-			err := cleanup()
+			err := etcd.Close()
 			if err != nil {
 				t.Fatal(err)
 			}

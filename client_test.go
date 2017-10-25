@@ -70,12 +70,9 @@ func init() {
 }
 
 func TestNewClient(t *testing.T) {
-	namespace := newNamespace()
+	etcd := testetcd.StartAndConnect(t)
 
-	etcd, cleanup := testetcd.StartAndConnect(t)
-	defer cleanup()
-
-	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
+	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,9 +80,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClientWithNilEtcd(t *testing.T) {
-	namespace := newNamespace()
-
-	_, err := NewClient(nil, ClientCfg{Namespace: namespace})
+	_, err := NewClient(nil, ClientCfg{Namespace: newNamespace()})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -93,8 +88,7 @@ func TestNewClientWithNilEtcd(t *testing.T) {
 
 func TestClientClose(t *testing.T) {
 	// Start etcd.
-	etcd, cleanup := testetcd.StartAndConnect(t)
-	defer cleanup()
+	etcd := testetcd.StartAndConnect(t)
 
 	// Create client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
@@ -116,8 +110,8 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 	const timeout = 2 * time.Second
 
 	// Bootstrap.
-	_, cleanup, server, client := bootstrapClientTest(t)
-	defer cleanup()
+	etcd, server, client := bootstrapClientTest(t)
+	defer etcd.Close()
 	defer server.Stop()
 	defer client.Close()
 
@@ -142,8 +136,8 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 	const timeout = 2 * time.Second
 
 	// Bootstrap.
-	_, cleanup, server, client := bootstrapClientTest(t)
-	defer cleanup()
+	etcd, server, client := bootstrapClientTest(t)
+	defer etcd.Close()
 	defer server.Stop()
 	defer client.Close()
 
@@ -181,8 +175,8 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	expected := &EchoMsg{"testing 1, 2, 3"}
 
 	// Bootstrap.
-	_, cleanup, server, client := bootstrapClientTest(t)
-	defer cleanup()
+	etcd, server, client := bootstrapClientTest(t)
+	defer etcd.Close()
 	defer server.Stop()
 	defer client.Close()
 
@@ -248,8 +242,8 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	expected := &EchoMsg{"testing 1, 2, 3"}
 
 	// Bootstrap.
-	_, cleanup, server, client := bootstrapClientTest(t)
-	defer cleanup()
+	etcd, server, client := bootstrapClientTest(t)
+	defer etcd.Close()
 	defer client.Close()
 
 	// Set client stats.
@@ -322,8 +316,8 @@ func TestClientWithBusyReceiver(t *testing.T) {
 	expected := &EchoMsg{"testing 1, 2, 3"}
 
 	// Bootstrap.
-	_, cleanup, server, client := bootstrapClientTest(t)
-	defer cleanup()
+	etcd, server, client := bootstrapClientTest(t)
+	defer etcd.Close()
 	defer server.Stop()
 	defer client.Close()
 
@@ -400,12 +394,12 @@ func TestNilClientStats(t *testing.T) {
 	cs.Inc(numGetWireClient)
 }
 
-func bootstrapClientTest(t *testing.T) (*clientv3.Client, testetcd.Cleanup, *Server, *Client) {
+func bootstrapClientTest(t *testing.T) (*clientv3.Client, *Server, *Client) {
 	// Namespace for test.
 	namespace := newNamespace()
 
 	// Start etcd.
-	etcd, cleanup := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t)
 
 	// Logger for actors.
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags)
@@ -438,5 +432,5 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, testetcd.Cleanup, *Ser
 		t.Fatal(err)
 	}
 
-	return etcd, cleanup, server, client
+	return etcd, server, client
 }
