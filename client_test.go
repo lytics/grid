@@ -70,10 +70,12 @@ func init() {
 }
 
 func TestNewClient(t *testing.T) {
+	namespace := newNamespace()
+
 	etcd, cleanup := testetcd.StartAndConnect(t)
 	defer cleanup()
 
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
+	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +83,9 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClientWithNilEtcd(t *testing.T) {
-	_, err := NewClient(nil, ClientCfg{Namespace: "testing"})
+	namespace := newNamespace()
+
+	_, err := NewClient(nil, ClientCfg{Namespace: namespace})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -93,7 +97,7 @@ func TestClientClose(t *testing.T) {
 	defer cleanup()
 
 	// Create client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing"})
+	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +153,7 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 	// Place a bogus entry in etcd with
 	// a matching name.
 	timeoutC, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	err := server.registry.Register(timeoutC, "testing.mailbox.mock")
+	err := server.registry.Register(timeoutC, client.cfg.Namespace+".mailbox.mock")
 	cancel()
 	if err != nil {
 		t.Fatal(err)
@@ -397,14 +401,17 @@ func TestNilClientStats(t *testing.T) {
 }
 
 func bootstrapClientTest(t *testing.T) (*clientv3.Client, testetcd.Cleanup, *Server, *Client) {
+	// Namespace for test.
+	namespace := newNamespace()
+
 	// Start etcd.
 	etcd, cleanup := testetcd.StartAndConnect(t)
 
 	// Logger for actors.
-	logger := log.New(os.Stderr, "testing: ", log.LstdFlags)
+	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags)
 
 	// Create the server.
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing", Logger: logger})
+	server, err := NewServer(etcd, ServerCfg{Namespace: namespace, Logger: logger})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +433,7 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, testetcd.Cleanup, *Ser
 	time.Sleep(2 * time.Second)
 
 	// Create a grid client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: "testing", Logger: logger})
+	client, err := NewClient(etcd, ClientCfg{Namespace: namespace, Logger: logger})
 	if err != nil {
 		t.Fatal(err)
 	}

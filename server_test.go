@@ -34,7 +34,7 @@ func TestServerStartStop(t *testing.T) {
 		stopped: make(chan bool),
 	}
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestServerWithFatalError(t *testing.T) {
 		stopped: make(chan bool),
 	}
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestServerStartNoEtcdRunning(t *testing.T) {
 	etcd, cleanup := testetcd.StartAndConnect(t)
 	cleanup()
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 
 	etcd, cleanup := testetcd.StartAndConnect(t)
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: "testing"})
+	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	if err != nil {
 		t.Fatal(err)
 	}
