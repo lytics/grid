@@ -95,7 +95,10 @@ func (a *WorkerActor) Act(ctx context.Context) {
 		case <-ctx.Done():
 			fmt.Println("goodbye...")
 			return
-		case req := <-mailbox.C:
+		case req, ok := <-mailbox.C:
+			if !ok {
+				return
+			}
 			switch req.Msg().(type) {
 			case *Event:
 				fmt.Printf("msg %+v\n", req.Msg())
