@@ -21,8 +21,7 @@ const (
 )
 
 func TestInitialLeaseID(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, dontStart)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, dontStart)
 	defer client.Close()
 
 	if r.leaseID != -1 {
@@ -31,8 +30,7 @@ func TestInitialLeaseID(t *testing.T) {
 }
 
 func TestStartStop(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, start)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, start)
 	defer client.Close()
 
 	r.Stop()
@@ -44,8 +42,7 @@ func TestStartStop(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, start)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, start)
 	defer client.Close()
 	defer r.Stop()
 
@@ -75,8 +72,7 @@ func TestRegister(t *testing.T) {
 }
 
 func TestDeregistration(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, start)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, start)
 	defer client.Close()
 	defer r.Stop()
 
@@ -125,8 +121,7 @@ func TestDeregistration(t *testing.T) {
 }
 
 func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, dontStart)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, dontStart)
 	defer client.Close()
 	defer r.Stop()
 
@@ -146,8 +141,7 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 }
 
 func TestRegisterTwiceAllowed(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, start)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, start)
 	defer client.Close()
 	defer r.Stop()
 
@@ -162,8 +156,7 @@ func TestRegisterTwiceAllowed(t *testing.T) {
 }
 
 func TestRegisterTwiceNotAllowed(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, start)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, start)
 	defer client.Close()
 	defer r.Stop()
 
@@ -178,8 +171,7 @@ func TestRegisterTwiceNotAllowed(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, start)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, start)
 	defer client.Close()
 
 	timeout, cancel := timeoutContext()
@@ -200,8 +192,7 @@ func TestStop(t *testing.T) {
 }
 
 func TestFindRegistration(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, start)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, start)
 	defer client.Close()
 	defer r.Stop()
 
@@ -231,8 +222,7 @@ func TestFindRegistration(t *testing.T) {
 }
 
 func TestFindRegistrations(t *testing.T) {
-	client, r, _, etcdcleanup := bootstrap(t, start)
-	defer etcdcleanup()
+	client, r, _ := bootstrap(t, start)
 	defer client.Close()
 	defer r.Stop()
 
@@ -273,8 +263,7 @@ func TestFindRegistrations(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	client, r, addr, etcdcleanup := bootstrap(t, dontStart)
-	defer etcdcleanup()
+	client, r, addr := bootstrap(t, dontStart)
 	defer client.Close()
 
 	// Change the minimum for sake of testing quickly.
@@ -298,8 +287,7 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestWatch(t *testing.T) {
-	client, r, addr, etcdcleanup := bootstrap(t, dontStart)
-	defer etcdcleanup()
+	client, r, addr := bootstrap(t, dontStart)
 	defer client.Close()
 
 	// Change the minimum for sake of testing quickly.
@@ -406,7 +394,6 @@ func TestWatch(t *testing.T) {
 
 	time.Sleep(3 * time.Second)
 	r.Stop()
-	etcdcleanup()
 }
 
 func TestWatchEventString(t *testing.T) {
@@ -442,8 +429,8 @@ func TestWatchEventString(t *testing.T) {
 	}
 }
 
-func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.TCPAddr, testetcd.Cleanup) {
-	client, cleanup := testetcd.StartAndConnect(t)
+func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.TCPAddr) {
+	client := testetcd.StartAndConnect(t)
 
 	addr := &net.TCPAddr{
 		IP:   []byte("localhost"),
@@ -463,7 +450,7 @@ func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.
 		}
 	}
 
-	return client, r, addr, cleanup
+	return client, r, addr
 }
 
 func timeoutContext() (context.Context, func()) {
