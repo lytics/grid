@@ -217,7 +217,7 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		}
 		if err != nil && strings.Contains(err.Error(), "connection refused") {
 			// Test hook.
-			c.cs.Inc(numErrConnectionUnavailable)
+			c.cs.Inc(numErrConnectionRefused)
 			// Receiver is on a host that may have died.
 			// The error "connection refused" comes from
 			// gRPC itself. In such a case it's best to
@@ -378,6 +378,7 @@ type statName string
 const (
 	numErrClientConnectionClosing statName = "numErrClientConnectionClosing"
 	numErrConnectionUnavailable   statName = "numErrConnectionUnavailable"
+	numErrConnectionRefused       statName = "numErrConnectionRefused"
 	numErrUnregisteredMailbox     statName = "numErrUnregisteredMailbox"
 	numErrUnknownMailbox          statName = "numErrUnknownMailbox"
 	numErrReceiverBusy            statName = "numErrReceiverBusy"
