@@ -356,6 +356,125 @@ func (c *Client) logf(format string, v ...interface{}) {
 	}
 }
 
+// Broadcast a message to all members in a Group
+func (c *Client) Broadcast(timeout time.Duration, g *Group, msg interface{}) (BroadcastResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return c.broadcast(ctx, cancel, g, msg)
+}
+
+// BroadcastC (broadcast) a message to all members in a Group. The context can be used to control
+// cancellations or timeouts
+func (c *Client) BroadcastC(ctx context.Context, g *Group, msg interface{}) (BroadcastResult, error) {
+	cont, cancel := context.WithCancel(ctx)
+	defer cancel()
+	return c.broadcast(cont, cancel, g, msg)
+}
+
+func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Group, msg interface{}) (BroadcastResult, error) {
+	res := make(BroadcastResult)
+	receivers := g.Members()
+
+	var broadcastErr error
+	mu := new(sync.Mutex)
+	wg := new(sync.WaitGroup)
+	for _, rec := range receivers {
+		wg.Add(1)
+		go func(receiver string) {
+			defer wg.Done()
+			resp, err := c.RequestC(ctx, receiver, msg)
+			switch {
+			case err == nil && g.fastest:
+				// if this request was successful and the group is configured to Fastest,
+				// then cancel the context so other requests are terminated
+				cancel()
+			case err != nil && !g.fastest:
+				broadcastErr = ErrBroadcast
+			}
+
+			mu.Lock()
+			res[receiver] = &Result{
+				Err: err,
+				Val: resp,
+			}
+			mu.Unlock()
+		}(rec)
+	}
+	wg.Wait()
+	return res, broadcastErr
+}
+
+// Group defines a group of actors. This struct is primarily used for
+// broadcasting messages to all actors in a Group.
+type Group struct {
+	fastest bool
+	members []string
+}
+
+// NewListGroup creates a new Group
+func NewListGroup(members ...string) *Group {
+	return &Group{
+		members: members,
+	}
+}
+
+// Members returns the members (actors) of the Group
+func (g *Group) Members() []string {
+	return g.members
+}
+
+// Fastest ensures that the Broadcast returns the
+// BroadcastResult for the fastest member in the Group
+func (g *Group) Fastest() *Group {
+	return &Group{
+		members: g.members,
+		fastest: true,
+	}
+}
+
+// ExceptSuccesses filters out the successful members of the Group
+func (g *Group) ExceptSuccesses(successes []string) *Group {
+	return &Group{
+		fastest: false,
+		members: removeStrings(g.members, successes),
+	}
+}
+
+func removeStrings(set []string, rm []string) []string {
+	ret := make([]string, len(set))
+	copy(ret, set)
+	for _, r := range rm {
+		ret = removeString(ret, r)
+	}
+	return ret
+}
+
+func removeString(set []string, rm string) []string {
+	var ret []string
+	for _, val := range set {
+		if val != rm {
+			ret = append(ret, val)
+		}
+	}
+	return ret
+}
+
+// BroadcastResult is used to store the results of the Broadcast
+type BroadcastResult map[string]*Result
+
+// Result stores the result of a Request
+type Result struct {
+	Err error
+	Val interface{}
+}
+
+// Add combines two BroadcastResults
+func (b BroadcastResult) Add(other BroadcastResult) {
+	for k, v := range other {
+		b[k] = v
+	}
+}
+
 // statName of interesting statistic to track
 // during testing for validation.
 type statName string
