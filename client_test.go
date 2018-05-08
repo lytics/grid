@@ -178,7 +178,6 @@ func TestClientBroadcast(t *testing.T) {
 	defer server.Stop()
 	defer client.Close()
 
-	// create echo actors
 	a := &echoActor{ready: make(chan bool), server: server}
 	server.RegisterDef("echo", func([]byte) (Actor, error) { return a, nil })
 
@@ -188,27 +187,25 @@ func TestClientBroadcast(t *testing.T) {
 	} else if len(peers) != 1 {
 		t.Fatal("expected 1 peer")
 	}
-
-	// start the echo actors
 	peer := peers[0].Name()
-	const echoType = "echo"
-	const numActors = 2
 
-	// start up the actors
-	for i := 0; i < numActors; i++ {
-		actor := NewActorStart(fmt.Sprintf("echo-%d", i))
+	const echoType = "echo"
+	startEchoActor := func(name string) {
+		actor := NewActorStart(name)
 		actor.Type = echoType
 		res, err := client.Request(timeout, peer, actor)
 		if err != nil {
 			t.Fatalf("failed to start echo actor: %v", err)
 		} else if res == nil {
-			t.Fatal("expected response")
+			t.Fatal("expected a response")
 		}
+		<-a.ready
 	}
 
-	// wait till they're ready
+	// start up the actors
+	const numActors = 2
 	for i := 0; i < numActors; i++ {
-		<-a.ready
+		startEchoActor(fmt.Sprintf("echo-%d", i))
 	}
 
 	msg := &EchoMsg{"lol"}
@@ -257,6 +254,39 @@ func TestClientBroadcast(t *testing.T) {
 		}
 		if numCancelled > numSuccess {
 			t.Fatalf("expected more successes than cancellations, got %d cancelled, %d successes", numCancelled, numSuccess)
+		}
+	})
+
+	t.Run("broadcast-retry", func(t *testing.T) {
+		// while echo-0 and echo-1 are registed/running, echo-2 is not
+		g := NewListGroup("echo-0", "echo-1", "echo-2")
+
+		resultSet := make(BroadcastResult)
+		tmpSet, err := client.Broadcast(timeout, g.ExceptSuccesses(resultSet), msg)
+		if err != ErrBroadcast {
+			t.Fatal("expected a broadcast-error")
+		} else if tmpSet["echo-2"].Err != ErrUnregisteredMailbox {
+			t.Fatal("expected unregistered mailbox error")
+		}
+		resultSet.Add(tmpSet)
+
+		// start the missing actor
+		startEchoActor("echo-2")
+
+		tmpSet, err = client.Broadcast(timeout, g.ExceptSuccesses(resultSet), msg)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		resultSet.Add(tmpSet)
+
+		// ensure that the resultSet contains results for all 3 echo-actors
+		if sz := len(resultSet); sz != 3 {
+			t.Fatalf("expected 2 results in broadcast-result, got %d", sz)
+		}
+		for actor, v := range resultSet {
+			if v.Err != nil {
+				t.Fatalf("expected nil error for actor: %s, result: %+v", actor, v)
+			}
 		}
 	})
 }

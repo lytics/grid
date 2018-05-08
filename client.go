@@ -433,7 +433,13 @@ func (g *Group) Fastest() *Group {
 }
 
 // ExceptSuccesses filters out the successful members of the Group
-func (g *Group) ExceptSuccesses(successes []string) *Group {
+func (g *Group) ExceptSuccesses(res BroadcastResult) *Group {
+	var successes []string
+	for member, r := range res {
+		if r.Err == nil {
+			successes = append(successes, member)
+		}
+	}
 	return &Group{
 		fastest: false,
 		members: removeStrings(g.members, successes),
