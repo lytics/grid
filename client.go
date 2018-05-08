@@ -215,6 +215,21 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 				return true
 			}
 		}
+		if err != nil && strings.Contains(err.Error(), "connection refused") {
+			// Test hook.
+			c.cs.Inc(numErrConnectionUnavailable)
+			// Receiver is on a host that may have died.
+			// The error "connection refused" comes from
+			// gRPC itself. In such a case it's best to
+			// try and replace the client.
+			c.deleteClientAndConn(nsReceiver, clientID)
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
 		if err != nil && strings.Contains(err.Error(), ErrUnknownMailbox.Error()) {
 			// Test hook.
 			c.cs.Inc(numErrUnknownMailbox)
