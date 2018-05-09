@@ -33,9 +33,9 @@ var (
 	// ErrContextFinished when the context signals done before the
 	// request could receive a response from the receiver.
 	ErrContextFinished = errors.New("grid: context finished")
-	// ErrBroadcast when the Broadcast cannot successful request
+	// ErrIncompleteBroadcast when the Broadcast cannot successfully request
 	// an actor in the Group
-	ErrBroadcast = errors.New("grid: incomplete broadcast")
+	ErrIncompleteBroadcast = errors.New("grid: incomplete broadcast")
 )
 
 var (

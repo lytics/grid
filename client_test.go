@@ -263,7 +263,7 @@ func TestClientBroadcast(t *testing.T) {
 
 		resultSet := make(BroadcastResult)
 		tmpSet, err := client.Broadcast(timeout, g.ExceptSuccesses(resultSet), msg)
-		if err != ErrBroadcast {
+		if err != ErrIncompleteBroadcast {
 			t.Fatal("expected a broadcast-error")
 		} else if tmpSet["echo-2"].Err != ErrUnregisteredMailbox {
 			t.Fatal("expected unregistered mailbox error")

@@ -376,6 +376,7 @@ func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Gr
 	receivers := g.Members()
 
 	var broadcastErr error
+	successes := 0
 	mu := new(sync.Mutex)
 	wg := new(sync.WaitGroup)
 	for _, rec := range receivers {
@@ -383,13 +384,15 @@ func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Gr
 		go func(receiver string) {
 			defer wg.Done()
 			resp, err := c.RequestC(ctx, receiver, msg)
-			switch {
-			case err == nil && g.fastest:
+			if err != nil {
+				mu.Lock()
+				broadcastErr = ErrIncompleteBroadcast
+				mu.Unlock()
+			} else if err == nil && g.fastest {
 				// if this request was successful and the group is configured to Fastest,
 				// then cancel the context so other requests are terminated
 				cancel()
-			case err != nil && !g.fastest:
-				broadcastErr = ErrBroadcast
+				successes++
 			}
 
 			mu.Lock()
@@ -401,6 +404,12 @@ func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Gr
 		}(rec)
 	}
 	wg.Wait()
+
+	// if the group is configured to Fastest, and we had at least one successful
+	// request, then don't return an error
+	if g.fastest && broadcastErr != nil && successes > 0 {
+		broadcastErr = nil
+	}
 	return res, broadcastErr
 }
 
@@ -434,35 +443,18 @@ func (g *Group) Fastest() *Group {
 
 // ExceptSuccesses filters out the successful members of the Group
 func (g *Group) ExceptSuccesses(res BroadcastResult) *Group {
-	var successes []string
-	for member, r := range res {
-		if r.Err == nil {
-			successes = append(successes, member)
+	newMembers := make([]string, 0, len(g.members))
+	for _, m := range g.members {
+		// Check is member has a failure in the result set, in which case
+		// add it to the new group so it can be operated on.
+		if v := res[m]; v == nil || v.Err != nil {
+			newMembers = append(newMembers, m)
 		}
 	}
 	return &Group{
 		fastest: false,
-		members: removeStrings(g.members, successes),
+		members: newMembers,
 	}
-}
-
-func removeStrings(set []string, rm []string) []string {
-	ret := make([]string, len(set))
-	copy(ret, set)
-	for _, r := range rm {
-		ret = removeString(ret, r)
-	}
-	return ret
-}
-
-func removeString(set []string, rm string) []string {
-	var ret []string
-	for _, val := range set {
-		if val != rm {
-			ret = append(ret, val)
-		}
-	}
-	return ret
 }
 
 // BroadcastResult is used to store the results of the Broadcast
@@ -474,7 +466,8 @@ type Result struct {
 	Val interface{}
 }
 
-// Add combines two BroadcastResults
+// Add combines two BroadcastResults, by overwriting previous
+// results if they exist
 func (b BroadcastResult) Add(other BroadcastResult) {
 	for k, v := range other {
 		b[k] = v
