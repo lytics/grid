@@ -14,7 +14,7 @@ Below is a basic example of starting your grid application. If a "leader"
 definition is registered, the leader actor will be started for you when
 `Serve` is called. The "leader" actor can be thought of as an entry-point
 into you distributed application. You don't have to use it, but it is often
-convenient. 
+convenient.
 
 No matter how many processes are participating in the grid, only one leader
 actor is started per namespace, it is a singleton.  The actor named "leader"
@@ -232,6 +232,47 @@ func Example() {
     ... process the response ...
 }
 ```
+
+
+## Broadcasting Messages
+Broadcasting messages is a way for the client to send messages to a group of actors. There
+are currently two different strategies for message broadcasting:
+
+ - First-one-wins, where the request context is canceled as soon as one actor responds to the message.
+ - Guaranteed delivery to all actors
+
+
+ ```go
+const (
+  timeout = 2 * time.Second
+  numRetry = 3
+)
+
+func Example() {
+  etcd, err := etcdv3.New(...)
+  ...
+  client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "myapp"})
+  ...
+  grp := grid.NewListGroup("actor-1", "actor-2", "actor-3")
+
+  // first-one-wins
+  result, err := client.Broadcast(timeout, grp.Fastest(), &MyMsg{
+    ...
+  })
+
+  // delivery to all actors in the group
+  var res, tmp BroadcastResult
+  var err error
+  retry.X(numRetry, func() bool  {
+     tmp, err = client.Broadcast(timeout, grp.ExceptSuccesses(res), &MyMsg{...})
+     res.Add(tmp)
+     return err != nil
+  })
+}
+
+ ```
+
+
 
 ### Registering Messages
 Every type of message must be registered before use. Each message must be a
