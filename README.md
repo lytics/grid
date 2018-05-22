@@ -239,7 +239,7 @@ Broadcasting messages is a way for the client to send messages to a group of act
 are currently two different strategies for message broadcasting:
 
  - First-one-wins, where the request context is canceled as soon as one actor responds to the message.
- - Guaranteed delivery to all actors
+ - Delivery to all actors, waits for all responses or timeouts
 
 
  ```go
@@ -251,16 +251,20 @@ const (
 func Example() {
   etcd, err := etcdv3.New(...)
   ...
+
   client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: "myapp"})
   ...
+
   grp := grid.NewListGroup("actor-1", "actor-2", "actor-3")
 
-  // first-one-wins
-  result, err := client.Broadcast(timeout, grp.Fastest(), &MyMsg{
-    ...
-  })
+  // Make a request to each actor in the group in parallel, first result
+  // back cancels all the other requests.
+  res, err := client.Broadcast(timeout, grp.Fastest(), &MyMsg{...})
 
-  // delivery to all actors in the group
+
+  // Deliver to all actors in the group, retry just those that
+  // were not successful in the previous try, and fold new
+  // results into previous results.
   var res, tmp BroadcastResult
   var err error
   retry.X(numRetry, func() bool  {
