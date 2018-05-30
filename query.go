@@ -8,15 +8,15 @@ import (
 	"github.com/lytics/grid/registry"
 )
 
-type entityType string
+type EntityType string
 
 const (
 	// Peers filter for query.
-	Peers entityType = "peer"
+	Peers EntityType = "peer"
 	// Actors filter for query.
-	Actors entityType = "actor"
+	Actors EntityType = "actor"
 	// Mailboxes filter for query.
-	Mailboxes entityType = "mailbox"
+	Mailboxes EntityType = "mailbox"
 )
 
 // EventType categorizing the event.
@@ -34,7 +34,7 @@ type QueryEvent struct {
 	name   string
 	peer   string
 	err    error
-	entity entityType
+	entity EntityType
 	Type   EventType
 }
 
@@ -99,7 +99,7 @@ func (e *QueryEvent) String() string {
 //             // New peer found, assign work, get data, reschedule, etc.
 //         }
 //     }
-func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEvent, <-chan *QueryEvent, error) {
+func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEvent, <-chan *QueryEvent, error) {
 	nsName, err := namespacePrefix(filter, c.cfg.Namespace)
 	if err != nil {
 		return nil, nil, err
@@ -195,7 +195,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter entityType) ([]*QueryEve
 
 // Query in this client's namespace. The filter can be any one of
 // Peers, Actors, or Mailboxes.
-func (c *Client) Query(timeout time.Duration, filter entityType) ([]*QueryEvent, error) {
+func (c *Client) Query(timeout time.Duration, filter EntityType) ([]*QueryEvent, error) {
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.QueryC(timeoutC, filter)
@@ -204,7 +204,7 @@ func (c *Client) Query(timeout time.Duration, filter entityType) ([]*QueryEvent,
 // QueryC (query) in this client's namespace. The filter can be any
 // one of Peers, Actors, or Mailboxes. The context can be used to
 // control cancelation or timeouts.
-func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, error) {
+func (c *Client) QueryC(ctx context.Context, filter EntityType) ([]*QueryEvent, error) {
 	nsPrefix, err := namespacePrefix(filter, c.cfg.Namespace)
 	if err != nil {
 		return nil, err
@@ -229,7 +229,7 @@ func (c *Client) QueryC(ctx context.Context, filter entityType) ([]*QueryEvent, 
 
 // nameFromKey returns the name from the data field of a registration.
 // Used by query to return just simple string data.
-func nameFromKey(filter entityType, namespace string, key string) string {
+func nameFromKey(filter EntityType, namespace string, key string) string {
 	name, err := stripNamespace(filter, namespace, key)
 	// INVARIANT
 	// Under all circumstances if a registration is returned
