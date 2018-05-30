@@ -20,7 +20,7 @@ func isNameValid(name string) bool {
 	}
 }
 
-func stripNamespace(t entityType, namespace, fullname string) (string, error) {
+func stripNamespace(t EntityType, namespace, fullname string) (string, error) {
 	plen := len(namespace) + 1 + len(t) + 1
 	if len(fullname) <= plen {
 		return "", ErrInvalidName
@@ -28,7 +28,7 @@ func stripNamespace(t entityType, namespace, fullname string) (string, error) {
 	return fullname[plen:], nil
 }
 
-func namespaceName(t entityType, namespace, name string) (string, error) {
+func namespaceName(t EntityType, namespace, name string) (string, error) {
 	if !isNameValid(name) {
 		return "", ErrInvalidName
 	}
@@ -38,7 +38,7 @@ func namespaceName(t entityType, namespace, name string) (string, error) {
 	return fmt.Sprintf("%v.%v.%v", namespace, t, name), nil
 }
 
-func namespacePrefix(t entityType, namespace string) (string, error) {
+func namespacePrefix(t EntityType, namespace string) (string, error) {
 	if !isNameValid(namespace) {
 		return "", ErrInvalidNamespace
 	}
