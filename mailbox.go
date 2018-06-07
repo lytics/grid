@@ -3,19 +3,30 @@ package grid
 import (
 	"context"
 	"strings"
+	"sync"
 )
 
 // Mailbox for receiving messages.
 type Mailbox struct {
+	mu      sync.RWMutex
 	name    string
 	nsName  string
 	C       <-chan Request
 	c       chan Request
+	closed  bool
 	cleanup func() error
 }
 
 // Close the mailbox.
 func (box *Mailbox) Close() error {
+	box.mu.Lock()
+	defer box.mu.Unlock()
+
+	// Close mailbox.
+	box.closed = true
+	close(box.c)
+
+	// Run server provided clean up.
 	return box.cleanup()
 }
 
@@ -27,6 +38,24 @@ func (box *Mailbox) Name() string {
 // String of mailbox name, with full namespace.
 func (box *Mailbox) String() string {
 	return box.nsName
+}
+
+// put a request into the mailbox if it is not closed,
+// otherwise return an error indicating that the
+// receiver is busy.
+func (box *Mailbox) put(req *request) error {
+	box.mu.RLock()
+	defer box.mu.RUnlock()
+
+	if box.closed {
+		return ErrReceiverBusy
+	}
+	select {
+	case box.c <- req:
+		return nil
+	default:
+		return ErrReceiverBusy
+	}
 }
 
 // NewMailbox for requests addressed to name. Size will be the mailbox's
@@ -106,8 +135,6 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	cleanup := func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-
-		close(boxC)
 
 		// Immediately delete the subscription so that no one
 		// can send to it, at least from this host.
