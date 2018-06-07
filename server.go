@@ -242,12 +242,11 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	// Send the filled envelope to the actual
 	// receiver. Also note that the receiver
 	// can stop listenting when it wants, so
-	// some defualt or timeout always needs
-	// to exist here.
-	select {
-	case mailbox.c <- req:
-	default:
-		return nil, ErrReceiverBusy
+	// the receiver may return an error saying
+	// it is busy.
+	err = mailbox.put(req)
+	if err != nil {
+		return nil, err
 	}
 
 	// Wait for the receiver to send back a
@@ -275,13 +274,13 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 				err := s.startActorC(req.Context(), msg)
 				if err != nil {
 					err2 := req.Respond(err)
-					if err != nil {
-						s.logf("%v: error sending respond(err:%v): err:%v", s.cfg.Namespace, err, err2)
+					if err2 != nil {
+						s.logf("%v: failed sending response for failed actor start: %v, original error: %v", s.cfg.Namespace, err2, err)
 					}
 				} else {
 					err := req.Ack()
 					if err != nil {
-						s.logf("%v: error sending ack: err:%v", s.cfg.Namespace, err)
+						s.logf("%v: failed sending ack: %v", s.cfg.Namespace, err)
 					}
 				}
 			}
