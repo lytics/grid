@@ -142,6 +142,10 @@ func (c *Client) Close() error {
 
 // Request a response for the given message.
 func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}) (interface{}, error) {
+	if c == nil {
+		return nil, ErrNilClient
+	}
+
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.RequestC(timeoutC, receiver, msg)
@@ -150,6 +154,10 @@ func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}
 // RequestC (request) a response for the given message. The context can be
 // used to control cancelation or timeouts.
 func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
+	if c == nil {
+		return nil, ErrNilClient
+	}
+
 	// Namespaced receiver name.
 	nsReceiver, err := namespaceName(Mailboxes, c.cfg.Namespace, receiver)
 	if err != nil {
@@ -373,6 +381,13 @@ func (c *Client) logf(format string, v ...interface{}) {
 
 // Broadcast a message to all members in a Group
 func (c *Client) Broadcast(timeout time.Duration, g *Group, msg interface{}) (BroadcastResult, error) {
+	if c == nil {
+		return nil, ErrNilClient
+	}
+	if g == nil {
+		return nil, ErrNilGroup
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.broadcast(ctx, cancel, g, msg)
@@ -381,6 +396,13 @@ func (c *Client) Broadcast(timeout time.Duration, g *Group, msg interface{}) (Br
 // BroadcastC (broadcast) a message to all members in a Group. The context can be used to control
 // cancellations or timeouts
 func (c *Client) BroadcastC(ctx context.Context, g *Group, msg interface{}) (BroadcastResult, error) {
+	if c == nil {
+		return nil, ErrNilClient
+	}
+	if g == nil {
+		return nil, ErrNilGroup
+	}
+
 	cont, cancel := context.WithCancel(ctx)
 	defer cancel()
 	return c.broadcast(cont, cancel, g, msg)
