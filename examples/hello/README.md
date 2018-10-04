@@ -17,8 +17,8 @@ example requires that it run on its default port number. You can
 get etcd running by doing:
 
 ```sh
-$ go get github.com/coreos/etcd
-$ cd github.com/coreos/etcd
+$ go get go.etcd.io/etcd
+$ cd go.etcd.io/etcd
 $ ./build
 $ bin/etcd
 ```

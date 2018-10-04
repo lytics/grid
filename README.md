@@ -4,7 +4,7 @@ grid
 Grid is a library for doing distributed processing. It's main goal is to help
 in scheduling fine-grain stateful computations, which grid calls actors, and
 sending data between them. Its only service dependency is an
-[Etcd v3](https://github.com/coreos/etcd) server, used for discovery and
+[Etcd v3](https://github.com/etcd-io/etcd) server, used for discovery and
 coordination. Grid uses [gRPC](http://www.grpc.io/) for communication, and
 sends [Protobuf](https://developers.google.com/protocol-buffers/)
 messages.

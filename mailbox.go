@@ -119,7 +119,7 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	// from etcd. Some errors have no recovery. See
 	// the list of all possible errors here:
 	//
-	// https://github.com/coreos/etcd/blob/master/etcdserver/api/v3rpc/rpctypes/error.go
+	// https://github.com/etcd-io/etcd/blob/master/etcdserver/api/v3rpc/rpctypes/error.go
 	//
 	// They are unfortunately not classidied into
 	// recoverable or non-recoverable.

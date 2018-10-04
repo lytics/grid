@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	etcdv3 "github.com/coreos/etcd/clientv3"
+	etcdv3 "go.etcd.io/etcd/clientv3"
 )
 
 type Option int
