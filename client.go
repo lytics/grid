@@ -186,6 +186,19 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 			return false
 		}
 		res, err = client.Process(ctx, req)
+		if err != nil && strings.Contains(err.Error(), "Error while dialing") {
+			// Test hook.
+			c.cs.Inc(numErrWhileDialing)
+			// The request is via a client that cannot
+			// dial to the requested receiver.
+			c.deleteClientAndConn(nsReceiver, clientID)
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				return true
+			}
+		}
 		if err != nil && strings.Contains(err.Error(), "the client connection is closing") {
 			// Test hook.
 			c.cs.Inc(numErrClientConnectionClosing)
@@ -500,6 +513,7 @@ const (
 	numErrUnregisteredMailbox     statName = "numErrUnregisteredMailbox"
 	numErrUnknownMailbox          statName = "numErrUnknownMailbox"
 	numErrReceiverBusy            statName = "numErrReceiverBusy"
+	numErrWhileDialing            statName = "numErrWhileDialing"
 	numDeleteAddress              statName = "numDeleteAddress"
 	numDeleteClientAndConn        statName = "numDeleteClientAndConn"
 	numGetWireClient              statName = "numGetWireClient"
