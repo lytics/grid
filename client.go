@@ -199,7 +199,6 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 				return true
 			}
 		}
-		res, err = client.Process(ctx, req)
 		if err != nil && strings.Contains(err.Error(), "the client connection is closing") {
 			// Test hook.
 			c.cs.Inc(numErrClientConnectionClosing)
