@@ -189,8 +189,8 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		if err != nil && strings.Contains(err.Error(), "Error while dialing") {
 			// Test hook.
 			c.cs.Inc(numErrWhileDialing)
-			// The request is via a client that is
-			// cannot dial to the requested receiver.
+			// The request is via a client that cannot
+			// dial to the requested receiver.
 			c.deleteClientAndConn(nsReceiver, clientID)
 			select {
 			case <-ctx.Done():
