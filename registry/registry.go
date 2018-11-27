@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +34,7 @@ var (
 	ErrWatchClosedUnexpectedly     = errors.New("registry: watch closed unexpectedly")
 	ErrUnspecifiedNetAddressIP     = errors.New("registry: unspecified net address ip")
 	ErrKeepAliveClosedUnexpectedly = errors.New("registry: keep alive closed unexpectedly")
-	ErrInvalidAnnotations          = errors.New("registry: invalid annotations")
+	ErrInvalidAnnotationsOption    = errors.New("registry: invalid annotations option")
 )
 
 var (
@@ -50,8 +51,16 @@ type Registration struct {
 
 // String descritpion of registration.
 func (r *Registration) String() string {
-	// TODO Should this have the annotations in here?
-	return fmt.Sprintf("key: %v, address: %v, registry: %v", r.Key, r.Address, r.Registry)
+	sorted := make([]string, 0, len(r.Annotations))
+
+	for k, v := range r.Annotations {
+		sorted = append(sorted, fmt.Sprintf("%v:%v", k, v))
+	}
+
+	sort.Strings(sorted)
+
+	return fmt.Sprintf("key: %v, address: %v, registry: %v, annotations: %v",
+		r.Key, r.Address, r.Registry, strings.Join(sorted, ","))
 }
 
 // EventType of a watch event.
@@ -383,11 +392,12 @@ func (rr *Registry) FindRegistration(c context.Context, key string) (*Registrati
 // once, and registering more than once will return an error.
 // Hence, registration can be used for mutual-exclusion.
 func (rr *Registry) Register(c context.Context, key string, annotations ...map[string]string) error {
-	atns := make(map[string]string)
-	if len(annotations) != 0 || len(annotations) != 1 {
-		return ErrInvalidAnnotations
-	} else if len(annotations) == 1 {
-		atns := annotations[0]
+	if len(annotations) > 1 {
+		return ErrInvalidAnnotationsOption
+	}
+	var atns map[string]string
+	if len(annotations) == 1 {
+		atns = annotations[0]
 	}
 
 	rr.mu.Lock()
