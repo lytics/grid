@@ -20,8 +20,6 @@ type Logger interface {
 	Printf(string, ...interface{})
 }
 
-const ()
-
 var (
 	ErrNotOwner                    = errors.New("registry: not owner")
 	ErrNotStarted                  = errors.New("registry: not started")
@@ -406,15 +404,7 @@ func (rr *Registry) Register(c context.Context, key string, annotations ...map[s
 
 	if getRes.Count > 0 {
 		kv := getRes.Kvs[0]
-		// The keys mach, so check if the caller has
-		// allowed multiple registrations from the
-		// same address.
-		if !opt.AllowReentrantRegistration {
-			return ErrAlreadyRegistered
-		}
-		// The call HAS allowed multiple registrations
-		// from the same address, so check if the
-		// found record has the correct address.
+		// check if the found record has the correct address.
 		reg := &Registration{}
 		err = json.Unmarshal(kv.Value, reg)
 		if err != nil {
