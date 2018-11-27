@@ -52,7 +52,7 @@ type Registration struct {
 func (r *Registration) String() string {
 	sort.Strings(r.Annotations)
 	return fmt.Sprintf("key: %v, address: %v, registry: %v, annotations: %v",
-		r.Key, r.Address, r.Registry, strings.Join(sorted, ","))
+		r.Key, r.Address, r.Registry, strings.Join(r.Annotations, ","))
 }
 
 // EventType of a watch event.
