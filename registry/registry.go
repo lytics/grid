@@ -34,7 +34,6 @@ var (
 	ErrWatchClosedUnexpectedly     = errors.New("registry: watch closed unexpectedly")
 	ErrUnspecifiedNetAddressIP     = errors.New("registry: unspecified net address ip")
 	ErrKeepAliveClosedUnexpectedly = errors.New("registry: keep alive closed unexpectedly")
-	ErrInvalidAnnotationsOption    = errors.New("registry: invalid annotations option")
 )
 
 var (
