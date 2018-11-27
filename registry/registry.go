@@ -398,19 +398,6 @@ func (rr *Registry) Register(c context.Context, key string, annotations ...strin
 	}
 
 	if getRes.Count > 0 {
-		kv := getRes.Kvs[0]
-		// check if the found record has the correct address.
-		reg := &Registration{}
-		err = json.Unmarshal(kv.Value, reg)
-		if err != nil {
-			return err
-		}
-		// The caller is already registered and they
-		// have allowed just multi-registration, so
-		// return.
-		if reg.Address == rr.address {
-			return nil
-		}
 		// The caller is regestering a key that is
 		// already registered by another address.
 		return ErrAlreadyRegistered
