@@ -43,22 +43,15 @@ var (
 
 // Registration information.
 type Registration struct {
-	Key         string            `json:"key"`
-	Address     string            `json:"address"`
-	Registry    string            `json:"registry"`
-	Annotations map[string]string `json:"annotations"`
+	Key         string   `json:"key"`
+	Address     string   `json:"address"`
+	Registry    string   `json:"registry"`
+	Annotations []string `json:"annotations"`
 }
 
 // String descritpion of registration.
 func (r *Registration) String() string {
-	sorted := make([]string, 0, len(r.Annotations))
-
-	for k, v := range r.Annotations {
-		sorted = append(sorted, fmt.Sprintf("%v:%v", k, v))
-	}
-
-	sort.Strings(sorted)
-
+	sort.Strings(r.Annotations)
 	return fmt.Sprintf("key: %v, address: %v, registry: %v, annotations: %v",
 		r.Key, r.Address, r.Registry, strings.Join(sorted, ","))
 }
@@ -391,15 +384,8 @@ func (rr *Registry) FindRegistration(c context.Context, key string) (*Registrati
 // Register under the given key. A registration can happen only
 // once, and registering more than once will return an error.
 // Hence, registration can be used for mutual-exclusion.
-func (rr *Registry) Register(c context.Context, key string, annotations ...map[string]string) error {
-	if len(annotations) > 1 {
-		return ErrInvalidAnnotationsOption
-	}
-	var atns map[string]string
-	if len(annotations) == 1 {
-		atns = annotations[0]
-	}
-
+func (rr *Registry) Register(c context.Context, key string, annotations ...string) error {
+	sort.Strings(annotations)
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
@@ -430,12 +416,11 @@ func (rr *Registry) Register(c context.Context, key string, annotations ...map[s
 		// already registered by another address.
 		return ErrAlreadyRegistered
 	}
-
 	value, err := json.Marshal(&Registration{
 		Key:         key,
 		Address:     rr.address,
 		Registry:    rr.name,
-		Annotations: atns,
+		Annotations: annotations,
 	})
 	if err != nil {
 		return err

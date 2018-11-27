@@ -56,7 +56,7 @@ type ServerCfg struct {
 	// Logger optionally used for logging, default is to not log.
 	Logger Logger
 	// Annotations optionally used annotating a grid server with metadata
-	Annotations map[string]string
+	Annotations []string
 }
 
 // setServerCfgDefaults for those fields that have their zero value.
