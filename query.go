@@ -53,6 +53,12 @@ func (e *QueryEvent) Peer() string {
 	return e.peer
 }
 
+// Annotations of named entity.
+// Currently only used by Peers as an option to the grid server.
+func (e *QueryEvent) Annotations() []string {
+	return e.annotations
+}
+
 // Err caught watching query events. The error is
 // not associated with any particular entity, it's
 // an error with the watch itself or a result of
