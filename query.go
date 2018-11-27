@@ -31,11 +31,12 @@ const (
 // QueryEvent indicating that an entity has been discovered,
 // lost, or some error has occured with the watch.
 type QueryEvent struct {
-	name   string
-	peer   string
-	err    error
-	entity EntityType
-	Type   EventType
+	name        string
+	peer        string
+	err         error
+	entity      EntityType
+	Type        EventType
+	annotations []string
 }
 
 // Name of entity that caused the event. For example, if
@@ -109,10 +110,11 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 	var current []*QueryEvent
 	for _, reg := range regs {
 		current = append(current, &QueryEvent{
-			name:   nameFromKey(filter, c.cfg.Namespace, reg.Key),
-			peer:   reg.Registry,
-			entity: filter,
-			Type:   EntityFound,
+			name:        nameFromKey(filter, c.cfg.Namespace, reg.Key),
+			peer:        reg.Registry,
+			entity:      filter,
+			annotations: reg.Annotations,
+			Type:        EntityFound,
 		})
 	}
 
@@ -150,9 +152,10 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 				switch change.Type {
 				case registry.Delete:
 					qe := &QueryEvent{
-						name:   nameFromKey(filter, c.cfg.Namespace, change.Key),
-						entity: filter,
-						Type:   EntityLost,
+						name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
+						entity:      filter,
+						annotations: change.Reg.Annotations,
+						Type:        EntityLost,
 					}
 					// Maintain contract that for peer events
 					// the Peer() and Name() methods return
@@ -168,10 +171,11 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 					put(qe)
 				case registry.Create, registry.Modify:
 					qe := &QueryEvent{
-						name:   nameFromKey(filter, c.cfg.Namespace, change.Key),
-						peer:   change.Reg.Registry,
-						entity: filter,
-						Type:   EntityFound,
+						name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
+						peer:        change.Reg.Registry,
+						entity:      filter,
+						annotations: change.Reg.Annotations,
+						Type:        EntityFound,
 					}
 					// Maintain contract that for peer events
 					// the Peer() and Name() methods return
