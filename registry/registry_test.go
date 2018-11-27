@@ -140,21 +140,6 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 	}
 }
 
-func TestRegisterTwiceAllowed(t *testing.T) {
-	client, r, _ := bootstrap(t, start)
-	defer client.Close()
-	defer r.Stop()
-
-	for i := 0; i < 2; i++ {
-		timeout, cancel := timeoutContext()
-		err := r.Register(timeout, "test-registration-twice", OpAllowReentrantRegistration)
-		cancel()
-		if i > 0 && err == ErrAlreadyRegistered {
-			t.Fatal("not allowed to register twice")
-		}
-	}
-}
-
 func TestRegisterTwiceNotAllowed(t *testing.T) {
 	client, r, _ := bootstrap(t, start)
 	defer client.Close()

@@ -132,7 +132,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	// Register the namespace name, other peers can search
 	// for this to discover each other.
 	timeoutC, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
-	err = s.registry.Register(timeoutC, nsName)
+	err = s.registry.Register(timeoutC, nsName, s.cfg.Annotations)
 	cancel()
 	if err != nil {
 		return err

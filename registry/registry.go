@@ -13,8 +13,6 @@ import (
 	etcdv3 "github.com/coreos/etcd/clientv3"
 )
 
-type Option int
-
 // Logger hides the logging function Printf behind a simple
 // interface so libraries such as logrus can be used.
 // Copied from package grid to avoid interndependencies.
@@ -22,12 +20,7 @@ type Logger interface {
 	Printf(string, ...interface{})
 }
 
-const (
-	// OpAllowReentrantRegistration will cause a registration
-	// to the same key to succeed if it is requested by the
-	// same registry, ie: host, address, process.
-	OpAllowReentrantRegistration Option = 0
-)
+const ()
 
 var (
 	ErrNotOwner                    = errors.New("registry: not owner")
@@ -42,6 +35,7 @@ var (
 	ErrWatchClosedUnexpectedly     = errors.New("registry: watch closed unexpectedly")
 	ErrUnspecifiedNetAddressIP     = errors.New("registry: unspecified net address ip")
 	ErrKeepAliveClosedUnexpectedly = errors.New("registry: keep alive closed unexpectedly")
+	ErrInvalidAnnotations          = errors.New("registry: invalid annotations")
 )
 
 var (
@@ -50,13 +44,15 @@ var (
 
 // Registration information.
 type Registration struct {
-	Key      string `json:"key"`
-	Address  string `json:"address"`
-	Registry string `json:"registry"`
+	Key         string            `json:"key"`
+	Address     string            `json:"address"`
+	Registry    string            `json:"registry"`
+	Annotations map[string]string `json:"annotations"`
 }
 
 // String descritpion of registration.
 func (r *Registration) String() string {
+	// TODO Should this have the annotations in here?
 	return fmt.Sprintf("key: %v, address: %v, registry: %v", r.Key, r.Address, r.Registry)
 }
 
@@ -388,7 +384,14 @@ func (rr *Registry) FindRegistration(c context.Context, key string) (*Registrati
 // Register under the given key. A registration can happen only
 // once, and registering more than once will return an error.
 // Hence, registration can be used for mutual-exclusion.
-func (rr *Registry) Register(c context.Context, key string, options ...Option) error {
+func (rr *Registry) Register(c context.Context, key string, annotations ...map[string]string) error {
+	atns := make(map[string]string)
+	if len(annotations) != 0 || len(annotations) != 1 {
+		return ErrInvalidAnnotations
+	} else if len(annotations) == 1 {
+		atns := annotations[0]
+	}
+
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
@@ -406,10 +409,7 @@ func (rr *Registry) Register(c context.Context, key string, options ...Option) e
 		// The keys mach, so check if the caller has
 		// allowed multiple registrations from the
 		// same address.
-		if len(options) != 1 {
-			return ErrAlreadyRegistered
-		}
-		if len(options) == 1 && options[0] != OpAllowReentrantRegistration {
+		if !opt.AllowReentrantRegistration {
 			return ErrAlreadyRegistered
 		}
 		// The call HAS allowed multiple registrations
@@ -432,9 +432,10 @@ func (rr *Registry) Register(c context.Context, key string, options ...Option) e
 	}
 
 	value, err := json.Marshal(&Registration{
-		Key:      key,
-		Address:  rr.address,
-		Registry: rr.name,
+		Key:         key,
+		Address:     rr.address,
+		Registry:    rr.name,
+		Annotations: atns,
 	})
 	if err != nil {
 		return err
