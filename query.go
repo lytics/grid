@@ -157,10 +157,14 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 				}
 				switch change.Type {
 				case registry.Delete:
+					annotations := []string{}
+					if change.Reg != nil {
+						annotations = change.Reg.Annotations
+					}
 					qe := &QueryEvent{
 						name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
 						entity:      filter,
-						annotations: change.Reg.Annotations,
+						annotations: annotations,
 						Type:        EntityLost,
 					}
 					// Maintain contract that for peer events
