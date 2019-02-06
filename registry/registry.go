@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,21 +14,12 @@ import (
 	etcdv3 "github.com/coreos/etcd/clientv3"
 )
 
-type Option int
-
 // Logger hides the logging function Printf behind a simple
 // interface so libraries such as logrus can be used.
 // Copied from package grid to avoid interndependencies.
 type Logger interface {
 	Printf(string, ...interface{})
 }
-
-const (
-	// OpAllowReentrantRegistration will cause a registration
-	// to the same key to succeed if it is requested by the
-	// same registry, ie: host, address, process.
-	OpAllowReentrantRegistration Option = 0
-)
 
 var (
 	ErrNotOwner                    = errors.New("registry: not owner")
@@ -50,14 +42,17 @@ var (
 
 // Registration information.
 type Registration struct {
-	Key      string `json:"key"`
-	Address  string `json:"address"`
-	Registry string `json:"registry"`
+	Key         string   `json:"key"`
+	Address     string   `json:"address"`
+	Registry    string   `json:"registry"`
+	Annotations []string `json:"annotations"`
 }
 
 // String descritpion of registration.
 func (r *Registration) String() string {
-	return fmt.Sprintf("key: %v, address: %v, registry: %v", r.Key, r.Address, r.Registry)
+	sort.Strings(r.Annotations)
+	return fmt.Sprintf("key: %v, address: %v, registry: %v, annotations: %v",
+		r.Key, r.Address, r.Registry, strings.Join(r.Annotations, ","))
 }
 
 // EventType of a watch event.
@@ -388,7 +383,8 @@ func (rr *Registry) FindRegistration(c context.Context, key string) (*Registrati
 // Register under the given key. A registration can happen only
 // once, and registering more than once will return an error.
 // Hence, registration can be used for mutual-exclusion.
-func (rr *Registry) Register(c context.Context, key string, options ...Option) error {
+func (rr *Registry) Register(c context.Context, key string, annotations ...string) error {
+	sort.Strings(annotations)
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
@@ -402,39 +398,15 @@ func (rr *Registry) Register(c context.Context, key string, options ...Option) e
 	}
 
 	if getRes.Count > 0 {
-		kv := getRes.Kvs[0]
-		// The keys mach, so check if the caller has
-		// allowed multiple registrations from the
-		// same address.
-		if len(options) != 1 {
-			return ErrAlreadyRegistered
-		}
-		if len(options) == 1 && options[0] != OpAllowReentrantRegistration {
-			return ErrAlreadyRegistered
-		}
-		// The call HAS allowed multiple registrations
-		// from the same address, so check if the
-		// found record has the correct address.
-		reg := &Registration{}
-		err = json.Unmarshal(kv.Value, reg)
-		if err != nil {
-			return err
-		}
-		// The caller is already registered and they
-		// have allowed just multi-registration, so
-		// return.
-		if reg.Address == rr.address {
-			return nil
-		}
 		// The caller is regestering a key that is
 		// already registered by another address.
 		return ErrAlreadyRegistered
 	}
-
 	value, err := json.Marshal(&Registration{
-		Key:      key,
-		Address:  rr.address,
-		Registry: rr.name,
+		Key:         key,
+		Address:     rr.address,
+		Registry:    rr.name,
+		Annotations: annotations,
 	})
 	if err != nil {
 		return err
