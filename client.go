@@ -533,7 +533,7 @@ type clientStats struct {
 	counters map[statName]int
 }
 
-// Add to the counter.
+// Inc adds to the counter.
 func (cs *clientStats) Inc(name statName) {
 	if cs == nil {
 		return

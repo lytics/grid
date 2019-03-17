@@ -43,7 +43,7 @@ func (r *ring) ID() string {
 	return r.name
 }
 
-// ActorStarts returns the list of actor names in this ring. They
+// Actors returns the list of actor names in this ring. They
 // may or may not be running.
 func (r *ring) Actors() []*grid.ActorStart {
 	names := make([]*grid.ActorStart, r.n)
@@ -58,28 +58,28 @@ func (r *ring) ByRandom() string {
 	return r.actorName(r.dice.Intn(r.n))
 }
 
-// ByModuloInt selects an actor name by using:
+// ByInt selects an actor name by using:
 //     key % number of actors
 func (r *ring) ByInt(key int) string {
 	i := key % r.n
 	return r.actorName(i)
 }
 
-// ByModuloUint32 selects an actor name by using:
+// ByUint32 selects an actor name by using:
 //     key % number of actors
 func (r *ring) ByUint32(key uint32) string {
 	i := key % uint32(r.n)
 	return r.actorName(int(i))
 }
 
-// ByModuloUint64 selects an actor name by using:
+// ByUint64 selects an actor name by using:
 //     key % number of actors
 func (r *ring) ByUint64(key uint64) string {
 	i := key % uint64(r.n)
 	return r.actorName(int(i))
 }
 
-// ByHashBytes selects an actor name by using:
+// ByHashedBytes selects an actor name by using:
 //     hash(key) % number of actors
 func (r *ring) ByHashedBytes(key []byte) string {
 	h := fnv.New64()
