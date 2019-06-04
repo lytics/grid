@@ -67,6 +67,8 @@ func (e *QueryEvent) Annotations() []string {
 // EventType gets the type of event
 func (e *QueryEvent) Type() EventType {
 	return e.eventType
+}
+
 // Err caught watching query events. The error is
 // not associated with any particular entity, it's
 // an error with the watch itself or a result of
