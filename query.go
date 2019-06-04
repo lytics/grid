@@ -40,8 +40,15 @@ type QueryEvent struct {
 }
 
 // NewQueryEvent does what it says.
-func NewQueryEvent(name, peer string, err error, entity EntityType, type EventType, annotations []string) *QueryEvent {
-	return &QueryEvent{name, peer, err, entity, type, annotations}
+func NewQueryEvent(name, peer string, err error, entity EntityType, eventType EventType, annotations []string) *QueryEvent {
+	return &QueryEvent{
+		name: name, 
+		peer: peer, 
+		err: err, 
+		entity: entity, 
+		eventType: eventType, 
+		annotations: annotations
+	}
 }
 
 // Name of entity that caused the event. For example, if
@@ -130,7 +137,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 			peer:        reg.Registry,
 			entity:      filter,
 			annotations: reg.Annotations,
-			eventType:        EntityFound,
+			eventType:   EntityFound,
 		})
 	}
 
@@ -175,7 +182,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 						name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
 						entity:      filter,
 						annotations: annotations,
-						eventType:        EntityLost,
+						eventType:   EntityLost,
 					}
 					// Maintain contract that for peer events
 					// the Peer() and Name() methods return
@@ -195,7 +202,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 						peer:        change.Reg.Registry,
 						entity:      filter,
 						annotations: change.Reg.Annotations,
-						eventType:        EntityFound,
+						eventType:   EntityFound,
 					}
 					// Maintain contract that for peer events
 					// the Peer() and Name() methods return
@@ -241,10 +248,10 @@ func (c *Client) QueryC(ctx context.Context, filter EntityType) ([]*QueryEvent, 
 	var result []*QueryEvent
 	for _, reg := range regs {
 		result = append(result, &QueryEvent{
-			name:   nameFromKey(filter, c.cfg.Namespace, reg.Key),
-			peer:   reg.Registry,
-			entity: filter,
-			eventType:   EntityFound,
+			name:      nameFromKey(filter, c.cfg.Namespace, reg.Key),
+			peer:      reg.Registry,
+			entity:    filter,
+			eventType: EntityFound,
 		})
 	}
 
