@@ -35,8 +35,13 @@ type QueryEvent struct {
 	peer        string
 	err         error
 	entity      EntityType
-	Type        EventType
+	eventType   EventType
 	annotations []string
+}
+
+// NewQueryEvent does what it says.
+func NewQueryEvent(name, peer string, err error, entity EntityType, type EventType, annotations []string) *QueryEvent {
+	return &QueryEvent{name, peer, err, entity, type, annotations}
 }
 
 // Name of entity that caused the event. For example, if
@@ -59,6 +64,9 @@ func (e *QueryEvent) Annotations() []string {
 	return e.annotations
 }
 
+// EventType gets the type of event
+func (e *QueryEvent) Type() EventType {
+	return e.eventType
 // Err caught watching query events. The error is
 // not associated with any particular entity, it's
 // an error with the watch itself or a result of
@@ -72,7 +80,7 @@ func (e *QueryEvent) String() string {
 	if e == nil {
 		return "query event: <nil>"
 	}
-	switch e.Type {
+	switch e.eventType {
 	case EntityLost:
 		return fmt.Sprintf("query event: %v lost: %v", e.entity, e.name)
 	case EntityFound:
@@ -120,7 +128,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 			peer:        reg.Registry,
 			entity:      filter,
 			annotations: reg.Annotations,
-			Type:        EntityFound,
+			eventType:        EntityFound,
 		})
 	}
 
@@ -165,7 +173,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 						name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
 						entity:      filter,
 						annotations: annotations,
-						Type:        EntityLost,
+						eventType:        EntityLost,
 					}
 					// Maintain contract that for peer events
 					// the Peer() and Name() methods return
@@ -185,7 +193,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 						peer:        change.Reg.Registry,
 						entity:      filter,
 						annotations: change.Reg.Annotations,
-						Type:        EntityFound,
+						eventType:        EntityFound,
 					}
 					// Maintain contract that for peer events
 					// the Peer() and Name() methods return
@@ -234,7 +242,7 @@ func (c *Client) QueryC(ctx context.Context, filter EntityType) ([]*QueryEvent, 
 			name:   nameFromKey(filter, c.cfg.Namespace, reg.Key),
 			peer:   reg.Registry,
 			entity: filter,
-			Type:   EntityFound,
+			eventType:   EntityFound,
 		})
 	}
 

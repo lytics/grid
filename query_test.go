@@ -128,7 +128,7 @@ func TestQueryWatch(t *testing.T) {
 		case <-time.After(10 * time.Second):
 			t.Fatalf("expected number of peers: %v, found: %v", nrPeers, len(found))
 		case e := <-watch:
-			if e.Type == EntityFound {
+			if e.eventType == EntityFound {
 				found[e.Name()] = true
 				t.Logf("found peer: %v", e.Name())
 			}
