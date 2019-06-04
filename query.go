@@ -42,12 +42,12 @@ type QueryEvent struct {
 // NewQueryEvent does what it says.
 func NewQueryEvent(name, peer string, err error, entity EntityType, eventType EventType, annotations []string) *QueryEvent {
 	return &QueryEvent{
-		name: name, 
-		peer: peer, 
-		err: err, 
-		entity: entity, 
-		eventType: eventType, 
-		annotations: annotations
+		name:        name,
+		peer:        peer,
+		err:         err,
+		entity:      entity,
+		eventType:   eventType,
+		annotations: annotations,
 	}
 }
 
