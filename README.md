@@ -19,8 +19,8 @@ convenient.
 No matter how many processes are participating in the grid, only one leader
 actor is started per namespace, it is a singleton.  The actor named "leader"
 is also special in that if the process currently running the leader dies,
-it will be started on another peer, if more than one peer is participating
-in the grid.
+the leader will be started on another peer, if more than one peer is 
+participating in the grid.
 
 ```go
 func main() {
@@ -71,13 +71,12 @@ func (a *LeaderActor) Act(ctx context.Context) {
     peers, err := a.client.Query(timeout, grid.Peers)
     ...
 
-    i := 0
     for _, peer := range peers {
         // Actor names are unique, registered in etcd.
         // There can never be more than one actor with
         // a given name. When an actor exits or panics
         // its record is removed from etcd.
-        start := grid.NewActorStart("worker-%d", i)
+        start := grid.NewActorStart("worker-for-%v", peer.Peer())
         start.Type = "worker"
 
         // Start a new actor on the given peer. The message
@@ -86,7 +85,6 @@ func (a *LeaderActor) Act(ctx context.Context) {
         // the definition.
         res, err := a.client.Request(timeout, peer.Name(), start)
         ...
-        i++
     }
 
     ...
