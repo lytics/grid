@@ -60,3 +60,11 @@ var (
 	// it was requested to close, likely do to some etcd issue.
 	ErrWatchClosedUnexpectedly = errors.New("grid: watch closed unexpectedly")
 )
+
+var (
+	// ErrNilGroup when a method that requires a group is called
+	// with a nil group.
+	ErrNilGroup = errors.New("grid: nil group")
+	// ErrNilClient when a client method is called on a nil client.
+	ErrNilClient = errors.New("grid: nil client")
+)
