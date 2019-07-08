@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	etcdv3 "github.com/coreos/etcd/clientv3"
+	etcdv3 "go.etcd.io/etcd/clientv3"
 	"github.com/lytics/grid/testetcd"
 )
 
