@@ -303,14 +303,6 @@ func (s *Server) monitorFatalErrors() {
 	}()
 }
 
-// monitorRegistry for errors in the background.
-func (s *Server) monitorRegistry(addr net.Addr) error {
-	if err := ; err != nil {
-		return err
-	}
-	return nil
-}
-
 // monitorLeader starts a leader and keeps tyring to start
 // a leader thereafter. If the leader should die on any
 // host then some peer will eventually have it start again.
