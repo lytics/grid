@@ -129,13 +129,13 @@ func (rr *Registry) Start(addr net.Addr) error {
 
 	address, err := formatAddress(addr)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	rr.address = address
 	rr.name = formatName(address)
 
 	if rr.LeaseDuration < minLeaseDuration {
-		return nil, ErrLeaseDurationTooShort
+		return ErrLeaseDurationTooShort
 	}
 	rr.lease = etcdv3.NewLease(rr.client)
 
@@ -143,7 +143,7 @@ func (rr *Registry) Start(addr net.Addr) error {
 	res, err := rr.lease.Grant(timeout, int64(rr.LeaseDuration.Seconds()))
 	cancel()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	rr.leaseID = res.ID
 
@@ -152,7 +152,7 @@ func (rr *Registry) Start(addr net.Addr) error {
 	keepAlive, err := rr.lease.KeepAlive(keepAliveCtx, rr.leaseID)
 	if err != nil {
 		keepAliveCancel()
-		return nil, err
+		return err
 	}
 
 	// There are two ways the Registry can exit:
@@ -187,7 +187,7 @@ func (rr *Registry) Start(addr net.Addr) error {
 						return
 					default:
 					}
-					panic("registry: %v: keep alive closed unexpectedly", rr.name)
+					panic(fmt.Sprintf("registry: %v: keep alive closed unexpectedly", rr.name))
 				}
 				rr.logf("registry: %v: keep alive responded with heartbeat TTL: %vs", rr.name, res.TTL)
 				// Testing hook.
