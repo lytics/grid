@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"go.etcd.io/etcd/clientv3"
 	"github.com/lytics/grid/testetcd"
+	"go.etcd.io/etcd/clientv3"
 )
 
 type busyActor struct {

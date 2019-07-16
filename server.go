@@ -9,9 +9,10 @@ import (
 	"sync"
 	"time"
 
-	etcdv3 "go.etcd.io/etcd/clientv3"
 	"github.com/lytics/grid/codec"
 	"github.com/lytics/grid/registry"
+	"github.com/lytics/retry"
+	etcdv3 "go.etcd.io/etcd/clientv3"
 	netcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -113,10 +114,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.ctx = ctx
 	s.cancel = cancel
 
-	// Start the registry and monitor that it is
-	// running correctly.
-	err = s.monitorRegistry(lis.Addr())
-	if err != nil {
+	if s.registry.Start(lis.Addr()); err != nil {
 		return err
 	}
 
@@ -305,23 +303,6 @@ func (s *Server) monitorFatalErrors() {
 	}()
 }
 
-// monitorRegistry for errors in the background.
-func (s *Server) monitorRegistry(addr net.Addr) error {
-	regFaults, err := s.registry.Start(addr)
-	if err != nil {
-		return err
-	}
-	go func() {
-		select {
-		case <-s.ctx.Done():
-			return
-		case err := <-regFaults:
-			s.reportFatalError(err)
-		}
-	}()
-	return nil
-}
-
 // monitorLeader starts a leader and keeps tyring to start
 // a leader thereafter. If the leader should die on any
 // host then some peer will eventually have it start again.
@@ -456,9 +437,18 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	// and capture panics that the actor raises.
 	go func() {
 		defer func() {
-			timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-			s.registry.Deregister(timeout, nsName)
-			cancel()
+			var err error
+			retry.X(3, 3*time.Second,
+				func() bool {
+					timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+					err = s.registry.Deregister(timeout, nsName)
+					cancel()
+					return err != nil
+				})
+			if err != nil {
+				s.logf("failed to deregister actor: %v, error: %v", nsName, err)
+				panic(fmt.Sprintf("unable to deregister actor: %v, error: %v", nsName, err))
+			}
 		}()
 		defer func() {
 			if err := recover(); err != nil {

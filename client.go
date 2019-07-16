@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	etcdv3 "go.etcd.io/etcd/clientv3"
 	"github.com/lytics/grid/codec"
 	"github.com/lytics/grid/registry"
 	"github.com/lytics/retry"
+	etcdv3 "go.etcd.io/etcd/clientv3"
 	"google.golang.org/grpc"
 )
 

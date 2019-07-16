@@ -123,19 +123,19 @@ func New(client *etcdv3.Client) (*Registry, error) {
 }
 
 // Start Registry.
-func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
+func (rr *Registry) Start(addr net.Addr) error {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
 	address, err := formatAddress(addr)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	rr.address = address
 	rr.name = formatName(address)
 
 	if rr.LeaseDuration < minLeaseDuration {
-		return nil, ErrLeaseDurationTooShort
+		return ErrLeaseDurationTooShort
 	}
 	rr.lease = etcdv3.NewLease(rr.client)
 
@@ -143,7 +143,7 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 	res, err := rr.lease.Grant(timeout, int64(rr.LeaseDuration.Seconds()))
 	cancel()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	rr.leaseID = res.ID
 
@@ -152,16 +152,14 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 	keepAlive, err := rr.lease.KeepAlive(keepAliveCtx, rr.leaseID)
 	if err != nil {
 		keepAliveCancel()
-		return nil, err
+		return err
 	}
 
 	// There are two ways the Registry can exit:
 	//     1) Someone calls Stop, in which case it will cancel
 	//        its context and exit.
 	//     2) The Registry fails to signal keep-alive on it
-	//        lease repeatedly, in which case it will cancel
-	//        its context and exit.
-	failure := make(chan error, 1)
+	//        lease repeatedly, in which case it will panic.
 	go func() {
 		defer close(rr.exited)
 
@@ -189,16 +187,7 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 						return
 					default:
 					}
-					select {
-					case failure <- ErrKeepAliveClosedUnexpectedly:
-						// Testing hook.
-						if stats != nil {
-							stats.failure++
-						}
-						rr.logf("registry: %v: keep alive closed unexpectedly", rr.name)
-					default:
-					}
-					return
+					panic(fmt.Sprintf("registry: %v: keep alive closed unexpectedly", rr.name))
 				}
 				rr.logf("registry: %v: keep alive responded with heartbeat TTL: %vs", rr.name, res.TTL)
 				// Testing hook.
@@ -209,7 +198,7 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 		}
 	}()
 
-	return failure, nil
+	return nil
 }
 
 // Address of this registry in the format of <ip>:<port>

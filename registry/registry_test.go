@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	etcdv3 "go.etcd.io/etcd/clientv3"
 	"github.com/lytics/grid/testetcd"
+	etcdv3 "go.etcd.io/etcd/clientv3"
 )
 
 const (
@@ -256,7 +256,7 @@ func TestKeepAlive(t *testing.T) {
 
 	// Use the minimum.
 	r.LeaseDuration = 1 * time.Second
-	_, err := r.Start(addr)
+	err := r.Start(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestWatch(t *testing.T) {
 
 	// Use the minimum.
 	r.LeaseDuration = 1 * time.Second
-	_, err := r.Start(addr)
+	err := r.Start(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +429,7 @@ func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.
 	r.LeaseDuration = 10 * time.Second
 
 	if shouldStart {
-		_, err = r.Start(addr)
+		err = r.Start(addr)
 		if err != nil {
 			t.Fatal(err)
 		}
