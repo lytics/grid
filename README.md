@@ -187,11 +187,30 @@ func (a *LeaderActor) Act(ctx context.Context) {
 }
 ```
 
+## Testing 
+
+With out running the following setup commands, you'll get a panic because the `init` function for the 
+package `golang.org\x\net\trace` will be run twice and cause an http already registered panic. 
+```
+$ go test
+panic: /debug/requests is already registered. You may have two independent copies of golang.org/x/net/trace in your binary, trying to maintain separate state. This may involve a vendored copy of golang.org/x/net/trace.
+```
+
+**The work around** is to create a `vendor` directory:
+
+```
+dep init -v
+dep ensure -v
+dep prune -v
+```
+
+**Note** that `Gopkg.lock`,`Gopkg.toml` and `vendor/`are all included in the `.gitignore` file. 
+
 ## Kubernetes + Grid
 The examples above are meant to give some intuitive sense of what the grid
 library does. Howevery what it does not do is:
 
- 1. Package up your congifuration and binaries
+ 1. Package up your configuration and binaries
  1. Start your VMs
  1. Start your processes on those VMs
  1. Autoscale your VMs when resources run low
