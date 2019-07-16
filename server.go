@@ -447,7 +447,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 				})
 			if err != nil {
 				s.logf("failed to deregister actor: %v, error: %v", nsName, err)
-				panic("unable to deregister actor: %v, error: %v", nsName, err)
+				panic(fmt.Sprintf("unable to deregister actor: %v, error: %v", nsName, err))
 			}
 		}()
 		defer func() {
