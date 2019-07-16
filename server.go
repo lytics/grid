@@ -9,9 +9,10 @@ import (
 	"sync"
 	"time"
 
-	etcdv3 "go.etcd.io/etcd/clientv3"
 	"github.com/lytics/grid/codec"
 	"github.com/lytics/grid/registry"
+	"github.com/lytics/retry"
+	etcdv3 "go.etcd.io/etcd/clientv3"
 	netcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -456,9 +457,18 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	// and capture panics that the actor raises.
 	go func() {
 		defer func() {
-			timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-			s.registry.Deregister(timeout, nsName)
-			cancel()
+			var err error
+			retry.X(3, 3*time.Second,
+				func() {
+					timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+					err = s.registry.Deregister(timeout, nsName)
+					cancel()
+					return err == nil
+				})
+			if err != nil {
+				s.logf("failed to deregister actor: %v, error: %v", nsName, err)
+				panic("unable to deregister actor: %v, error: %v", nsName, err)
+			}
 		}()
 		defer func() {
 			if err := recover(); err != nil {

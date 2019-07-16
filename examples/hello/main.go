@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	etcdv3 "go.etcd.io/etcd/clientv3"
 	"github.com/lytics/grid"
+	etcdv3 "go.etcd.io/etcd/clientv3"
 )
 
 const timeout = 2 * time.Second
