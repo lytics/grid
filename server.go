@@ -463,7 +463,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 					timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 					err = s.registry.Deregister(timeout, nsName)
 					cancel()
-					return err == nil
+					return err != nil
 				})
 			if err != nil {
 				s.logf("failed to deregister actor: %v, error: %v", nsName, err)
