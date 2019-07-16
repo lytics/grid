@@ -159,9 +159,7 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 	//     1) Someone calls Stop, in which case it will cancel
 	//        its context and exit.
 	//     2) The Registry fails to signal keep-alive on it
-	//        lease repeatedly, in which case it will cancel
-	//        its context and exit.
-	failure := make(chan error, 1)
+	//        lease repeatedly, in which case it will panic.
 	go func() {
 		defer close(rr.exited)
 
@@ -189,16 +187,7 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 						return
 					default:
 					}
-					select {
-					case failure <- ErrKeepAliveClosedUnexpectedly:
-						// Testing hook.
-						if stats != nil {
-							stats.failure++
-						}
-						rr.logf("registry: %v: keep alive closed unexpectedly", rr.name)
-					default:
-					}
-					return
+					panic("registry: %v: keep alive closed unexpectedly", rr.name)
 				}
 				rr.logf("registry: %v: keep alive responded with heartbeat TTL: %vs", rr.name, res.TTL)
 				// Testing hook.
