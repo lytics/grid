@@ -123,7 +123,7 @@ func New(client *etcdv3.Client) (*Registry, error) {
 }
 
 // Start Registry.
-func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
+func (rr *Registry) Start(addr net.Addr) error {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
@@ -198,7 +198,7 @@ func (rr *Registry) Start(addr net.Addr) (<-chan error, error) {
 		}
 	}()
 
-	return failure, nil
+	return nil
 }
 
 // Address of this registry in the format of <ip>:<port>

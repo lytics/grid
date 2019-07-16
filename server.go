@@ -114,10 +114,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.ctx = ctx
 	s.cancel = cancel
 
-	// Start the registry and monitor that it is
-	// running correctly.
-	err = s.monitorRegistry(lis.Addr())
-	if err != nil {
+	if s.registry.Start(lis.Addr()); err != nil {
 		return err
 	}
 
@@ -308,18 +305,9 @@ func (s *Server) monitorFatalErrors() {
 
 // monitorRegistry for errors in the background.
 func (s *Server) monitorRegistry(addr net.Addr) error {
-	regFaults, err := s.registry.Start(addr)
-	if err != nil {
+	if err := ; err != nil {
 		return err
 	}
-	go func() {
-		select {
-		case <-s.ctx.Done():
-			return
-		case err := <-regFaults:
-			s.reportFatalError(err)
-		}
-	}()
 	return nil
 }
 
