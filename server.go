@@ -439,7 +439,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 		defer func() {
 			var err error
 			retry.X(3, 3*time.Second,
-				func() error {
+				func() bool {
 					timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 					err = s.registry.Deregister(timeout, nsName)
 					cancel()
