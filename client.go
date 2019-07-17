@@ -13,7 +13,7 @@ import (
 	"github.com/lytics/grid/codec"
 	"github.com/lytics/grid/registry"
 	"github.com/lytics/retry"
-	etcdv3 "go.etcd.io/etcd/clientv3"
+	etcdv3 "github.com/coreos/etcd/clientv3"
 	"google.golang.org/grpc"
 )
 

@@ -3,7 +3,7 @@ package testetcd
 import (
 	"testing"
 
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 func StartAndConnect(t testing.TB) *clientv3.Client {

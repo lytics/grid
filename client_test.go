@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lytics/grid/testetcd"
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 type busyActor struct {
