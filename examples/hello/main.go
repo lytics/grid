@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/lytics/grid"
-	etcdv3 "github.com/coreos/etcd/clientv3"
+	etcdv3 "go.etcd.io/etcd/clientv3"
 )
 
 const timeout = 2 * time.Second
