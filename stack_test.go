@@ -34,14 +34,20 @@ func TestNiceStack(t *testing.T) {
 	for i, part := range strings.Split(recovered, " <-- ") {
 		//f := strings.Index(part, pkg) // First
 		f := strings.LastIndex(part, "/") // First
-		l := strings.Index(part, ":")     // Last
+		var o int
+		if f != -1 {
+			o = f + 1
+		} else {
+			o = 0
+		}
+		l := strings.Index(part, ":") // Last
 		if f < 0 {
 			f = 0
 		}
 		if i == 0 {
-			actual = part[f+1 : l]
+			actual = part[o:l]
 		} else {
-			actual = actual + " <-- " + part[f+1:l]
+			actual = actual + " <-- " + part[o:l]
 		}
 	}
 	if expected != actual {
