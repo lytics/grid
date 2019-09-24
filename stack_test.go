@@ -27,12 +27,12 @@ func TestNiceStack(t *testing.T) {
 	}
 	f()
 
-	// Rework the actual result into a string that
-	// works across systems since local paths are
-	// placed in the stack trace.
+	// Rework the actual result into a string that works across systems since
+	// local paths are placed in the stack trace.
+	// The full path is removed due to go modules meaning that the location the
+	// files are at being variable
 	actual := ""
 	for i, part := range strings.Split(recovered, " <-- ") {
-		//f := strings.Index(part, pkg) // First
 		f := strings.LastIndex(part, "/") // First
 		var o int
 		if f != -1 {
