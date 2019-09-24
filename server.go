@@ -68,14 +68,27 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		r.Logger = cfg.Logger
 	}
 
-	return &Server{
+	server := &Server{
 		cfg:      cfg,
 		etcd:     etcd,
 		grpc:     grpc.NewServer(),
 		actors:   map[string]MakeActor{},
 		fatalErr: make(chan error, 1),
 		registry: r,
-	}, nil
+	}
+
+	// Create a context that each actor this leader creates
+	// will receive. When the server is stopped, it will
+	// call the cancel function, which should cause all the
+	// actors it is responsible for to shutdown.
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx = context.WithValue(ctx, contextKey, &contextVal{
+		server: server,
+	})
+	server.ctx = ctx
+	server.cancel = cancel
+
+	return server, nil
 }
 
 // RegisterDef of an actor. When a ActorStart message is sent to
@@ -105,17 +118,6 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
 
-	// Create a context that each actor this leader creates
-	// will receive. When the server is stopped, it will
-	// call the cancel function, which should cause all the
-	// actors it is responsible for to shutdown.
-	ctx, cancel := context.WithCancel(context.Background())
-	ctx = context.WithValue(ctx, contextKey, &contextVal{
-		server: s,
-	})
-	s.ctx = ctx
-	s.cancel = cancel
-
 	if err := s.registry.Start(lis.Addr()); err != nil {
 		return err
 	}
@@ -131,7 +133,7 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Register the namespace name, other peers can search
 	// for this to discover each other.
-	timeoutC, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
+	timeoutC, cancel := context.WithTimeout(s.ctx, s.cfg.Timeout)
 	err = s.registry.Register(timeoutC, nsName, s.cfg.Annotations...)
 	cancel()
 	if err != nil {
