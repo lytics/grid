@@ -54,12 +54,27 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	if etcd == nil {
 		return nil, ErrNilEtcd
 	}
+
+	// Create a registry client, through which other
+	// entities like peers, actors, and mailboxes
+	// will be discovered.
+	r, err := registry.New(etcd)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set registry logger.
+	if cfg.Logger != nil {
+		r.Logger = cfg.Logger
+	}
+
 	return &Server{
 		cfg:      cfg,
 		etcd:     etcd,
 		grpc:     grpc.NewServer(),
 		actors:   map[string]MakeActor{},
 		fatalErr: make(chan error, 1),
+		registry: r,
 	}, nil
 }
 
@@ -87,21 +102,8 @@ func (s *Server) Context() context.Context {
 // Serve the grid on the listener. The listener address type must be
 // net.TCPAddr, otherwise an error will be returned.
 func (s *Server) Serve(lis net.Listener) error {
-	// Create a registry client, through which other
-	// entities like peers, actors, and mailboxes
-	// will be discovered.
-	r, err := registry.New(s.etcd)
-	if err != nil {
-		return err
-	}
-	s.registry = r
 	s.registry.Timeout = s.cfg.Timeout
 	s.registry.LeaseDuration = s.cfg.LeaseDuration
-
-	// Set registry logger.
-	if s.cfg.Logger != nil {
-		r.Logger = s.cfg.Logger
-	}
 
 	// Create a context that each actor this leader creates
 	// will receive. When the server is stopped, it will
@@ -114,7 +116,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.ctx = ctx
 	s.cancel = cancel
 
-	if s.registry.Start(lis.Addr()); err != nil {
+	if err := s.registry.Start(lis.Addr()); err != nil {
 		return err
 	}
 
