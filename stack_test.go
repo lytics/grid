@@ -33,21 +33,15 @@ func TestNiceStack(t *testing.T) {
 	// files are at being variable
 	actual := ""
 	for i, part := range strings.Split(recovered, " <-- ") {
-		f := strings.LastIndex(part, "/") // First
-		var o int
-		if f != -1 {
-			o = f + 1
-		} else {
-			o = 0
-		}
-		l := strings.Index(part, ":") // Last
+		f := strings.LastIndex(part, "/") + 1 // First
+		l := strings.Index(part, ":")         // Last
 		if f < 0 {
 			f = 0
 		}
 		if i == 0 {
-			actual = part[o:l]
+			actual = part[f:l]
 		} else {
-			actual = actual + " <-- " + part[o:l]
+			actual = actual + " <-- " + part[f:l]
 		}
 	}
 	if expected != actual {
