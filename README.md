@@ -202,7 +202,7 @@ panic: /debug/requests is already registered. You may have two independent copie
 go mod vendor
 ```
 
-**Note** that `Gopkg.lock`,`Gopkg.toml` and `vendor/`are all included in the `.gitignore` file. 
+**Note** `vendor/`is included in the `.gitignore` file. 
 
 ## Kubernetes + Grid
 The examples above are meant to give some intuitive sense of what the grid
