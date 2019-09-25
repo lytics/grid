@@ -24,7 +24,5 @@ _testmain.go
 *.test
 *.prof
 
-# ignore dep and vendor - they are only needed for tests. 
-Gopkg.lock
-Gopkg.toml
+# ignore vendor - they are only needed for tests. 
 vendor/
