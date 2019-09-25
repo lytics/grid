@@ -102,13 +102,7 @@ func TestQueryWatch(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		done := make(chan error, 1)
-		go func() {
-			err := s.Serve(lis)
-			if err != nil {
-				done <- err
-			}
-		}()
+		go s.Serve(lis)
 		defer s.Stop()
 	}
 

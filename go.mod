@@ -30,7 +30,6 @@ require (
 	golang.org/x/sys v0.0.0-20190920190810-ef0ce1748380 // indirect
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
-	google.golang.org/appengine v1.4.0 // indirect
 	google.golang.org/genproto v0.0.0-20190916214212-f660b8655731 // indirect
 	google.golang.org/grpc v1.23.1
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect

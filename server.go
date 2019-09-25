@@ -62,6 +62,8 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.Timeout = cfg.Timeout
+	r.LeaseDuration = cfg.LeaseDuration
 
 	// Set registry logger.
 	if cfg.Logger != nil {
@@ -115,9 +117,6 @@ func (s *Server) Context() context.Context {
 // Serve the grid on the listener. The listener address type must be
 // net.TCPAddr, otherwise an error will be returned.
 func (s *Server) Serve(lis net.Listener) error {
-	s.registry.Timeout = s.cfg.Timeout
-	s.registry.LeaseDuration = s.cfg.LeaseDuration
-
 	if err := s.registry.Start(lis.Addr()); err != nil {
 		return err
 	}
