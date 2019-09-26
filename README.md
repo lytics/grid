@@ -199,12 +199,10 @@ panic: /debug/requests is already registered. You may have two independent copie
 **The work around** is to create a `vendor` directory:
 
 ```
-dep init -v
-dep ensure -v
-dep prune -v
+go mod vendor
 ```
 
-**Note** that `Gopkg.lock`,`Gopkg.toml` and `vendor/`are all included in the `.gitignore` file. 
+**Note** `vendor/`is included in the `.gitignore` file. 
 
 ## Kubernetes + Grid
 The examples above are meant to give some intuitive sense of what the grid

@@ -14,7 +14,7 @@ import (
 func TestNiceStack(t *testing.T) {
 	// Expected is actually "fixed up" to remove line
 	// numbers and local paths.
-	expected := `/usr/local/go/src/runtime/debug/stack.go <-- github.com/lytics/grid/stack_test.go <-- /usr/local/go/src/runtime/panic.go <-- github.com/lytics/grid/stack_test.go <-- github.com/lytics/grid/stack_test.go <-- /usr/local/go/src/testing/testing.go <-- /usr/local/go/src/testing/testing.go`
+	expected := `stack.go <-- stack_test.go <-- panic.go <-- stack_test.go <-- stack_test.go <-- testing.go <-- testing.go`
 
 	var recovered string
 	f := func() {
@@ -27,24 +27,14 @@ func TestNiceStack(t *testing.T) {
 	}
 	f()
 
-	// Strings that are used as "tokens" for checking
-	// parts of strings to be ignored. Things before
-	// the package, and after the number need to be
-	// ignored since they change from system to system
-	// and with none code changes like additional new
-	// lines.
-	const (
-		pkg = "github.com/lytics/grid"
-		num = ":"
-	)
-
-	// Rework the actual result into a string that
-	// works across systems since local paths are
-	// placed in the stack trace.
+	// Rework the actual result into a string that works across systems since
+	// local paths are placed in the stack trace.
+	// The full path is removed due to go modules meaning that the location the
+	// files are at being variable
 	actual := ""
 	for i, part := range strings.Split(recovered, " <-- ") {
-		f := strings.Index(part, pkg) // First
-		l := strings.Index(part, ":") // Last
+		f := strings.LastIndex(part, "/") + 1 // First
+		l := strings.Index(part, ":")         // Last
 		if f < 0 {
 			f = 0
 		}

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lytics/grid/testetcd"
-	"github.com/coreos/etcd/clientv3"
+	"go.etcd.io/etcd/clientv3"
 )
 
 type busyActor struct {
@@ -211,7 +211,7 @@ func TestClientBroadcast(t *testing.T) {
 		startEchoActor(fmt.Sprintf("echo-%d", i))
 	}
 
-	msg := &EchoMsg{"lol"}
+	msg := &EchoMsg{Msg: "lol"}
 	t.Run("broadcast-all", func(t *testing.T) {
 		g := NewListGroup("echo-0", "echo-1")
 		res, err := client.Broadcast(timeout, g, msg)
@@ -296,7 +296,7 @@ func TestClientBroadcast(t *testing.T) {
 
 func TestClientWithRunningReceiver(t *testing.T) {
 	const timeout = 2 * time.Second
-	expected := &EchoMsg{"testing 1, 2, 3"}
+	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
 	etcd, server, client := bootstrapClientTest(t)
@@ -363,7 +363,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 
 func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	const timeout = 2 * time.Second
-	expected := &EchoMsg{"testing 1, 2, 3"}
+	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
 	etcd, server, client := bootstrapClientTest(t)
@@ -437,7 +437,7 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 
 func TestClientWithBusyReceiver(t *testing.T) {
 	const timeout = 2 * time.Second
-	expected := &EchoMsg{"testing 1, 2, 3"}
+	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
 	etcd, server, client := bootstrapClientTest(t)

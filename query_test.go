@@ -49,8 +49,6 @@ func TestQuery(t *testing.T) {
 		}()
 		defer s.Stop()
 
-		time.Sleep(1 * time.Second)
-
 		// Check for server as a peer.
 		var peers []*QueryEvent
 		retry.X(6, backoff, func() bool {
@@ -93,32 +91,20 @@ func TestQueryWatch(t *testing.T) {
 		t.Fatal("expected 0 peers")
 	}
 
-	// Start servers one at a time in the background.
-	go func() {
-		for i := 1; i <= nrPeers; i++ {
-			s, err := NewServer(etcd, ServerCfg{Namespace: namespace})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			lis, err := net.Listen("tcp", "localhost:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			done := make(chan error, 1)
-			go func() {
-				err := s.Serve(lis)
-				if err != nil {
-					done <- err
-				}
-			}()
-			defer s.Stop()
-
-			// Sleep before starting next peer.
-			time.Sleep(1 * time.Second)
+	for i := 1; i <= nrPeers; i++ {
+		s, err := NewServer(etcd, ServerCfg{Namespace: namespace})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}()
+
+		lis, err := net.Listen("tcp", "localhost:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		go s.Serve(lis)
+		defer s.Stop()
+	}
 
 	// Monitor the watch channel to confirm that started
 	// servers are eventually found.
