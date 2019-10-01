@@ -15,4 +15,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v1
     - name: Test
-      run: go test ./...
+      run: |
+        curl -sL https://github.com/etcd-io/etcd/releases/download/v3.3.7/etcd-v3.3.7-linux-amd64.tar.gz | tar xz
+        ./etcd-v3.3.7-linux-amd64/etcd 2> /dev/null &
+        go test ./...
