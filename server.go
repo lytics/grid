@@ -29,15 +29,14 @@ type contextVal struct {
 
 // Server of a grid.
 type Server struct {
-	mu       sync.Mutex
-	ctx      context.Context
-	cancel   func()
-	cfg      ServerCfg
-	etcd     *etcdv3.Client
-	grpc     *grpc.Server
-	stop     sync.Once
-	fatalErr chan error
-
+	mu        sync.Mutex
+	ctx       context.Context
+	cancel    func()
+	cfg       ServerCfg
+	etcd      *etcdv3.Client
+	grpc      *grpc.Server
+	stop      sync.Once
+	fatalErr  chan error
 	finalErr  error
 	actors    map[string]MakeActor
 	registry  *registry.Registry
