@@ -54,7 +54,7 @@ func TestContextError(t *testing.T) {
 func TestValidContext(t *testing.T) {
 	const timeout = 2 * time.Second
 
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 	defer etcd.Close()
 
 	a := &contextActor{started: make(chan bool)}

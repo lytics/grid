@@ -595,7 +595,7 @@ go_repository(
     sum = "h1:OpCyFK9+wUB3g4o1guENLYOUZhG4hswKiFbE+jC12Cc=",
     version = "v0.0.0-20190917205325-a14579fbfb1a",
     # https://github.com/bazelbuild/rules_go/issues/1570
-    build_file_proto_mode = "disable"
+    build_file_proto_mode = "disable",
 )
 
 go_repository(

@@ -19,7 +19,7 @@ func TestQuery(t *testing.T) {
 
 	namespace := newNamespace()
 
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 	defer etcd.Close()
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
@@ -74,7 +74,7 @@ func TestQueryWatch(t *testing.T) {
 
 	namespace := newNamespace()
 
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 	defer etcd.Close()
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})

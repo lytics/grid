@@ -19,6 +19,16 @@ type busyActor struct {
 	server *Server
 }
 
+var etcdEndpoints []string
+
+func TestMain(m *testing.M) {
+	embed := testetcd.NewEmbedded()
+	defer embed.Etcd.Close()
+	etcdEndpoints = []string{embed.Cfg.ACUrls[0].String()}
+	r := m.Run()
+	os.Exit(r)
+}
+
 func (a *busyActor) Act(c context.Context) {
 	name, err := ContextActorName(c)
 	if err != nil {
@@ -74,7 +84,7 @@ func init() {
 }
 
 func TestNewClient(t *testing.T) {
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
 	if err != nil {
@@ -92,7 +102,7 @@ func TestNewClientWithNilEtcd(t *testing.T) {
 
 func TestClientClose(t *testing.T) {
 	// Start etcd.
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 
 	// Create client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
@@ -523,7 +533,7 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, *Server, *Client) {
 	namespace := newNamespace()
 
 	// Start etcd.
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 
 	// Logger for actors.
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags)
