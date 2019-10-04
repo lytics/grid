@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,16 @@ const (
 	start     = true
 	dontStart = false
 )
+
+var etcdEndpoints []string
+
+func TestMain(m *testing.M) {
+	embed := testetcd.NewEmbedded()
+	defer embed.Etcd.Close()
+	etcdEndpoints = []string{embed.Cfg.ACUrls[0].String()}
+	r := m.Run()
+	os.Exit(r)
+}
 
 func TestInitialLeaseID(t *testing.T) {
 	client, r, _ := bootstrap(t, dontStart)
@@ -415,7 +426,7 @@ func TestWatchEventString(t *testing.T) {
 }
 
 func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.TCPAddr) {
-	client := testetcd.StartAndConnect(t)
+	client := testetcd.StartAndConnect(t, etcdEndpoints)
 
 	addr := &net.TCPAddr{
 		IP:   []byte("localhost"),
