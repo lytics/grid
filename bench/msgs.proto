@@ -1,0 +1,18 @@
+syntax = "proto3";
+package bench;
+
+message Event {
+	string timestamp = 1;
+	string user      = 2;
+	int32 type       = 3;
+	string strdata   = 4;
+	map<string, string> data = 5;
+}
+
+message EventResponse {
+	string timestamp = 1;
+	string id        = 2;
+	string strdata   = 3;
+	int32  userID    = 4;
+	map<string, string> data = 5;
+}
