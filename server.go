@@ -151,9 +151,11 @@ func (s *Server) Serve(lis net.Listener) error {
 	}
 	go s.runMailbox(mailbox)
 
-	// Start the leader actor, and monitor, ie: make sure
-	// that it's running.
-	s.monitorLeader()
+	if s.cfg.DisalowLeadership {
+		// Start the leader actor, and monitor, ie: make sure
+		// that it's running.
+		s.monitorLeader()
+	}
 
 	// Monitor for fatal errors.
 	s.monitorFatalErrors()
