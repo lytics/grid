@@ -19,6 +19,16 @@ type busyActor struct {
 	server *Server
 }
 
+var etcdEndpoints []string
+
+func TestMain(m *testing.M) {
+	embed := testetcd.NewEmbedded()
+	defer embed.Etcd.Close()
+	etcdEndpoints = []string{embed.Cfg.ACUrls[0].String()}
+	r := m.Run()
+	os.Exit(r)
+}
+
 func (a *busyActor) Act(c context.Context) {
 	name, err := ContextActorName(c)
 	if err != nil {
@@ -74,7 +84,7 @@ func init() {
 }
 
 func TestNewClient(t *testing.T) {
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
 	if err != nil {
@@ -92,7 +102,7 @@ func TestNewClientWithNilEtcd(t *testing.T) {
 
 func TestClientClose(t *testing.T) {
 	// Start etcd.
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 
 	// Create client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
@@ -211,7 +221,7 @@ func TestClientBroadcast(t *testing.T) {
 		startEchoActor(fmt.Sprintf("echo-%d", i))
 	}
 
-	msg := &EchoMsg{"lol"}
+	msg := &EchoMsg{Msg: "lol"}
 	t.Run("broadcast-all", func(t *testing.T) {
 		g := NewListGroup("echo-0", "echo-1")
 		res, err := client.Broadcast(timeout, g, msg)
@@ -296,7 +306,7 @@ func TestClientBroadcast(t *testing.T) {
 
 func TestClientWithRunningReceiver(t *testing.T) {
 	const timeout = 2 * time.Second
-	expected := &EchoMsg{"testing 1, 2, 3"}
+	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
 	etcd, server, client := bootstrapClientTest(t)
@@ -363,7 +373,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 
 func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	const timeout = 2 * time.Second
-	expected := &EchoMsg{"testing 1, 2, 3"}
+	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
 	etcd, server, client := bootstrapClientTest(t)
@@ -437,7 +447,7 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 
 func TestClientWithBusyReceiver(t *testing.T) {
 	const timeout = 2 * time.Second
-	expected := &EchoMsg{"testing 1, 2, 3"}
+	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
 	etcd, server, client := bootstrapClientTest(t)
@@ -523,7 +533,7 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, *Server, *Client) {
 	namespace := newNamespace()
 
 	// Start etcd.
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 
 	// Logger for actors.
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags)

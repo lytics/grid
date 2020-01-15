@@ -26,7 +26,7 @@ func TestServerStartStop(t *testing.T) {
 		timeout = 20 * time.Second
 	)
 
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 	defer etcd.Close()
 
 	a := &startStopActor{
@@ -88,7 +88,7 @@ func TestServerWithFatalError(t *testing.T) {
 		timeout = 20 * time.Second
 	)
 
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 	defer etcd.Close()
 
 	a := &startStopActor{
@@ -143,7 +143,7 @@ func TestServerStartNoEtcdRunning(t *testing.T) {
 	)
 
 	// Start etcd, but shut it down right away.
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 	etcd.Close()
 
 	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
@@ -170,7 +170,7 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 		stopped: make(chan bool),
 	}
 
-	etcd := testetcd.StartAndConnect(t)
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 	defer etcd.Close()
 
 	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})

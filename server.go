@@ -54,13 +54,43 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	if etcd == nil {
 		return nil, ErrNilEtcd
 	}
-	return &Server{
+
+	// Create a registry client, through which other
+	// entities like peers, actors, and mailboxes
+	// will be discovered.
+	r, err := registry.New(etcd)
+	if err != nil {
+		return nil, err
+	}
+	r.Timeout = cfg.Timeout
+	r.LeaseDuration = cfg.LeaseDuration
+
+	// Set registry logger.
+	if cfg.Logger != nil {
+		r.Logger = cfg.Logger
+	}
+
+	server := &Server{
 		cfg:      cfg,
 		etcd:     etcd,
 		grpc:     grpc.NewServer(),
 		actors:   map[string]MakeActor{},
 		fatalErr: make(chan error, 1),
-	}, nil
+		registry: r,
+	}
+
+	// Create a context that each actor this leader creates
+	// will receive. When the server is stopped, it will
+	// call the cancel function, which should cause all the
+	// actors it is responsible for to shutdown.
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx = context.WithValue(ctx, contextKey, &contextVal{
+		server: server,
+	})
+	server.ctx = ctx
+	server.cancel = cancel
+
+	return server, nil
 }
 
 // RegisterDef of an actor. When a ActorStart message is sent to
@@ -87,34 +117,7 @@ func (s *Server) Context() context.Context {
 // Serve the grid on the listener. The listener address type must be
 // net.TCPAddr, otherwise an error will be returned.
 func (s *Server) Serve(lis net.Listener) error {
-	// Create a registry client, through which other
-	// entities like peers, actors, and mailboxes
-	// will be discovered.
-	r, err := registry.New(s.etcd)
-	if err != nil {
-		return err
-	}
-	s.registry = r
-	s.registry.Timeout = s.cfg.Timeout
-	s.registry.LeaseDuration = s.cfg.LeaseDuration
-
-	// Set registry logger.
-	if s.cfg.Logger != nil {
-		r.Logger = s.cfg.Logger
-	}
-
-	// Create a context that each actor this leader creates
-	// will receive. When the server is stopped, it will
-	// call the cancel function, which should cause all the
-	// actors it is responsible for to shutdown.
-	ctx, cancel := context.WithCancel(context.Background())
-	ctx = context.WithValue(ctx, contextKey, &contextVal{
-		server: s,
-	})
-	s.ctx = ctx
-	s.cancel = cancel
-
-	if s.registry.Start(lis.Addr()); err != nil {
+	if err := s.registry.Start(lis.Addr()); err != nil {
 		return err
 	}
 
@@ -129,7 +132,7 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Register the namespace name, other peers can search
 	// for this to discover each other.
-	timeoutC, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
+	timeoutC, cancel := context.WithTimeout(s.ctx, s.cfg.Timeout)
 	err = s.registry.Register(timeoutC, nsName, s.cfg.Annotations...)
 	cancel()
 	if err != nil {

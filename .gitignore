@@ -23,3 +23,9 @@ _testmain.go
 *.exe
 *.test
 *.prof
+
+# ignore vendor - they are only needed for tests. 
+vendor/
+
+# ignore bazel things that are local only
+bazel-*
