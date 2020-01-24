@@ -47,8 +47,8 @@ func setClientCfgDefaults(cfg *ClientCfg) {
 type ServerCfg struct {
 	// Namespace of grid.
 	Namespace string
-	// DisalowLeadership to prevent leader from running on a node.
-	DisalowLeadership bool
+	// DisallowLeadership to prevent leader from running on a node.
+	DisallowLeadership bool
 	// Timeout for communication with etcd, and internal gossip.
 	Timeout time.Duration
 	// LeaseDuration for data in etcd.
