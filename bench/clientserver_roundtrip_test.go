@@ -43,7 +43,6 @@ func BenchmarkClientServerRoundTripBigMapBigStrMsg(b *testing.B) {
 }
 
 func benchRunner(b *testing.B, logger *log.Logger, evtMsg *Event) {
-	// ops := grid.OptionalParm{proto.NewBuffer(make([]byte, 1024))}
 	ctx := context.Background()
 	for n := 0; n < b.N; n++ {
 		timeoutC, cancel := context.WithTimeout(ctx, 10*time.Second)
