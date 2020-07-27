@@ -100,15 +100,15 @@ func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 }
 
 func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
-	s.mumb.Lock()
-	defer s.mumb.Unlock()
-
 	s.mu.Lock()
 	if s.mailboxes == nil {
 		s.mu.Unlock()
 		return nil, ErrServerNotRunning
 	}
 	s.mu.Unlock()
+
+	s.mumb.Lock()
+	defer s.mumb.Unlock()
 
 	_, ok := s.mailboxes[nsName]
 	if ok {
