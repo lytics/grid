@@ -1,10 +1,12 @@
 package bench
 
 import (
+	"context"
 	"log"
 	"os"
 	"testing"
 	"time"
+	// "github.com/gogo/protobuf/proto"
 )
 
 // go test -run=^BenchmarkClientServerRoundTrip -bench=. -benchmem
@@ -41,8 +43,12 @@ func BenchmarkClientServerRoundTripBigMapBigStrMsg(b *testing.B) {
 }
 
 func benchRunner(b *testing.B, logger *log.Logger, evtMsg *Event) {
+	// ops := grid.OptionalParm{proto.NewBuffer(make([]byte, 1024))}
+	ctx := context.Background()
 	for n := 0; n < b.N; n++ {
-		response, err := client.Request(10*time.Second, mailboxName, evtMsg)
+		timeoutC, cancel := context.WithTimeout(ctx, 10*time.Second)
+		response, err := client.RequestC(timeoutC, mailboxName, evtMsg)
+		cancel()
 		successOrDie(logger, err)
 		switch response.(type) {
 		case *EventResponse:

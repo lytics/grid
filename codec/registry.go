@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
+	// "github.com/gogo/protobuf/proto"
 )
 
 var (
@@ -55,7 +56,27 @@ func Marshal(v interface{}) (string, []byte, error) {
 	if !ok {
 		return "", nil, ErrUnregisteredMessageType
 	}
+
+	// buff, release := getProtoBuffer()
+	// defer release()
+	// buf, err := protoMarshalBuffer(v, buff)
 	buf, err := protoMarshal(v)
+	if err != nil {
+		return "", nil, err
+	}
+	return name, buf, nil
+}
+
+func MarshalWithBuffer(v interface{}, buff *proto.Buffer) (string, []byte, error) {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	name := TypeName(v)
+	_, ok := registry[name]
+	if !ok {
+		return "", nil, ErrUnregisteredMessageType
+	}
+	buf, err := protoMarshalBuffer(v, buff)
 	if err != nil {
 		return "", nil, err
 	}
@@ -99,7 +120,32 @@ func protoMarshal(v interface{}) ([]byte, error) {
 	return proto.Marshal(pb)
 }
 
+func protoMarshalBuffer(v interface{}, buff *proto.Buffer) ([]byte, error) {
+	pb := v.(proto.Message)
+	buff.Reset()
+	if err := buff.Marshal(pb); err != nil {
+		return nil, err
+	}
+	return buff.Bytes(), nil
+}
+
 func protoUnmarshal(buf []byte, v interface{}) error {
 	pb := v.(proto.Message)
 	return proto.Unmarshal(buf, pb)
 }
+
+// var protoBufferPool = sync.Pool{
+// 	New: func() interface{} {
+// 		return &proto.Buffer{}
+// 	},
+// }
+//
+// func getProtoBuffer() (*proto.Buffer, func()) {
+// 	bufI := protoBufferPool.Get()
+// 	buf := bufI.(*proto.Buffer)
+// 	releaser := func() {
+// 		// buf.Reset()
+// 		protoBufferPool.Put(buf)
+// 	}
+// 	return buf, releaser
+// }

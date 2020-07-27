@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/protobuf/proto"
+	// "github.com/gogo/protobuf/proto"
 	"github.com/lytics/grid/codec"
 	"github.com/lytics/grid/registry"
 	"github.com/lytics/retry"
@@ -140,20 +142,24 @@ func (c *Client) Close() error {
 	return err
 }
 
+type OptionalParm struct {
+	Buffer *proto.Buffer
+}
+
 // Request a response for the given message.
-func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}) (interface{}, error) {
+func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}, opts ...OptionalParm) (interface{}, error) {
 	if c == nil {
 		return nil, ErrNilClient
 	}
 
 	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return c.RequestC(timeoutC, receiver, msg)
+	return c.RequestC(timeoutC, receiver, msg, opts...)
 }
 
 // RequestC (request) a response for the given message. The context can be
 // used to control cancelation or timeouts.
-func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
+func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}, opts ...OptionalParm) (interface{}, error) {
 	if c == nil {
 		return nil, ErrNilClient
 	}
@@ -164,7 +170,14 @@ func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{})
 		return nil, err
 	}
 
-	typeName, data, err := codec.Marshal(msg)
+	var typeName string
+	var data []byte
+	if len(opts) > 0 && opts[0].Buffer != nil {
+		var buff *proto.Buffer = opts[0].Buffer
+		typeName, data, err = codec.MarshalWithBuffer(msg, buff)
+	} else {
+		typeName, data, err = codec.Marshal(msg)
+	}
 	if err != nil {
 		return nil, err
 	}

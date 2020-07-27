@@ -12,21 +12,32 @@
 #### Results: 
 
 
-#### Results after just adding the benchmark test on commit: 149ba86c2546953b25d7b3fedcfe57f639bfceec
+#### Results after just adding the benchmark test on commit: 5f8bf8a3fec64e2df6d1032381a6084028fd7867
 
-NOTE: I was running a complete backup while running these test, so I want to rerun this after that completes.
+Started embedded etcd on url: http://localhost:21692goos: darwin
+goarch: amd64
+pkg: github.com/lytics/grid/bench
+BenchmarkClientServerRoundTripSmallMsg-12                  11257            105941 ns/op           17392 B/op        290 allocs/op
+BenchmarkClientServerRoundTripBigStrMsg-12                  9408            127801 ns/op           71079 B/op        293 allocs/op
+BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3555            309087 ns/op          187275 B/op       2725 allocs/op
+PASS
+ok      github.com/lytics/grid/bench    8.211s
+Started embedded etcd on url: http://localhost:11899goos: darwin
+goarch: amd64
+pkg: github.com/lytics/grid/bench
+BenchmarkClientServerRoundTripSmallMsg-12                  10671            107704 ns/op           17393 B/op        290 allocs/op
+BenchmarkClientServerRoundTripBigStrMsg-12                  8620            132313 ns/op           71168 B/op        293 allocs/op
+BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3576            315491 ns/op          187284 B/op       2725 allocs/op
+PASS
+ok      github.com/lytics/grid/bench    7.180s
+Started embedded etcd on url: http://localhost:3762goos: darwin
+goarch: amd64
+pkg: github.com/lytics/grid/bench
+BenchmarkClientServerRoundTripSmallMsg-12                  11174            110227 ns/op           17395 B/op        290 allocs/op
+BenchmarkClientServerRoundTripBigStrMsg-12                  8658            139203 ns/op           71103 B/op        293 allocs/op
+BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3556            315230 ns/op          187242 B/op       2725 allocs/op
+PASS
+ok      github.com/lytics/grid/bench    7.943s
 
----
-BenchmarkClientServerRoundTripSmallMsg-12                   8876            136011 ns/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  7065            180048 ns/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            2137            504521 ns/op
----
-BenchmarkClientServerRoundTripSmallMsg-12                   7275            147101 ns/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  6042            177268 ns/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            2766            436754 ns/op
----
-BenchmarkClientServerRoundTripSmallMsg-12                   9987            125366 ns/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  7414            210762 ns/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            2172            465756 ns/op
 
 
