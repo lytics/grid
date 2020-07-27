@@ -5,19 +5,17 @@ import (
 	"regexp"
 )
 
+const validActorName = "^[a-zA-Z0-9-_]+$"
+
+var validActorNameRegEx *regexp.Regexp = regexp.MustCompile(validActorName)
+
 // isNameValid returns true if the name matches the
 // regular expression "^[a-zA-Z0-9-_]+$".
 func isNameValid(name string) bool {
-	const validActorName = "^[a-zA-Z0-9-_]+$"
-
 	if name == "" {
 		return false
 	}
-	if matched, err := regexp.MatchString(validActorName, name); err != nil {
-		return false
-	} else {
-		return matched
-	}
+	return validActorNameRegEx.MatchString(name)
 }
 
 func stripNamespace(t EntityType, namespace, fullname string) (string, error) {
@@ -32,8 +30,15 @@ func namespaceName(t EntityType, namespace, name string) (string, error) {
 	if !isNameValid(name) {
 		return "", ErrInvalidName
 	}
-	if !isNameValid(namespace) {
-		return "", ErrInvalidNamespace
+	// an optimization to reduce memory allocations is to
+	// check if we've seen this namespace before.  To avoid allocating
+	// a regEx on each request.
+	_, seen := knownNamespaces[namespace]
+	if !seen {
+		if !isNameValid(namespace) {
+			return "", ErrInvalidNamespace
+		}
+		knownNamespaces[namespace] = struct{}{}
 	}
 	return fmt.Sprintf("%v.%v.%v", namespace, t, name), nil
 }
@@ -44,3 +49,5 @@ func namespacePrefix(t EntityType, namespace string) (string, error) {
 	}
 	return fmt.Sprintf("%v.%v.", namespace, t), nil
 }
+
+var knownNamespaces = map[string]struct{}{}

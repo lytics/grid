@@ -29,7 +29,9 @@ type contextVal struct {
 
 // Server of a grid.
 type Server struct {
-	mu        sync.Mutex
+	mu   sync.Mutex
+	mumb sync.RWMutex // Mutext used to sync mailboxes map
+
 	ctx       context.Context
 	cancel    func()
 	cfg       ServerCfg
@@ -141,6 +143,7 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Create the mailboxes map.
 	s.mu.Lock()
+	// no need to take the s.mumb Lock here, since no mailbox ops should occur before a call to Serve.  
 	s.mailboxes = make(map[string]*Mailbox)
 	s.mu.Unlock()
 
@@ -183,16 +186,16 @@ func (s *Server) Serve(lis net.Listener) error {
 // this server have called their close method.
 func (s *Server) Stop() {
 	logMailboxes := func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+		s.mumb.RLock()
+		defer s.mumb.RUnlock()
 		for _, mailbox := range s.mailboxes {
 			s.logf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
 		}
 	}
 
 	zeroMailboxes := func() bool {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+		s.mumb.RLock()
+		defer s.mumb.RUnlock()
 		return len(s.mailboxes) == 0
 	}
 
@@ -223,8 +226,8 @@ func (s *Server) Stop() {
 // gRPC definition of the wire service. Consider this a private method.
 func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	getMailbox := func() (*Mailbox, bool) {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+		s.mumb.RLock()
+		defer s.mumb.RUnlock()
 		m, ok := s.mailboxes[d.Receiver]
 		return m, ok
 	}

@@ -55,6 +55,7 @@ func Marshal(v interface{}) (string, []byte, error) {
 	if !ok {
 		return "", nil, ErrUnregisteredMessageType
 	}
+
 	buf, err := protoMarshal(v)
 	if err != nil {
 		return "", nil, err

@@ -101,11 +101,14 @@ func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 
 func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.mailboxes == nil {
+		s.mu.Unlock()
 		return nil, ErrServerNotRunning
 	}
+	s.mu.Unlock()
+
+	s.mumb.Lock()
+	defer s.mumb.Unlock()
 
 	_, ok := s.mailboxes[nsName]
 	if ok {
@@ -133,8 +136,8 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 
 	boxC := make(chan Request, size)
 	cleanup := func() error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+		s.mumb.Lock()
+		defer s.mumb.Unlock()
 
 		// Immediately delete the subscription so that no one
 		// can send to it, at least from this host.
