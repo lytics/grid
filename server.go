@@ -143,7 +143,7 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Create the mailboxes map.
 	s.mu.Lock()
-	// no need to take the s.mumb Lock here, since no mailbox ops should occur before a call to Serve.  I hope.
+	// no need to take the s.mumb Lock here, since no mailbox ops should occur before a call to Serve.  
 	s.mailboxes = make(map[string]*Mailbox)
 	s.mu.Unlock()
 
