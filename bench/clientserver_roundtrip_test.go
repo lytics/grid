@@ -6,7 +6,6 @@ import (
 	"os"
 	"testing"
 	"time"
-	// "github.com/gogo/protobuf/proto"
 )
 
 // go test -run=^BenchmarkClientServerRoundTrip -bench=. -benchmem

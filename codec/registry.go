@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	// "github.com/gogo/protobuf/proto"
 )
 
 var (
@@ -104,25 +103,4 @@ func protoMarshal(v interface{}) ([]byte, error) {
 func protoUnmarshal(buf []byte, v interface{}) error {
 	pb := v.(proto.Message)
 	return proto.Unmarshal(buf, pb)
-}
-
-// Example usage
-// buff, release := getProtoBuffer()
-// defer release()
-// buf, err := protoMarshalBuffer(v, buff)
-
-var protoBufferPool = sync.Pool{
-	New: func() interface{} {
-		return &proto.Buffer{}
-	},
-}
-
-func getProtoBuffer() (*proto.Buffer, func()) {
-	bufI := protoBufferPool.Get()
-	buf := bufI.(*proto.Buffer)
-	releaser := func() {
-		// buf.Reset()
-		protoBufferPool.Put(buf)
-	}
-	return buf, releaser
 }

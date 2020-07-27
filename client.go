@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	// "github.com/gogo/protobuf/proto"
 	"github.com/lytics/grid/codec"
 	"github.com/lytics/grid/registry"
 	"github.com/lytics/retry"
