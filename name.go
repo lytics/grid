@@ -3,11 +3,15 @@ package grid
 import (
 	"fmt"
 	"regexp"
+	"sync"
 )
 
 const validActorName = "^[a-zA-Z0-9-_]+$"
 
-var validActorNameRegEx *regexp.Regexp = regexp.MustCompile(validActorName)
+var (
+	validActorNameRegEx *regexp.Regexp = regexp.MustCompile(validActorName)
+	knownNamespaces     sync.Map
+)
 
 // isNameValid returns true if the name matches the
 // regular expression "^[a-zA-Z0-9-_]+$".
@@ -33,21 +37,22 @@ func namespaceName(t EntityType, namespace, name string) (string, error) {
 	// an optimization to reduce memory allocations is to
 	// check if we've seen this namespace before.  To avoid allocating
 	// a regEx on each request.
-	_, seen := knownNamespaces[namespace]
-	if !seen {
+	if _, seen := knownNamespaces.Load(namespace); !seen {
 		if !isNameValid(namespace) {
 			return "", ErrInvalidNamespace
 		}
-		knownNamespaces[namespace] = struct{}{}
+		knownNamespaces.Store(namespace, struct{}{})
 	}
+
 	return fmt.Sprintf("%v.%v.%v", namespace, t, name), nil
 }
 
 func namespacePrefix(t EntityType, namespace string) (string, error) {
-	if !isNameValid(namespace) {
-		return "", ErrInvalidNamespace
+	if _, seen := knownNamespaces.Load(namespace); !seen {
+		if !isNameValid(namespace) {
+			return "", ErrInvalidNamespace
+		}
+		knownNamespaces.Store(namespace, struct{}{})
 	}
 	return fmt.Sprintf("%v.%v.", namespace, t), nil
 }
-
-var knownNamespaces = map[string]struct{}{}
