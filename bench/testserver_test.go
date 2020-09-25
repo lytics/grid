@@ -23,7 +23,8 @@ var (
 	wg            *sync.WaitGroup
 )
 
-const mailboxName = "pingpong-leader"
+const mailboxNamePrefix = "pingpong-worker"
+const workers = 16
 
 func TestMain(m *testing.M) {
 	embed := testetcd.NewEmbedded()
@@ -34,7 +35,7 @@ func TestMain(m *testing.M) {
 	server = serverT
 	client = clientT
 	wg = wgT
-
+	time.Sleep(50 * time.Millisecond)
 	r := m.Run()
 	time.Sleep(10 * time.Millisecond)
 	server.Stop()
@@ -53,45 +54,62 @@ func (a *pingPongProtoActor) Act(ctx context.Context) {
 	logger := log.New(os.Stderr, "pingpong-actor :: ", log.LstdFlags|log.Lshortfile)
 	// Listen to a mailbox with the same
 	// name as the actor.
-	mailbox, err := grid.NewMailbox(a.server, mailboxName, 10)
-	successOrDie(logger, err)
-	defer mailbox.Close()
 
-	a.wg.Done() // release barrier so that the testcase can begin testing.
+	wgStarted := &sync.WaitGroup{}
+	wgStarted.Add(workers)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case req, closed := <-mailbox.C:
-			if !closed {
-				logger.Printf(" closed == true ")
-				return
-			}
-			msg := req.Msg()
-			switch m := msg.(type) {
-			case *Event:
-				var responseMsg *EventResponse
-				switch m.Type {
-				case SmallMsg:
-					responseMsg = responseSmallMsg
-				case BigStrMsg:
-					responseMsg = responseBigStrMsg
-				case BigMapBigStr:
-					responseMsg = responseBigMapBigStrMsg
-				default:
-					successOrDie(logger, fmt.Errorf("ERROR:  unknown message.Type %#v", m.Type))
+	wgDone := &sync.WaitGroup{}
+	for i := 0; i < workers; i++ {
+		wgDone.Add(1)
+		go func(ii int) {
+			mailboxName := fmt.Sprintf("%s-%d", mailboxNamePrefix, ii)
+			mailbox, err := grid.NewMailbox(a.server, mailboxName, 10)
+			successOrDie(logger, err)
+			defer mailbox.Close()
+
+			wgStarted.Done()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case req, closed := <-mailbox.C:
+					if !closed {
+						logger.Printf(" closed == true ")
+						return
+					}
+					msg := req.Msg()
+					switch m := msg.(type) {
+					case *Event:
+						var responseMsg *EventResponse
+						switch m.Type {
+						case SmallMsg:
+							responseMsg = responseSmallMsg
+						case BigStrMsg:
+							responseMsg = responseBigStrMsg
+						case BigMapBigStr:
+							responseMsg = responseBigMapBigStrMsg
+						case SuperBigStr:
+							responseMsg = responseSuperBigStrMsg
+						default:
+							successOrDie(logger, fmt.Errorf("ERROR:  unknown message.Type %#v", m.Type))
+						}
+						err := req.Respond(responseMsg)
+						if err != nil {
+							logger.Printf("ERROR: error on message response %v\n", err)
+							successOrDie(logger, err)
+						}
+					default:
+						successOrDie(logger, fmt.Errorf("ERROR:  wrong type %#v", req.Msg()))
+					}
 				}
-				err := req.Respond(responseMsg)
-				if err != nil {
-					logger.Printf("ERROR: error on message response %v\n", err)
-					successOrDie(logger, err)
-				}
-			default:
-				successOrDie(logger, fmt.Errorf("ERROR:  wrong type %#v", req.Msg()))
 			}
-		}
+		}(i)
 	}
+
+	wgStarted.Wait() // wait for the workers to startup.
+	a.wg.Done()      // release barrier so that the testcase can begin testing.
+	wgDone.Wait()    // wait until all the works exit
 }
 
 func runPingPongGrid() (*grid.Server, *grid.Client, func(), *sync.WaitGroup) {
@@ -146,6 +164,7 @@ func runPingPongGrid() (*grid.Server, *grid.Client, func(), *sync.WaitGroup) {
 
 func successOrDie(logger *log.Logger, err error) {
 	if err != nil {
+		panic(err.Error())
 		logger.Println("exiting due to error:", err)
 		time.Sleep(200 * time.Millisecond)
 		os.Exit(-4)

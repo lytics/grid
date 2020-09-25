@@ -3,6 +3,7 @@ module github.com/lytics/grid
 go 1.12
 
 require (
+	github.com/araddon/gou v0.0.0-20190110011759-c797efecbb61
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect

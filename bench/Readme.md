@@ -1,34 +1,32 @@
 #### Results: 
 
+#### Base line after adding 4MB string message and with concurrent clients and server
 
-#### Results after just adding the benchmark test on commit: 5f8bf8a3fec64e2df6d1032381a6084028fd7867 (Base line no changes)
 
-BenchmarkClientServerRoundTripSmallMsg-12                  11257            105941 ns/op           17392 B/op        290 allocs/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  9408            127801 ns/op           71079 B/op        293 allocs/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3555            309087 ns/op          187275 B/op       2725 allocs/op
+BenchmarkClientServerRoundTripSmallMsg-12           	    4454	    260171 ns/op	  182423 B/op	    3049 allocs/op
+BenchmarkClientServerRoundTripBigStrMsg-12          	    2883	    402069 ns/op	 1147026 B/op	    3110 allocs/op
+BenchmarkClientServerRoundTripBigMapBigStrMsg-12    	    1014	   1149191 ns/op	 2930808 B/op	   42060 allocs/op
+BenchmarkClientServerRoundTrip4MBStrMsg-12          	      70	  16805161 ns/op	93151828 B/op	    4344 allocs/op
 
-BenchmarkClientServerRoundTripSmallMsg-12                  10671            107704 ns/op           17393 B/op        290 allocs/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  8620            132313 ns/op           71168 B/op        293 allocs/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3576            315491 ns/op          187284 B/op       2725 allocs/op
+BenchmarkClientServerRoundTripSmallMsg-12           	    4381	    266530 ns/op	  182443 B/op	    3049 allocs/op
+BenchmarkClientServerRoundTripBigStrMsg-12          	    2923	    409588 ns/op	 1147743 B/op	    3111 allocs/op
+BenchmarkClientServerRoundTripBigMapBigStrMsg-12    	    1010	   1186069 ns/op	 2931204 B/op	   42057 allocs/op
+BenchmarkClientServerRoundTrip4MBStrMsg-12          	      68	  16603466 ns/op	93327727 B/op	    4060 allocs/op
 
-BenchmarkClientServerRoundTripSmallMsg-12                  11174            110227 ns/op           17395 B/op        290 allocs/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  8658            139203 ns/op           71103 B/op        293 allocs/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3556            315230 ns/op          187242 B/op       2725 allocs/op
+BenchmarkClientServerRoundTripSmallMsg-12           	    4447	    265635 ns/op	  182437 B/op	    3049 allocs/op
+BenchmarkClientServerRoundTripBigStrMsg-12          	    2875	    407557 ns/op	 1147588 B/op	    3111 allocs/op
+BenchmarkClientServerRoundTripBigMapBigStrMsg-12    	    1020	   1148515 ns/op	 2929783 B/op	   42058 allocs/op
+BenchmarkClientServerRoundTrip4MBStrMsg-12          	      68	  16214082 ns/op	92550489 B/op	    4153 allocs/op
 
-#### Results after just adding the benchmark test on commit: dad755d6cb11f4daab738eec8133554a7c3c48e7 (pre-compiled names regex)
 
-*Just focusing on optimizing Allocations per Operation for this set of changes*
+#### Base Codec Marshal/UnMarshal benchmarks 
 
-BenchmarkClientServerRoundTripSmallMsg-12                  11971             94264 ns/op           11850 B/op        208 allocs/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  9106            114902 ns/op           65520 B/op        211 allocs/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3831            298895 ns/op          181501 B/op       2642 allocs/op
+BenchmarkCodecMarshalBigMapBigStrMsg-12      	   25450	     45837 ns/op	   26643 B/op	     807 allocs/op
+BenchmarkCodecUnmarshalBigMapBigStrMsg-12    	   35413	     33865 ns/op	   21602 B/op	     416 allocs/op
 
-BenchmarkClientServerRoundTripSmallMsg-12                  12870             92300 ns/op           11848 B/op        208 allocs/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  9277            114179 ns/op           65505 B/op        211 allocs/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3537            293994 ns/op          181645 B/op       2642 allocs/op
+BenchmarkCodecMarshalBigMapBigStrMsg-12      	   25371	     45407 ns/op	   26643 B/op	     807 allocs/op
+BenchmarkCodecUnmarshalBigMapBigStrMsg-12    	   34939	     33620 ns/op	   21604 B/op	     416 allocs/op
 
-BenchmarkClientServerRoundTripSmallMsg-12                  12685             92157 ns/op           11848 B/op        208 allocs/op
-BenchmarkClientServerRoundTripBigStrMsg-12                  9462            115722 ns/op           65519 B/op        211 allocs/op
-BenchmarkClientServerRoundTripBigMapBigStrMsg-12            3644            295176 ns/op          181563 B/op       2642 allocs/op
-
+BenchmarkCodecMarshalBigMapBigStrMsg-12      	   24622	     46919 ns/op	   26643 B/op	     807 allocs/op
+BenchmarkCodecUnmarshalBigMapBigStrMsg-12    	   34801	     34443 ns/op	   21601 B/op	     416 allocs/op
 

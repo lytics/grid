@@ -47,11 +47,12 @@ func Register(v interface{}) error {
 // Marshal the value into bytes. The function returns
 // the type name, the bytes, or an error.
 func Marshal(v interface{}) (string, []byte, error) {
-	mu.RLock()
-	defer mu.RUnlock()
 
 	name := TypeName(v)
+
+	mu.RLock()
 	_, ok := registry[name]
+	mu.RUnlock()
 	if !ok {
 		return "", nil, ErrUnregisteredMessageType
 	}
@@ -67,12 +68,12 @@ func Marshal(v interface{}) (string, []byte, error) {
 // or return an error.
 func Unmarshal(buf []byte, name string) (interface{}, error) {
 	mu.RLock()
-	defer mu.RUnlock()
-
 	c, ok := registry[name]
+	mu.RUnlock()
 	if !ok {
 		return nil, ErrUnregisteredMessageType
 	}
+
 	v := reflect.New(reflect.TypeOf(c)).Interface()
 	err := protoUnmarshal(buf, v)
 	if err != nil {

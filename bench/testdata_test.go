@@ -4,6 +4,7 @@ const (
 	SmallMsg     = 1
 	BigStrMsg    = 2
 	BigMapBigStr = 3
+	SuperBigStr  = 4
 )
 
 var requestSmallMsg = &Event{
@@ -21,13 +22,13 @@ var requestBigStrMsg = &Event{
 	Timestamp: messageTs,
 	User:      messageUser,
 	Type:      BigStrMsg,
-	Strdata:   messageLongStr,
+	Strdata:   message4KBStr,
 }
 var responseBigStrMsg = &EventResponse{
 	Timestamp: messageTs,
 	Id:        messageID,
 	UserID:    messageUserID,
-	Strdata:   messageLongStr,
+	Strdata:   message4KBStr,
 }
 
 var requestBigMapBigStrMsg = &Event{
@@ -35,24 +36,41 @@ var requestBigMapBigStrMsg = &Event{
 	User:      messageUser,
 	Type:      BigMapBigStr,
 	Data:      map100,
-	Strdata:   messageLongStr,
+	Strdata:   message4KBStr,
 }
 var responseBigMapBigStrMsg = &EventResponse{
 	Timestamp: messageTs,
 	Id:        messageID,
 	UserID:    messageUserID,
 	Data:      map100,
-	Strdata:   messageLongStr,
+	Strdata:   message4KBStr,
 }
 
-var (
+var requestSuperBigStrMsg = &Event{
+	Timestamp: messageTs,
+	User:      messageUser,
+	Type:      SuperBigStr,
+	Strdata:   FourMBStr,
+}
+var responseSuperBigStrMsg = &EventResponse{
+	Timestamp: messageTs,
+	Id:        messageID,
+	UserID:    messageUserID,
+	Strdata:   FourMBStr,
+}
+
+const (
 	messageID     = "message:12345"
 	messageUserID = int32(123456)
 	messageTs     = "2054/12/25 21:23"
 	messageUser   = "gopher-7834"
 
-	// fakedata -l 100 sentence | awk '{printf("%s",$0)}'
-	messageLongStr = "A round hole was drilled through the thin board.The man wore a feather in his felt hat.The ink stain dried on the finished page.Use a pencil to write the first draft.A wisp of cloud hung in the blue air.Men think and plan and sometimes act.The square peg will settle in the round hole.Hurdle the pit with the aid of a long pole.Nudge gently but wake her now.The steady drip is worse than a drenching rain.The bloom of the rose lasts a few days.Those words were the cue for the actor to leave.It is late morning on the old wall clock.The best method is to fix it in place with clips.A pod is what peas always grow in.She saw a cat in the neighbor's house.She has st smart way of wearing clothes.She blushed when he gave her a white orchid.The rude laugh filled the empty room.In some form or other we need fun.The gold ring fits only a pierced ear.Pick a card and slip it under the pack.The nag pulled the frail cart along.We dress to suit the weather of most days.A brown leather bag hung from its strap.The pearl was worn in a thin silver ring.The line where the edges join was clean.Hang tinsel from both branches.Place a rosebush near the porch steps.The glow deepened in the eyes of the sweet girl.The first worm gets snapped early.A speedy man can beat this track mark.There is a strong chance it will happen once more.His wide grin earned many friends.The term ended in late June that year.The old pan was covered with hard fudge.He crawled with care along the ledge.Sever the twine with a quick snip of the knife.A force equal to that would move the earth.Sit on the perch and tell the others what to do.He sent the boy on a short errand.There is a strong chance it will happen once more.The show was a flop from the very start.The brass tube circled the high wall.Green moss grows on the northern side.Stop whistling and watch the boys march.Tuck the sheet under the edge of the mat.Even a just cause needs power to win.The team with the best timing looks good.Feed the white mouse some flower seeds.No doubt about the way the wind blows.Our plans right now are hazy.Burn peat after the logs give out.Feed the white mouse some flower seeds.We frown when events take a bad turn.The heap of fallen leaves was set on fire.His hip struck the knee of the next player.The gold vase is both rare and costly.Sell your gift to a buyer at a good gain.Smoke poured out of every crack.The lobes of her ears were pierced to hold rings.A yacht slid around the point into the bay.Bring your problems to the wise chief.The quick fox jumped on the sleeping cat.The barrel of beer was a brew of malt and hops.Help the weak to preserve their strength.Many hands help get the job done.Pink clouds floated with the breeze.The aim of the contest is to raise a great fund.He lent his coat to the tall gaunt stranger.The small pup gnawed a hole in the sock.Pitch the straw through the door of the stable.The quick fox jumped on the sleeping cat.She blushed when he gave her a white orchid.Mud was spattered on the front of his white shirt.Write at once or you may forget it.Try to trace the fine lines of the painting.Dimes showered down from all sides.The stray cat gave birth to kittens.Post no bills on this office wall.No cement will hold hard wood.Slide the catch back and open the desk.Always close the barn door tight.Ripe pears are fit for a queen's table.These coins will be needed to pay his debt.The cup cracked and spilled its contents.A pound of sugar costs more than eggs.The hat brim was wide and too droopy.The bombs left most of the town in ruins.The wagon moved on well oiled wheels.The loss of the second ship was hard to take.The straw nest housed five robins.A rag will soak up spilled water.He sent the boy on a short errand.Clothes and lodging are free to new men.Time brings us many changes.Take shelter in this tent, but keep still.Find the twin who stole the pearl necklace.He sent the figs, but kept the ripe cherries.Write a fond note to the friend you cherish."
+	// 4096 byte string (4 KB).
+	message4KBStr = "A round hole was drilled through the thin board.The man wore a feather in his felt hat.The ink stain dried on the finished page.Use a pencil to write the first draft.A wisp of cloud hung in the blue air.Men think and plan and sometimes act.The square peg will settle in the round hole.Hurdle the pit with the aid of a long pole.Nudge gently but wake her now.The steady drip is worse than a drenching rain.The bloom of the rose lasts a few days.Those words were the cue for the actor to leave.It is late morning on the old wall clock.The best method is to fix it in place with clips.A pod is what peas always grow in.She saw a cat in the neighbor's house.She has st smart way of wearing clothes.She blushed when he gave her a white orchid.The rude laugh filled the empty room.In some form or other we need fun.The gold ring fits only a pierced ear.Pick a card and slip it under the pack.The nag pulled the frail cart along.We dress to suit the weather of most days.A brown leather bag hung from its strap.The pearl was worn in a thin silver ring.The line where the edges join was clean.Hang tinsel from both branches.Place a rosebush near the porch steps.The glow deepened in the eyes of the sweet girl.The first worm gets snapped early.A speedy man can beat this track mark.There is a strong chance it will happen once more.His wide grin earned many friends.The term ended in late June that year.The old pan was covered with hard fudge.He crawled with care along the ledge.Sever the twine with a quick snip of the knife.A force equal to that would move the earth.Sit on the perch and tell the others what to do.He sent the boy on a short errand.There is a strong chance it will happen once more.The show was a flop from the very start.The brass tube circled the high wall.Green moss grows on the northern side.Stop whistling and watch the boys march.Tuck the sheet under the edge of the mat.Even a just cause needs power to win.The team with the best timing looks good.Feed the white mouse some flower seeds.No doubt about the way the wind blows.Our plans right now are hazy.Burn peat after the logs give out.Feed the white mouse some flower seeds.We frown when events take a bad turn.The heap of fallen leaves was set on fire.His hip struck the knee of the next player.The gold vase is both rare and costly.Sell your gift to a buyer at a good gain.Smoke poured out of every crack.The lobes of her ears were pierced to hold rings.A yacht slid around the point into the bay.Bring your problems to the wise chief.The quick fox jumped on the sleeping cat.The barrel of beer was a brew of malt and hops.Help the weak to preserve their strength.Many hands help get the job done.Pink clouds floated with the breeze.The aim of the contest is to raise a great fund.He lent his coat to the tall gaunt stranger.The small pup gnawed a hole in the sock.Pitch the straw through the door of the stable.The quick fox jumped on the sleeping cat.She blushed when he gave her a white orchid.Mud was spattered on the front of his white shirt.Write at once or you may forget it.Try to trace the fine lines of the painting.Dimes showered down from all sides.The stray cat gave birth to kittens.Post no bills on this office wall.No cement will hold hard wood.Slide the catch back and open the desk.Always close the barn door tight.Ripe pears are fit for a queen's table.These coins will be needed to pay his debt.The cup cracked and spilled its contents.A pound of sugar costs more than eggs.The hat brim was wide and too droopy.The bombs left most of the town in ruins.The wagon moved on well oiled wheels.The loss of the second ship was hard to take.The straw nest housed five robins.A rag will soak up spilled water.He sent the boy on a short errand.Clothes and lodging are free to new men.Time brings us many changes.Take shelter in this tent, but keep still.Find the twin who stole the pearl necklace.He sent the figs, but kept the ripe cherries.Write a fond note to the friend you cherish. A red rabbit jumped over the brown fence, with a green turtle on it's black back in the black river water of the columbia"
+)
+
+var (
+	FourMBStr = "" // to be populated by init().  About 4KB * 256 bytes, 4 MB
 )
 
 var map100 = map[string]string{
