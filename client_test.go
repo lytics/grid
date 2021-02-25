@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lytics/grid/testetcd"
-	"go.etcd.io/etcd/clientv3"
+	etcdv3 "go.etcd.io/etcd/client/v3"
 )
 
 type busyActor struct {
@@ -528,7 +528,7 @@ func TestNilClientStats(t *testing.T) {
 	cs.Inc(numGetWireClient)
 }
 
-func bootstrapClientTest(t *testing.T) (*clientv3.Client, *Server, *Client) {
+func bootstrapClientTest(t *testing.T) (*etcdv3.Client, *Server, *Client) {
 	// Namespace for test.
 	namespace := newNamespace()
 

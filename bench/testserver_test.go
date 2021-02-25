@@ -13,7 +13,7 @@ import (
 
 	"github.com/lytics/grid"
 	"github.com/lytics/grid/testetcd"
-	"go.etcd.io/etcd/clientv3"
+	etcdv3 "go.etcd.io/etcd/client/v3"
 )
 
 var (
@@ -102,11 +102,11 @@ func runPingPongGrid() (*grid.Server, *grid.Client, func(), *sync.WaitGroup) {
 	namespace := fmt.Sprintf("bench-pingpong-namespace-%d", rand.Int63())
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags|log.Lshortfile)
 
-	cfg := clientv3.Config{
+	cfg := etcdv3.Config{
 		Endpoints:   etcdEndpoints,
 		DialTimeout: time.Second,
 	}
-	etcd, err := clientv3.New(cfg)
+	etcd, err := etcdv3.New(cfg)
 	successOrDie(logger, err)
 
 	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: namespace})

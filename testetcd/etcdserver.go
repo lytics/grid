@@ -9,18 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"go.etcd.io/etcd/clientv3"
-	"go.etcd.io/etcd/embed"
+	etcdv3 "go.etcd.io/etcd/client/v3"
+	embedv3 "go.etcd.io/etcd/server/v3/embed"
 )
 
 type Embedded struct {
-	Cfg    *embed.Config
-	Etcd   *embed.Etcd
+	Cfg    *embedv3.Config
+	Etcd   *embedv3.Etcd
 	tmpDir string
 }
 
 func NewEmbedded() *Embedded {
-	ecfg := embed.NewConfig()
+	ecfg := embedv3.NewConfig()
 	ecfg.Logger = "zap"
 	ecfg.LogLevel = "error"
 	tmpDir, err := ioutil.TempDir("", "etcd_")
@@ -42,7 +42,7 @@ func NewEmbedded() *Embedded {
 	ecfg.ACUrls = []url.URL{*clientURL}
 	ecfg.LCUrls = []url.URL{*clientURL}
 
-	e, err := embed.StartEtcd(ecfg)
+	e, err := embedv3.StartEtcd(ecfg)
 	if err != nil {
 		panic(fmt.Sprintf("failed to start embedded etcd: %v", err))
 	}
@@ -68,12 +68,12 @@ func (e *Embedded) Close() {
 	e.Etcd.Close()
 }
 
-func StartAndConnect(t testing.TB, endpoints []string) *clientv3.Client {
-	cfg := clientv3.Config{
+func StartAndConnect(t testing.TB, endpoints []string) *etcdv3.Client {
+	cfg := etcdv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: time.Second,
 	}
-	etcd, err := clientv3.New(cfg)
+	etcd, err := etcdv3.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
