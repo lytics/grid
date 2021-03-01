@@ -2,6 +2,7 @@ package codec
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 
@@ -41,6 +42,9 @@ func Register(v interface{}) error {
 
 	name := TypeName(v)
 	registry[name] = v
+	// TODO(aj) Temporary migration solution for go module upgrade
+	otherName := fmt.Sprintf("github.com/lytics/lio/vendor/%s", name)
+	registry[otherName] = v
 	return nil
 }
 
