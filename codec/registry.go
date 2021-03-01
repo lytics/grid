@@ -2,7 +2,9 @@ package codec
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/golang/protobuf/proto"
@@ -41,6 +43,16 @@ func Register(v interface{}) error {
 
 	name := TypeName(v)
 	registry[name] = v
+	// TODO(aj) Temporary migration solution for go module upgrade
+	if strings.HasPrefix(name, "github.com/lytics/lio/vendor/") {
+		// If we're the pre go.mod, register the other namespace
+		otherName := strings.TrimPrefix(name, "github.com/lytics/lio/vendor/")
+		registry[otherName] = v
+	} else {
+		// If we're using go.mod, register the old namespace
+		otherName := fmt.Sprintf("github.com/lytics/lio/vendor/%s", name)
+		registry[otherName] = v
+	}
 	return nil
 }
 
