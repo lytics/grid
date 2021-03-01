@@ -2,6 +2,7 @@ package codec
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 
@@ -53,7 +54,7 @@ func Marshal(v interface{}) (string, []byte, error) {
 	name := TypeName(v)
 	_, ok := registry[name]
 	if !ok {
-		return "", nil, ErrUnregisteredMessageType
+		return "", nil, fmt.Errorf("err: %w registry: %v name: %v", ErrUnregisteredMessageType, registry, name)
 	}
 
 	buf, err := protoMarshal(v)
@@ -71,7 +72,7 @@ func Unmarshal(buf []byte, name string) (interface{}, error) {
 
 	c, ok := registry[name]
 	if !ok {
-		return nil, ErrUnregisteredMessageType
+		return nil, fmt.Errorf("err: %w registry: %v name: %v", ErrUnregisteredMessageType, registry, name)
 	}
 	v := reflect.New(reflect.TypeOf(c)).Interface()
 	err := protoUnmarshal(buf, v)
