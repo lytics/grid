@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/golang/protobuf/proto"
@@ -45,6 +46,8 @@ func Register(v interface{}) error {
 	// TODO(aj) Temporary migration solution for go module upgrade
 	otherName := fmt.Sprintf("github.com/lytics/lio/vendor/%s", name)
 	registry[otherName] = v
+	otherOtherName := strings.TrimPrefix(name, "github.com/lytics/lio/vendor/")
+	registry[otherOtherName] = v
 	return nil
 }
 
