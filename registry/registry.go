@@ -180,7 +180,7 @@ func (rr *Registry) Start(addr net.Addr) error {
 
 	// Ensure that we're the owner of the address by taking an etcd lock
 	timeout, cancel = context.WithTimeout(context.Background(), rr.Timeout)
-	rr.waitForAddress(timeout, address)
+	err = rr.waitForAddress(timeout, address)
 	cancel()
 	if err != nil {
 		return err
