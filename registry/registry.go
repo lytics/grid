@@ -122,6 +122,37 @@ func New(client *etcdv3.Client) (*Registry, error) {
 	}, nil
 }
 
+func (rr *Registry) waitForAddress(ctx context.Context, address string) error {
+	key := fmt.Sprintf("%v.%v", "registry.uniq-lock", address)
+
+	res, err := rr.kv.Get(ctx, key, etcdv3.WithLimit(1))
+	if err != nil {
+		return fmt.Errorf("waitForAddress failed to get address lock: error: %w", err)
+	}
+	if res.Count != 0 {
+		select {
+		case <-time.After(rr.LeaseDuration):
+		case <-ctx.Done():
+			return nil
+		}
+	}
+
+	res, err = rr.kv.Get(ctx, key, etcdv3.WithLimit(1))
+	if err != nil {
+		return fmt.Errorf("waitForAddress failed to get address lock: error: %w", err)
+	}
+	if res.Count != 0 {
+		return fmt.Errorf("waitForAddress lease exists after timeout")
+	}
+
+	_, err = rr.kv.Put(ctx, key, "", etcdv3.WithLease(rr.leaseID))
+	if err != nil {
+		return fmt.Errorf("waitForAddress failed to write address lock: error: %w", err)
+	}
+
+	return nil
+}
+
 // Start Registry.
 func (rr *Registry) Start(addr net.Addr) error {
 	rr.mu.Lock()
@@ -146,6 +177,14 @@ func (rr *Registry) Start(addr net.Addr) error {
 		return err
 	}
 	rr.leaseID = res.ID
+
+	// Ensure that we're the owner of the address by taking an etcd lock
+	timeout, cancel = context.WithTimeout(context.Background(), rr.Timeout)
+	rr.waitForAddress(timeout, address)
+	cancel()
+	if err != nil {
+		return err
+	}
 
 	// Start the keep alive for the lease.
 	keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
