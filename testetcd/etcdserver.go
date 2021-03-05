@@ -49,7 +49,7 @@ func NewEmbedded() *Embedded {
 
 	select {
 	case <-e.Server.ReadyNotify():
-		fmt.Printf("Started embedded etcd on url: %v", clientURL)
+		fmt.Printf("Started embedded etcd on url: %v\n", clientURL)
 
 	case <-time.After(10 * time.Second):
 		e.Server.Stop() // trigger a shutdown
