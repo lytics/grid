@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/clientv3"
 )
 
@@ -34,6 +35,7 @@ var (
 	ErrWatchClosedUnexpectedly     = errors.New("registry: watch closed unexpectedly")
 	ErrUnspecifiedNetAddressIP     = errors.New("registry: unspecified net address ip")
 	ErrKeepAliveClosedUnexpectedly = errors.New("registry: keep alive closed unexpectedly")
+	ErrFailedAcquireAddressLock    = errors.New("registry: address lock exists after timeout")
 )
 
 var (
@@ -122,6 +124,57 @@ func New(client *etcdv3.Client) (*Registry, error) {
 	}, nil
 }
 
+func registryLockKey(address string) string {
+	return fmt.Sprintf("%v.%v", "registry.uniq-lock", address)
+}
+
+func (rr *Registry) waitForAddress(ctx context.Context, address string) error {
+	key := registryLockKey(address)
+
+	const infiniteRetries = 10000
+	var locked bool = true
+	var rErr error
+	retry.X(infiniteRetries, time.Second, func() bool {
+		select {
+		case <-ctx.Done():
+			// we timed out waiting for it to expire
+			return false
+		default:
+		}
+
+		res, err := rr.kv.Get(ctx, key, etcdv3.WithLimit(1))
+		if err != nil {
+			// don't retry on an error to etcd, just expect the process/pod to restart
+			rErr = err
+			return false
+		}
+		if res.Count != 0 {
+			// the lock is being held by someone
+			return true
+		}
+		// the lock is cleared
+		locked = false
+		return false
+	})
+
+	if rErr != nil && rErr != context.Canceled {
+		return fmt.Errorf("registry: failed get address lock: error: %w", rErr)
+	}
+
+	if locked {
+		return ErrFailedAcquireAddressLock
+	}
+
+	tctx, cancel := context.WithTimeout(ctx, rr.Timeout)
+	_, err := rr.kv.Put(tctx, key, "", etcdv3.WithLease(rr.leaseID))
+	cancel()
+	if err != nil {
+		return fmt.Errorf("registry: failed to write address lock: error: %w", err)
+	}
+
+	return nil
+}
+
 // Start Registry.
 func (rr *Registry) Start(addr net.Addr) error {
 	rr.mu.Lock()
@@ -146,6 +199,13 @@ func (rr *Registry) Start(addr net.Addr) error {
 		return err
 	}
 	rr.leaseID = res.ID
+
+	// Ensure that we're the owner of the address by taking an etcd lock
+	tctx, cancel := context.WithTimeout(context.TODO(), rr.LeaseDuration*2) // retry until Lease is up...
+	err = rr.waitForAddress(tctx, address)
+	if err != nil {
+		return err
+	}
 
 	// Start the keep alive for the lease.
 	keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())

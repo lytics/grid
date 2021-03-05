@@ -52,6 +52,144 @@ func TestStartStop(t *testing.T) {
 	}
 }
 
+func TestStartStopWaitForLeaseToExpireBetween(t *testing.T) {
+	client, r, addr := bootstrap(t, start)
+	defer client.Close()
+
+	// this should remove the lease which should clean up the registry lock on the address
+	// which allows the next call to Start to begin without waiting.
+	r.Stop()
+	select {
+	case <-r.done:
+	default:
+		t.Fatal("registry failed to stop")
+	}
+
+	st := time.Now()
+	r, err := New(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.LeaseDuration = 10 * time.Second
+	err = r.Start(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := time.Since(st)
+	if rt > (time.Second) {
+		t.Fatalf("runtime was too long, maybe because of waiting for leases to expire? ")
+	}
+
+	r.Stop()
+	select {
+	case <-r.done:
+	default:
+		t.Fatal("registry failed to stop")
+	}
+}
+
+func TestWaitForLeaseThatNeverExpires(t *testing.T) {
+	t.Parallel()
+
+	start := false
+	client, _, addr := bootstrap(t, start)
+	defer client.Close()
+
+	kv := etcdv3.NewKV(client)
+
+	// synthetically create the lock
+	address, err := formatAddress(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = kv.Put(context.Background(), registryLockKey(address), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		// cleanup for test
+		_, err = kv.Delete(context.Background(), registryLockKey(address))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	r1, err := New(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r1.LeaseDuration = 10 * time.Second
+
+	st := time.Now()
+	err = r1.Start(addr)
+	if err == nil {
+		t.Fatalf("expected an error but got none")
+	}
+	if err != ErrFailedAcquireAddressLock {
+		t.Fatalf("expected an error `lease exists after timeout`, got %v", err)
+	}
+
+	// ensure that we waited 10 seconds...
+	rt := time.Since(st)
+	if rt < (10 * time.Second) {
+		t.Fatalf("runtime was too short, it should have tried for at least 2*LeaseDuration? ")
+	}
+}
+
+func TestWaitForLeaseThatDoesExpires(t *testing.T) {
+	t.Parallel()
+
+	start := false
+	client, _, addr := bootstrap(t, start)
+	defer client.Close()
+
+	kv := etcdv3.NewKV(client)
+
+	// synthetically create the lock
+	address, err := formatAddress(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r1, err := New(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r1.LeaseDuration = 10 * time.Second
+
+	_, err = kv.Put(context.Background(), registryLockKey(address), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(5*time.Second, func() {
+		// cleanup lock so that the registry can startup.
+		_, err = kv.Delete(context.Background(), registryLockKey(address))
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	st := time.Now()
+	err = r1.Start(addr)
+	if err != nil {
+		t.Fatalf("unexpected error: err: %v", err)
+	}
+	// ensure that we waited 10 seconds...
+	rt := time.Since(st)
+	if rt < (4 * time.Second) {
+		t.Fatalf("runtime was too short, we didn't free the lock until 5 seconds")
+	}
+	if rt > (7 * time.Second) {
+		t.Fatalf("runtime was too long, we freed the lock after 5 seconds")
+	}
+
+	r1.Stop()
+	select {
+	case <-r1.done:
+	default:
+		t.Fatal("registry failed to stop")
+	}
+}
+
 func TestRegister(t *testing.T) {
 	client, r, _ := bootstrap(t, start)
 	defer client.Close()
