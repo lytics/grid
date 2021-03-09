@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lytics/grid"
+	"github.com/lytics/grid/v3"
 	etcdv3 "go.etcd.io/etcd/clientv3"
 )
 

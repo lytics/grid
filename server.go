@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lytics/grid/codec"
-	"github.com/lytics/grid/registry"
+	"github.com/lytics/grid/v3/codec"
+	"github.com/lytics/grid/v3/registry"
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/clientv3"
 	netcontext "golang.org/x/net/context"
@@ -143,7 +143,7 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Create the mailboxes map.
 	s.mu.Lock()
-	// no need to take the s.mumb Lock here, since no mailbox ops should occur before a call to Serve.  
+	// no need to take the s.mumb Lock here, since no mailbox ops should occur before a call to Serve.
 	s.mailboxes = make(map[string]*Mailbox)
 	s.mu.Unlock()
 

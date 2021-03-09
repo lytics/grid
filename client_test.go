@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lytics/grid/testetcd"
+	"github.com/lytics/grid/v3/testetcd"
 	"go.etcd.io/etcd/clientv3"
 )
 
