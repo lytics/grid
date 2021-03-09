@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lytics/grid/registry"
+	"github.com/lytics/grid/v3/registry"
 )
 
 type EntityType string

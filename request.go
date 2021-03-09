@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/lytics/grid/codec"
+	"github.com/lytics/grid/v3/codec"
 	netcontext "golang.org/x/net/context"
 )
 

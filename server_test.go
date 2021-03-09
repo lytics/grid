@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lytics/grid/testetcd"
+	"github.com/lytics/grid/v3/testetcd"
 )
 
 type startStopActor struct {

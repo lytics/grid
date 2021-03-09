@@ -3,12 +3,12 @@ package codec
 import (
 	"testing"
 
-	"github.com/lytics/grid/codec/protomessage"
+	"github.com/lytics/grid/v3/codec/protomessage"
 )
 
 func TestTypeName(t *testing.T) {
 	const (
-		expected = "github.com/lytics/grid/codec/protomessage/Person"
+		expected = "github.com/lytics/grid/v3/codec/protomessage/Person"
 	)
 
 	msg := protomessage.Person{}

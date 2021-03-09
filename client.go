@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lytics/grid/codec"
-	"github.com/lytics/grid/registry"
+	"github.com/lytics/grid/v3/codec"
+	"github.com/lytics/grid/v3/registry"
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/clientv3"
 	"google.golang.org/grpc"
