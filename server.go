@@ -2,6 +2,7 @@ package grid
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"runtime/debug"
@@ -341,11 +342,11 @@ func (s *Server) monitorLeader() {
 				return
 			case <-timer.C:
 				err := startLeader()
-				if err == ErrDefNotRegistered {
+				if errors.Is(err, ErrDefNotRegistered) {
 					s.logf("skipping leader startup since leader definition not registered")
 					return
 				}
-				if err == ErrNilActor {
+				if errors.Is(err, ErrNilActor) {
 					s.logf("skipping leader startup since make leader returned nil")
 					return
 				}

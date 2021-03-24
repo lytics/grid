@@ -298,7 +298,7 @@ func TestRegisterTwiceNotAllowed(t *testing.T) {
 		timeout, cancel := timeoutContext()
 		err := r.Register(timeout, "test-registration-twice-b")
 		cancel()
-		if i > 0 && err != ErrAlreadyRegistered {
+		if i > 0 && !errors.Is(err, ErrAlreadyRegistered) {
 			t.Fatal("allowed to register twice")
 		}
 	}
