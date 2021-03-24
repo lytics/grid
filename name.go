@@ -25,21 +25,21 @@ func isNameValid(name string) bool {
 func stripNamespace(t EntityType, namespace, fullname string) (string, error) {
 	plen := len(namespace) + 1 + len(t) + 1
 	if len(fullname) <= plen {
-		return "", ErrInvalidName
+		return "", fmt.Errorf("%w: namespace=%s fullname=%s plen=%d", ErrInvalidName, namespace, fullname, plen)
 	}
 	return fullname[plen:], nil
 }
 
 func namespaceName(t EntityType, namespace, name string) (string, error) {
 	if !isNameValid(name) {
-		return "", ErrInvalidName
+		return "", fmt.Errorf("%w: namespace=%s name=%s", ErrInvalidName, namespace, name)
 	}
 	// an optimization to reduce memory allocations is to
 	// check if we've seen this namespace before.  To avoid allocating
 	// a regEx on each request.
 	if _, seen := knownNamespaces.Load(namespace); !seen {
 		if !isNameValid(namespace) {
-			return "", ErrInvalidNamespace
+			return "", fmt.Errorf("%w: namespace=%s name=%s", ErrInvalidNamespace, namespace, name)
 		}
 		knownNamespaces.Store(namespace, struct{}{})
 	}
@@ -50,7 +50,7 @@ func namespaceName(t EntityType, namespace, name string) (string, error) {
 func namespacePrefix(t EntityType, namespace string) (string, error) {
 	if _, seen := knownNamespaces.Load(namespace); !seen {
 		if !isNameValid(namespace) {
-			return "", ErrInvalidNamespace
+			return "", fmt.Errorf("%w: namespace=%s", ErrInvalidNamespace, namespace)
 		}
 		knownNamespaces.Store(namespace, struct{}{})
 	}

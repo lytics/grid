@@ -2,6 +2,7 @@ package grid
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"runtime/debug"
@@ -51,7 +52,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	setServerCfgDefaults(&cfg)
 
 	if !isNameValid(cfg.Namespace) {
-		return nil, ErrInvalidNamespace
+		return nil, fmt.Errorf("%w: namespace=%s", ErrInvalidNamespace, cfg.Namespace)
 	}
 	if etcd == nil {
 		return nil, ErrNilEtcd
@@ -341,11 +342,11 @@ func (s *Server) monitorLeader() {
 				return
 			case <-timer.C:
 				err := startLeader()
-				if err == ErrDefNotRegistered {
+				if errors.Is(err, ErrDefNotRegistered) {
 					s.logf("skipping leader startup since leader definition not registered")
 					return
 				}
-				if err == ErrNilActor {
+				if errors.Is(err, ErrNilActor) {
 					s.logf("skipping leader startup since make leader returned nil")
 					return
 				}
@@ -400,10 +401,10 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	defer s.mu.Unlock()
 
 	if !isNameValid(start.Type) {
-		return ErrInvalidActorType
+		return fmt.Errorf("%w: type=%s", ErrInvalidActorType, start.Type)
 	}
 	if !isNameValid(start.Name) {
-		return ErrInvalidActorName
+		return fmt.Errorf("%w: name=%s", ErrInvalidActorName, start.Name)
 	}
 
 	nsName, err := namespaceName(Actors, s.cfg.Namespace, start.Name)
@@ -413,7 +414,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 
 	makeActor := s.actors[start.Type]
 	if makeActor == nil {
-		return ErrDefNotRegistered
+		return fmt.Errorf("%w: type=%s", ErrDefNotRegistered, start.Type)
 	}
 	actor, err := makeActor(start.Data)
 	if err != nil {
