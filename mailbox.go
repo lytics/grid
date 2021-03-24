@@ -2,6 +2,7 @@ package grid
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -87,7 +88,7 @@ func (box *Mailbox) put(req *request) error {
 // started a grid Server.
 func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 	if !isNameValid(name) {
-		return nil, ErrInvalidMailboxName
+		return nil, fmt.Errorf("%w: name=%s", ErrInvalidMailboxName, name)
 	}
 
 	// Namespaced name.
@@ -112,7 +113,7 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 
 	_, ok := s.mailboxes[nsName]
 	if ok {
-		return nil, ErrAlreadyRegistered
+		return nil, fmt.Errorf("%w: nsName=%s", ErrAlreadyRegistered, nsName)
 	}
 
 	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)

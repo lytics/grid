@@ -1,6 +1,7 @@
 package grid
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ func TestIsNameValidBadChars(t *testing.T) {
 
 func TestStripNamespaceWithInvalidName(t *testing.T) {
 	_, err := stripNamespace(Peers, "ns", "hello")
-	if err != ErrInvalidName {
+	if !errors.Is(err, ErrInvalidName) {
 		t.Fatal("expected invalid name error")
 	}
 }
@@ -65,21 +66,21 @@ func TestStripNamespace(t *testing.T) {
 
 func TestNamespaceNameInvalidName(t *testing.T) {
 	_, err := namespaceName(Peers, "valid", "invalid-!")
-	if err != ErrInvalidName {
+	if !errors.Is(err, ErrInvalidName) {
 		t.Fatal("expected invalid name error")
 	}
 }
 
 func TestNamespaceNameInvalidNamespace(t *testing.T) {
 	_, err := namespaceName(Peers, "invalid-!", "valid")
-	if err != ErrInvalidNamespace {
+	if !errors.Is(err, ErrInvalidNamespace) {
 		t.Fatal("expected invalid namespace error")
 	}
 }
 
 func TestNamespacePrefixInvalidNamespace(t *testing.T) {
 	_, err := namespacePrefix(Peers, "invalid-!")
-	if err != ErrInvalidNamespace {
+	if !errors.Is(err, ErrInvalidNamespace) {
 		t.Fatal("expected invalid namespace error")
 	}
 }
