@@ -202,8 +202,6 @@ panic: /debug/requests is already registered. You may have two independent copie
 go mod vendor
 ```
 
-**Note** `vendor/`is included in the `.gitignore` file. 
-
 ## Kubernetes + Grid
 The examples above are meant to give some intuitive sense of what the grid
 library does. Howevery what it does not do is:
