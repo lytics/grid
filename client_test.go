@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -552,13 +553,17 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, *Server, *Client) {
 
 	// Start the server in the background.
 	done := make(chan error, 1)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
+		wg.Done()
 		err = server.Serve(lis)
 		if err != nil {
 			done <- err
 		}
 	}()
-	time.Sleep(2 * time.Second)
+	wg.Wait()
+	time.Sleep(3 * time.Second)
 
 	// Create a grid client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace, Logger: logger})
