@@ -177,7 +177,7 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 		t.Fatal(res)
 	}
 	if !strings.Contains(err.Error(), ErrUnknownMailbox.Error()) {
-		t.Logf("str:%v substr:%v", err.Error(), ErrUnknownMailbox.Error() )
+		t.Logf("error compare failed: str:%v substr:%v", err.Error(), ErrUnknownMailbox.Error() )
 		t.Fatal(err)
 	}
 
