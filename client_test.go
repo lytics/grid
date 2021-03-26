@@ -139,6 +139,7 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	if res != nil {
+		t.Logf("expected res to be nil")
 		t.Fatal(res)
 	}
 
