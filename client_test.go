@@ -122,7 +122,7 @@ func TestClientClose(t *testing.T) {
 }
 
 func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
-	const timeout = 2 * time.Second
+	const timeout = 3 * time.Second
 
 	// Bootstrap.
 	etcd, server, client := bootstrapClientTest(t)
@@ -148,7 +148,7 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 }
 
 func TestClientRequestWithUnknownMailbox(t *testing.T) {
-	const timeout = 2 * time.Second
+	const timeout = 3 * time.Second
 
 	// Bootstrap.
 	etcd, server, client := bootstrapClientTest(t)
@@ -161,7 +161,7 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 
 	// Place a bogus entry in etcd with
 	// a matching name.
-	timeoutC, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	timeoutC, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	err := server.registry.Register(timeoutC, client.cfg.Namespace+".mailbox.mock")
 	cancel()
 	if err != nil {
@@ -187,7 +187,7 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 }
 
 func TestClientBroadcast(t *testing.T) {
-	const timeout = 2 * time.Second
+	const timeout = 3 * time.Second
 	etcd, server, client := bootstrapClientTest(t)
 	defer etcd.Close()
 	defer server.Stop()
@@ -307,7 +307,7 @@ func TestClientBroadcast(t *testing.T) {
 }
 
 func TestClientWithRunningReceiver(t *testing.T) {
-	const timeout = 2 * time.Second
+	const timeout = 3 * time.Second
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
@@ -374,7 +374,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 }
 
 func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
-	const timeout = 2 * time.Second
+	const timeout = 3 * time.Second
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
@@ -448,7 +448,7 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 }
 
 func TestClientWithBusyReceiver(t *testing.T) {
-	const timeout = 2 * time.Second
+	const timeout = 3 * time.Second
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
