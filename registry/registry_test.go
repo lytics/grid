@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/lytics/grid/v3/testetcd"
-	etcdv3 "go.etcd.io/etcd/clientv3"
+	etcdv3 "go.etcd.io/etcd/client/v3"
 )
 
 const (

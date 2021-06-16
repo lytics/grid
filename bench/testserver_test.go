@@ -13,7 +13,7 @@ import (
 
 	"github.com/lytics/grid/v3"
 	"github.com/lytics/grid/v3/testetcd"
-	"go.etcd.io/etcd/clientv3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 var (
