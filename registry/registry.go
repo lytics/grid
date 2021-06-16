@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/lytics/retry"
-	etcdv3 "go.etcd.io/etcd/clientv3"
+	etcdv3 "go.etcd.io/etcd/client/v3"
 )
 
 // Logger hides the logging function Printf behind a simple
