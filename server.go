@@ -428,10 +428,13 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	// prevent an actor from starting twice on one system or
 	// many systems.
 	timeout, cancel := context.WithTimeout(c, s.cfg.Timeout)
-	err = s.registry.Register(timeout, nsName)
-	cancel()
-	if err != nil {
-		return err
+	defer cancel()
+	switch err := s.registry.Register(timeout, nsName); {
+	case err == nil:
+	case errors.Is(err, context.DeadlineExceeded):
+		s.deregisterActor(nsName)
+	default:
+		return fmt.Errorf("registering actor %q: %w", nsName, err)
 	}
 
 	// The actor's context contains its full id, it's name and the
@@ -445,20 +448,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	// Start the actor, unregister the actor in case of failure
 	// and capture panics that the actor raises.
 	go func() {
-		defer func() {
-			var err error
-			retry.X(3, 3*time.Second,
-				func() bool {
-					timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-					err = s.registry.Deregister(timeout, nsName)
-					cancel()
-					return err != nil
-				})
-			if err != nil {
-				s.logf("failed to deregister actor: %v, error: %v", nsName, err)
-				panic(fmt.Sprintf("unable to deregister actor: %v, error: %v", nsName, err))
-			}
-		}()
+		defer s.deregisterActor(nsName)
 		defer func() {
 			if err := recover(); err != nil {
 				stack := niceStack(debug.Stack())
@@ -470,6 +460,21 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	}()
 
 	return nil
+}
+
+func (s *Server) deregisterActor(nsName string) {
+	var err error
+	retry.X(3, 3*time.Second,
+		func() bool {
+			timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			err = s.registry.Deregister(timeout, nsName)
+			cancel()
+			return err != nil
+		})
+	if err != nil {
+		s.logf("failed to deregister actor: %v, error: %v", nsName, err)
+		panic(fmt.Sprintf("unable to deregister actor: %v, error: %v", nsName, err))
+	}
 }
 
 func (s *Server) logf(format string, v ...interface{}) {
