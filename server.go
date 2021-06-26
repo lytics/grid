@@ -16,6 +16,8 @@ import (
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	netcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -431,7 +433,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	defer cancel()
 	switch err := s.registry.Register(timeout, nsName); {
 	case err == nil:
-	case errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
 		s.deregisterActor(nsName)
 	default:
 		return fmt.Errorf("registering actor %q: %w", nsName, err)
