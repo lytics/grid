@@ -435,6 +435,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	case err == nil:
 	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
 		s.deregisterActor(nsName)
+		return fmt.Errorf("registering actor %q: %w", nsName, err)
 	default:
 		return fmt.Errorf("registering actor %q: %w", nsName, err)
 	}
