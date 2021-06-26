@@ -16,8 +16,6 @@ import (
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	netcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -433,9 +431,12 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	defer cancel()
 	switch err := s.registry.Register(timeout, nsName); {
 	case err == nil:
-	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
+	// HACK (2021-06) (mh): grpc.Status does not handle wrapped errors.
+	// While there may be a better way to do this, we're experiencing production incidents
+	// and need a fix ASAP. We should re-address this if possible.
+	case errors.Is(err, context.DeadlineExceeded), strings.Contains(err.Error(), "rpc error: code = DeadlineExceeded desc = context deadline exceeded"):
 		s.deregisterActor(nsName)
-		return fmt.Errorf("registering actor %q: %w", nsName, err)
+		return fmt.Errorf("deadline exceeded while registering actor %q: %w", nsName, err)
 	default:
 		return fmt.Errorf("registering actor %q: %w", nsName, err)
 	}
