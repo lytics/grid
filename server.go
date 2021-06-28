@@ -403,9 +403,6 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	if !isNameValid(start.Type) {
 		return fmt.Errorf("%w: type=%s", ErrInvalidActorType, start.Type)
 	}
-	if !isNameValid(start.Name) {
-		return fmt.Errorf("%w: name=%s", ErrInvalidActorName, start.Name)
-	}
 
 	nsName, err := namespaceName(Actors, s.cfg.Namespace, start.Name)
 	if err != nil {
@@ -429,15 +426,8 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	// many systems.
 	timeout, cancel := context.WithTimeout(c, s.cfg.Timeout)
 	defer cancel()
-	switch err := s.registry.Register(timeout, nsName); {
-	case err == nil:
-	// HACK (2021-06) (mh): grpc.Status does not handle wrapped errors.
-	// While there may be a better way to do this, we're experiencing production incidents
-	// and need a fix ASAP. We should re-address this if possible.
-	case errors.Is(err, context.DeadlineExceeded), strings.Contains(err.Error(), "rpc error: code = DeadlineExceeded desc = context deadline exceeded"):
+	if err := s.registry.Register(timeout, nsName); err != nil {
 		s.deregisterActor(nsName)
-		return fmt.Errorf("deadline exceeded while registering actor %q: %w", nsName, err)
-	default:
 		return fmt.Errorf("registering actor %q: %w", nsName, err)
 	}
 
