@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/lytics/retry"
 )
 
 // Mailbox for receiving messages.
@@ -15,7 +18,7 @@ type Mailbox struct {
 	C       <-chan Request
 	c       chan Request
 	closed  bool
-	cleanup func() error
+	cleanup func()
 }
 
 // Close the mailbox.
@@ -27,8 +30,9 @@ func (box *Mailbox) Close() error {
 	box.closed = true
 	close(box.c)
 
+	box.cleanup()
 	// Run server provided clean up.
-	return box.cleanup()
+	return nil
 }
 
 // Name of mailbox, without namespace.
@@ -136,7 +140,7 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	}
 
 	boxC := make(chan Request, size)
-	cleanup := func() error {
+	cleanup := func() {
 		s.mumb.Lock()
 		defer s.mumb.Unlock()
 
@@ -145,12 +149,17 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 		delete(s.mailboxes, nsName)
 
 		// Deregister the name.
-		timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-		defer cancel()
-		err := s.registry.Deregister(timeout, nsName)
-
-		// Return any error from the deregister call.
-		return err
+		var err error
+		retry.X(3, 3*time.Second,
+			func() bool {
+				timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+				err = s.registry.Deregister(timeout, nsName)
+				cancel()
+				return err != nil
+			})
+		if err != nil {
+			panic(fmt.Sprintf("unable to deregister mailbox: %v, error: %v", nsName, err))
+		}
 	}
 	box := &Mailbox{
 		name:    name,
