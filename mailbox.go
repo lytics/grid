@@ -2,12 +2,19 @@ package grid
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lytics/retry"
+)
+
+var (
+	// errDeregisteredFailed is used internally when we can't deregister a key from etcd.
+	// It's used by Server.startActorC() to ensure we panic.
+	errDeregisteredFailed = errors.New("grid: deregistered failed")
 )
 
 // Mailbox for receiving messages.
@@ -158,7 +165,7 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 				return err != nil
 			})
 		if err != nil {
-			panic(fmt.Sprintf("unable to deregister mailbox: %v, error: %v", nsName, err))
+			panic(fmt.Errorf("%w: unable to deregister mailbox: %v, error: %v", errDeregisteredFailed, nsName, err))
 		}
 	}
 	box := &Mailbox{

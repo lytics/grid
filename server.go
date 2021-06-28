@@ -444,10 +444,15 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	go func() {
 		defer s.deregisterActor(nsName)
 		defer func() {
-			if err := recover(); err != nil {
+			if r := recover(); r != nil {
+				if err, ok := r.(error); ok && errors.Is(err, errDeregisteredFailed) {
+					// NOTE (2021-06) (mh): We need to panic here
+					panic(err)
+				}
+
 				stack := niceStack(debug.Stack())
 				s.logf("panic in namespace: %v, actor: %v, recovered from: %v, stack trace: %v",
-					s.cfg.Namespace, start.Name, err, stack)
+					s.cfg.Namespace, start.Name, r, stack)
 			}
 		}()
 		actor.Act(actorCtx)
@@ -466,7 +471,6 @@ func (s *Server) deregisterActor(nsName string) {
 			return err != nil
 		})
 	if err != nil {
-		s.logf("failed to deregister actor: %v, error: %v", nsName, err)
 		panic(fmt.Sprintf("unable to deregister actor: %v, error: %v", nsName, err))
 	}
 }
