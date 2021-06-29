@@ -470,7 +470,7 @@ func (s *Server) deregisterActor(nsName string) {
 			cancel()
 			return err != nil
 		})
-	if err != nil {
+	if err != nil && err != registry.ErrNotOwner {
 		panic(fmt.Sprintf("unable to deregister actor: %v, error: %v", nsName, err))
 	}
 }

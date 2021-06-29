@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lytics/grid/v3/registry"
 	"github.com/lytics/retry"
 )
 
@@ -164,7 +165,7 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 				cancel()
 				return err != nil
 			})
-		if err != nil {
+		if err != nil && err != registry.ErrNotOwner {
 			panic(fmt.Errorf("%w: unable to deregister mailbox: %v, error: %v", errDeregisteredFailed, nsName, err))
 		}
 	}
