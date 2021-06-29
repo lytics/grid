@@ -470,7 +470,10 @@ func (s *Server) deregisterActor(nsName string) {
 			cancel()
 			return err != nil
 		})
-	if err != nil {
+	// Ingnore ErrNotOwner because most likely the previous owner panic'ed or exited badly. 
+	// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
+	// in that case because it will take down more mailboxes and make it worse. 
+	if err != nil && err != registry.ErrNotOwner {
 		panic(fmt.Sprintf("unable to deregister actor: %v, error: %v", nsName, err))
 	}
 }

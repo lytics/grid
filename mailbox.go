@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lytics/grid/v3/registry"
 	"github.com/lytics/retry"
 )
 
@@ -164,7 +165,10 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 				cancel()
 				return err != nil
 			})
-		if err != nil {
+		// Ingnore ErrNotOwner because most likely the previous owner panic'ed or exited badly. 
+		// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
+		// in that case because it will take down more mailboxes and make it worse. 
+		if err != nil && err != registry.ErrNotOwner {
 			panic(fmt.Errorf("%w: unable to deregister mailbox: %v, error: %v", errDeregisteredFailed, nsName, err))
 		}
 	}
