@@ -427,7 +427,11 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	timeout, cancel := context.WithTimeout(c, s.cfg.Timeout)
 	defer cancel()
 	if err := s.registry.Register(timeout, nsName); err != nil {
-		s.deregisterActor(nsName)
+		// Grid tries to start up leaders continuously so we need to ignore calling deregister
+		// otherwise we will deregister a leader out from under itself starting multiple leaders
+		if !(start.Type == "leader" && strings.Contains(err.Error(), registry.ErrAlreadyRegistered.Error())) {
+			s.deregisterActor(nsName)
+		}
 		return fmt.Errorf("registering actor %q: %w", nsName, err)
 	}
 
