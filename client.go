@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lytics/grid/v3/codec"
@@ -426,7 +427,7 @@ func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Gr
 	receivers := g.Members()
 
 	var broadcastErr error
-	successes := 0
+	var successes int32
 	mu := new(sync.Mutex)
 	wg := new(sync.WaitGroup)
 	for _, rec := range receivers {
@@ -442,7 +443,7 @@ func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Gr
 				// if this request was successful and the group is configured to Fastest,
 				// then cancel the context so other requests are terminated
 				cancel()
-				successes++
+				atomic.AddInt32(&successes, 1)
 			}
 
 			mu.Lock()
@@ -457,7 +458,7 @@ func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Gr
 
 	// if the group is configured to Fastest, and we had at least one successful
 	// request, then don't return an error
-	if g.fastest && broadcastErr != nil && successes > 0 {
+	if g.fastest && broadcastErr != nil && atomic.LoadInt32(&successes) > 0 {
 		broadcastErr = nil
 	}
 	return res, broadcastErr
