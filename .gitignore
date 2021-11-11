@@ -24,8 +24,11 @@ _testmain.go
 *.test
 *.prof
 
-# ignore vendor - they are only needed for tests. 
+# ignore vendor - they are only needed for tests.
 vendor/
 
 # ignore bazel things that are local only
 bazel-*
+
+# Visual Studio Code
+.vscode/*
