@@ -3,6 +3,7 @@ package grid
 import (
 	"context"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,13 +11,22 @@ import (
 )
 
 type contextActor struct {
+	mu      sync.RWMutex
 	started chan bool
 	ctx     context.Context
 }
 
 func (a *contextActor) Act(c context.Context) {
+	a.mu.Lock()
 	a.ctx = c
+	a.mu.Unlock()
 	a.started <- true
+}
+
+func (a *contextActor) Context() context.Context {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.ctx
 }
 
 func TestContextError(t *testing.T) {
@@ -88,7 +98,7 @@ func TestValidContext(t *testing.T) {
 		case <-a.started:
 			server.Stop()
 
-			id, err := ContextActorID(a.ctx)
+			id, err := ContextActorID(a.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -96,7 +106,7 @@ func TestValidContext(t *testing.T) {
 				t.Fatal("expected non-zero value")
 			}
 
-			name, err := ContextActorName(a.ctx)
+			name, err := ContextActorName(a.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -104,7 +114,7 @@ func TestValidContext(t *testing.T) {
 				t.Fatal("expected non-zero value")
 			}
 
-			namespace, err := ContextActorNamespace(a.ctx)
+			namespace, err := ContextActorNamespace(a.Context())
 			if err != nil {
 				t.Fatal(err)
 			}

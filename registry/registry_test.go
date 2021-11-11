@@ -156,21 +156,18 @@ func TestWaitForLeaseThatDoesExpires(t *testing.T) {
 	}
 	r1.LeaseDuration = 10 * time.Second
 
-	_, err = kv.Put(context.Background(), registryLockKey(address), "")
-	if err != nil {
+	if _, err := kv.Put(context.Background(), registryLockKey(address), ""); err != nil {
 		t.Fatal(err)
 	}
 	time.AfterFunc(5*time.Second, func() {
 		// cleanup lock so that the registry can startup.
-		_, err = kv.Delete(context.Background(), registryLockKey(address))
-		if err != nil {
+		if _, err := kv.Delete(context.Background(), registryLockKey(address)); err != nil {
 			t.Fatal(err)
 		}
 	})
 
 	st := time.Now()
-	err = r1.Start(addr)
-	if err != nil {
+	if err := r1.Start(addr); err != nil {
 		t.Fatalf("unexpected error: err: %v", err)
 	}
 	// ensure that we waited 10 seconds...

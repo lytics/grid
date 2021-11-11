@@ -92,7 +92,7 @@ func (we *WatchEvent) String() string {
 
 // Registry for discovery.
 type Registry struct {
-	mu            sync.Mutex
+	mu            sync.RWMutex
 	done          chan bool
 	exited        chan bool
 	kv            etcdv3.KV
@@ -202,6 +202,7 @@ func (rr *Registry) Start(addr net.Addr) error {
 
 	// Ensure that we're the owner of the address by taking an etcd lock
 	tctx, cancel := context.WithTimeout(context.TODO(), rr.LeaseDuration*2) // retry until Lease is up...
+	defer cancel()
 	err = rr.waitForAddress(tctx, address)
 	if err != nil {
 		return err
@@ -263,17 +264,24 @@ func (rr *Registry) Start(addr net.Addr) error {
 
 // Address of this registry in the format of <ip>:<port>
 func (rr *Registry) Address() string {
+	rr.mu.RLock()
+	defer rr.mu.RUnlock()
 	return rr.address
 }
 
 // Registry name, which is a human readable all ASCII
 // transformation of the network address.
 func (rr *Registry) Registry() string {
+	rr.mu.RLock()
+	defer rr.mu.RUnlock()
 	return rr.name
 }
 
 // Stop Registry.
 func (rr *Registry) Stop() error {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+
 	if rr.leaseID < 0 {
 		return nil
 	}
@@ -296,8 +304,8 @@ func (rr *Registry) Stop() error {
 
 // Watch a prefix in the registry.
 func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-chan *WatchEvent, error) {
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+	rr.mu.RLock()
+	defer rr.mu.RUnlock()
 
 	getRes, err := rr.kv.Get(c, prefix, etcdv3.WithPrefix())
 	if err != nil {
@@ -390,8 +398,8 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 
 // FindRegistrations associated with the prefix.
 func (rr *Registry) FindRegistrations(c context.Context, prefix string) ([]*Registration, error) {
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+	rr.mu.RLock()
+	defer rr.mu.RUnlock()
 
 	getRes, err := rr.kv.Get(c, prefix, etcdv3.WithPrefix())
 	if err != nil {
@@ -411,8 +419,8 @@ func (rr *Registry) FindRegistrations(c context.Context, prefix string) ([]*Regi
 
 // FindRegistration associated with the given key.
 func (rr *Registry) FindRegistration(c context.Context, key string) (*Registration, error) {
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+	rr.mu.RLock()
+	defer rr.mu.RUnlock()
 
 	getRes, err := rr.kv.Get(c, key, etcdv3.WithLimit(1))
 	if err != nil {
@@ -434,8 +442,8 @@ func (rr *Registry) FindRegistration(c context.Context, key string) (*Registrati
 // Hence, registration can be used for mutual-exclusion.
 func (rr *Registry) Register(c context.Context, key string, annotations ...string) error {
 	sort.Strings(annotations)
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+	rr.mu.RLock()
+	defer rr.mu.RUnlock()
 
 	if rr.leaseID < 0 {
 		return ErrNotStarted
@@ -475,8 +483,8 @@ func (rr *Registry) Register(c context.Context, key string, annotations ...strin
 
 // Deregister under the given key.
 func (rr *Registry) Deregister(c context.Context, key string) error {
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+	rr.mu.RLock()
+	defer rr.mu.RUnlock()
 
 	if rr.leaseID < 0 {
 		return ErrNotStarted
