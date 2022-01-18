@@ -121,11 +121,34 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	s.mu.Unlock()
 
 	s.mumb.Lock()
-	defer s.mumb.Unlock()
-
 	_, ok := s.mailboxes[nsName]
 	if ok {
 		return nil, fmt.Errorf("%w: nsName=%s", ErrAlreadyRegistered, nsName)
+	}
+	s.mumb.Unlock()
+
+	cleanup := func() {
+		s.mumb.Lock()
+		// Immediately delete the subscription so that no one
+		// can send to it, at least from this host.
+		delete(s.mailboxes, nsName)
+		s.mumb.Unlock()
+
+		// Deregister the name.
+		var err error
+		retry.X(3, 3*time.Second,
+			func() bool {
+				timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+				err = s.registry.Deregister(timeout, nsName)
+				cancel()
+				return err != nil
+			})
+		// Ingnore ErrNotOwner because most likely the previous owner panic'ed or exited badly.
+		// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
+		// in that case because it will take down more mailboxes and make it worse.
+		if err != nil && err != registry.ErrNotOwner {
+			panic(fmt.Errorf("%w: unable to deregister mailbox: %v, error: %v", errDeregisteredFailed, nsName, err))
+		}
 	}
 
 	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
@@ -144,34 +167,13 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 		return nil, err
 	}
 	if err != nil {
+		cleanup()
 		return nil, err
 	}
 
+	s.mumb.Lock()
+	defer s.mumb.Unlock()
 	boxC := make(chan Request, size)
-	cleanup := func() {
-		s.mumb.Lock()
-		defer s.mumb.Unlock()
-
-		// Immediately delete the subscription so that no one
-		// can send to it, at least from this host.
-		delete(s.mailboxes, nsName)
-
-		// Deregister the name.
-		var err error
-		retry.X(3, 3*time.Second,
-			func() bool {
-				timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-				err = s.registry.Deregister(timeout, nsName)
-				cancel()
-				return err != nil
-			})
-		// Ingnore ErrNotOwner because most likely the previous owner panic'ed or exited badly. 
-		// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
-		// in that case because it will take down more mailboxes and make it worse. 
-		if err != nil && err != registry.ErrNotOwner {
-			panic(fmt.Errorf("%w: unable to deregister mailbox: %v, error: %v", errDeregisteredFailed, nsName, err))
-		}
-	}
 	box := &Mailbox{
 		name:    name,
 		nsName:  nsName,
