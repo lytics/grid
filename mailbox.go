@@ -121,20 +121,18 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	s.mu.Unlock()
 
 	s.mumb.Lock()
-	defer s.mumb.Unlock()
-
 	_, ok := s.mailboxes[nsName]
 	if ok {
 		return nil, fmt.Errorf("%w: nsName=%s", ErrAlreadyRegistered, nsName)
 	}
+	s.mumb.Unlock()
 
 	cleanup := func() {
 		s.mumb.Lock()
-		defer s.mumb.Unlock()
-
 		// Immediately delete the subscription so that no one
 		// can send to it, at least from this host.
 		delete(s.mailboxes, nsName)
+		s.mumb.Unlock()
 
 		// Deregister the name.
 		var err error
@@ -173,6 +171,8 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 		return nil, err
 	}
 
+	s.mumb.Lock()
+	defer s.mumb.Unlock()
 	boxC := make(chan Request, size)
 	box := &Mailbox{
 		name:    name,
