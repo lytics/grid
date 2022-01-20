@@ -123,9 +123,9 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	s.mumb.Lock()
 	_, ok := s.mailboxes[nsName]
 	if ok {
+		s.mumb.Unlock()
 		return nil, fmt.Errorf("%w: nsName=%s", ErrAlreadyRegistered, nsName)
 	}
-	s.mumb.Unlock()
 
 	cleanup := func() {
 		s.mumb.Lock()
@@ -164,15 +164,15 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	// recoverable or non-recoverable.
 	if err != nil && strings.Contains(err.Error(), "etcdserver: requested lease not found") {
 		s.reportFatalError(err)
+		s.mumb.Unlock()
 		return nil, err
 	}
 	if err != nil {
+		s.mumb.Unlock()
 		cleanup()
 		return nil, err
 	}
 
-	s.mumb.Lock()
-	defer s.mumb.Unlock()
 	boxC := make(chan Request, size)
 	box := &Mailbox{
 		name:    name,
@@ -182,5 +182,6 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 		cleanup: cleanup,
 	}
 	s.mailboxes[nsName] = box
+	s.mumb.Unlock()
 	return box, nil
 }
