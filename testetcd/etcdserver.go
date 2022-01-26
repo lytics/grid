@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 )
@@ -74,8 +75,9 @@ func StartAndConnect(t testing.TB, endpoints []string) *clientv3.Client {
 		DialTimeout: time.Second,
 	}
 	etcd, err := clientv3.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, etcd.Close())
+	})
 	return etcd
 }

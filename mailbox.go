@@ -75,26 +75,28 @@ func (r *mailboxRegistry) R() map[string]*Mailbox {
 
 // Mailbox for receiving messages.
 type Mailbox struct {
-	mu      sync.RWMutex
+	// mu protects c and closed
+	mu     sync.RWMutex
+	c      chan Request
+	closed bool
+
 	name    string
 	nsName  string
 	C       <-chan Request
-	c       chan Request
-	closed  bool
+	once    sync.Once
 	cleanup func()
 }
 
 // Close the mailbox.
 func (box *Mailbox) Close() error {
-	box.mu.Lock()
-	defer box.mu.Unlock()
-
-	// Close mailbox.
-	box.closed = true
-	close(box.c)
-
-	box.cleanup()
-	// Run server provided clean up.
+	box.once.Do(func() {
+		box.mu.Lock()
+		close(box.c)
+		box.closed = true
+		box.mu.Unlock()
+		// Run server-provided clean up.
+		box.cleanup()
+	})
 	return nil
 }
 
@@ -112,12 +114,23 @@ func (box *Mailbox) String() string {
 // otherwise return an error indicating that the
 // receiver is busy.
 func (box *Mailbox) put(req *request) error {
+	// NOTE (2022-01) (mh): We have to defer the unlock here
+	// as it's not safe otherwise.
+	//
+	// If we RUnlock() after reading box.closed:
+	// goroutine 1 (put)  : RLock -  RUnlock() -   send (!!!)
+	// goroutine 2 (close):       Lock - close - Unlock
+	//
+	// If we RUnlock() at the end:
+	// goroutine 1 (put)  : RLock - send - RUnlock()
+	// goroutine 2 (close):      Lock -              close - Unlock
 	box.mu.RLock()
 	defer box.mu.RUnlock()
 
 	if box.closed {
 		return ErrReceiverBusy
 	}
+
 	select {
 	case box.c <- req:
 		return nil

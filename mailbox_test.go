@@ -1,9 +1,12 @@
 package grid
 
 import (
+	"net"
 	"strconv"
 	"testing"
+	"time"
 
+	"github.com/lytics/grid/v3/testetcd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -122,4 +125,52 @@ func TestMailboxRegistryR(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMailboxClose(t *testing.T) {
+	t.Parallel()
+
+	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
+
+	s, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
+	require.NoError(t, err)
+
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	done := make(chan error, 1)
+	go func() {
+		defer close(done)
+		if err := s.Serve(lis); err != nil {
+			done <- err
+		}
+	}()
+	t.Cleanup(s.Stop)
+
+	for s.isServing() != nil {
+		time.Sleep(time.Second)
+	}
+
+	m, err := NewMailbox(s, "name", 1)
+	require.NoError(t, err)
+
+	select {
+	case <-m.C:
+		t.Fatal("didn't expect any values")
+	default:
+		// expected
+	}
+
+	err = m.Close()
+	require.NoError(t, err)
+
+	select {
+	case _, ok := <-m.C:
+		assert.False(t, ok)
+	default:
+		t.Fatal("didn't expect channel to be open")
+	}
+
+	// We can close again without panicking
+	m.Close()
 }
