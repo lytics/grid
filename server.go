@@ -30,8 +30,10 @@ type contextVal struct {
 
 // Server of a grid.
 type Server struct {
-	mu   sync.Mutex
-	mumb sync.RWMutex // Mutext used to sync mailboxes map
+	// mu protects the follow fields, use accessors
+	mu       sync.RWMutex
+	finalErr error
+	serving  bool
 
 	ctx       context.Context
 	cancel    func()
@@ -40,10 +42,9 @@ type Server struct {
 	grpc      *grpc.Server
 	stop      sync.Once
 	fatalErr  chan error
-	finalErr  error
-	actors    map[string]MakeActor
+	actors    *makeActorRegistry
 	registry  *registry.Registry
-	mailboxes map[string]*Mailbox
+	mailboxes *mailboxRegistry
 }
 
 // NewServer for the grid. The namespace must contain only characters
@@ -74,12 +75,13 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	}
 
 	server := &Server{
-		cfg:      cfg,
-		etcd:     etcd,
-		grpc:     grpc.NewServer(),
-		actors:   map[string]MakeActor{},
-		fatalErr: make(chan error, 1),
-		registry: r,
+		cfg:       cfg,
+		etcd:      etcd,
+		grpc:      grpc.NewServer(),
+		actors:    newMakeActorRegistry(),
+		fatalErr:  make(chan error, 1),
+		registry:  r,
+		mailboxes: newMailboxRegistry(),
 	}
 
 	// Create a context that each actor this leader creates
@@ -102,10 +104,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 // it will be started automatically when the Serve method is
 // called.
 func (s *Server) RegisterDef(actorType string, f MakeActor) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.actors[actorType] = f
+	s.actors.Set(actorType, f)
 }
 
 // Context of the server, when it reports done the
@@ -142,10 +141,8 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 
-	// Create the mailboxes map.
 	s.mu.Lock()
-	// no need to take the s.mumb Lock here, since no mailbox ops should occur before a call to Serve.
-	s.mailboxes = make(map[string]*Mailbox)
+	s.serving = true
 	s.mu.Unlock()
 
 	// Start a mailbox, this is critical because starting
@@ -186,20 +183,6 @@ func (s *Server) Serve(lis net.Listener) error {
 // Stop the server, blocking until all mailboxes registered with
 // this server have called their close method.
 func (s *Server) Stop() {
-	logMailboxes := func() {
-		s.mumb.RLock()
-		defer s.mumb.RUnlock()
-		for _, mailbox := range s.mailboxes {
-			s.logf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, mailbox)
-		}
-	}
-
-	zeroMailboxes := func() bool {
-		s.mumb.RLock()
-		defer s.mumb.RUnlock()
-		return len(s.mailboxes) == 0
-	}
-
 	s.stop.Do(func() {
 		if s.cancel == nil {
 			return
@@ -209,12 +192,15 @@ func (s *Server) Stop() {
 		t0 := time.Now()
 		for {
 			time.Sleep(200 * time.Millisecond)
-			if zeroMailboxes() {
+			if s.mailboxes.Size() == 0 {
 				break
 			}
-			if time.Now().Sub(t0) > 20*time.Second {
+
+			if time.Since(t0) > 20*time.Second {
 				t0 = time.Now()
-				logMailboxes()
+				for _, m := range s.mailboxes.R() {
+					s.logf("%v: waiting for mailbox to close: %v", s.cfg.Namespace, m)
+				}
 			}
 		}
 
@@ -226,14 +212,7 @@ func (s *Server) Stop() {
 // Process a request and return a response. Implements the interface for
 // gRPC definition of the wire service. Consider this a private method.
 func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
-	getMailbox := func() (*Mailbox, bool) {
-		s.mumb.RLock()
-		defer s.mumb.RUnlock()
-		m, ok := s.mailboxes[d.Receiver]
-		return m, ok
-	}
-
-	mailbox, ok := getMailbox()
+	mailbox, ok := s.mailboxes.Get(d.Receiver)
 	if !ok {
 		return nil, ErrUnknownMailbox
 	}
@@ -373,8 +352,8 @@ func (s *Server) reportFatalError(err error) {
 }
 
 func (s *Server) getFinalErr() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.finalErr
 }
 
@@ -397,9 +376,6 @@ func (s *Server) startActor(timeout time.Duration, start *ActorStart) error {
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
 func (s *Server) startActorC(c context.Context, start *ActorStart) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if !isNameValid(start.Type) {
 		return fmt.Errorf("%w: type=%s", ErrInvalidActorType, start.Type)
 	}
@@ -409,10 +385,14 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 		return err
 	}
 
-	makeActor := s.actors[start.Type]
-	if makeActor == nil {
+	makeActor, ok := s.actors.Get(start.Type)
+	if !ok {
 		return fmt.Errorf("%w: type=%s", ErrDefNotRegistered, start.Type)
 	}
+	if makeActor == nil {
+		return fmt.Errorf("%w (nil def): type=%s", ErrDefNotRegistered, start.Type)
+	}
+
 	actor, err := makeActor(start.Data)
 	if err != nil {
 		return err
@@ -474,9 +454,9 @@ func (s *Server) deregisterActor(nsName string) {
 			cancel()
 			return err != nil
 		})
-	// Ingnore ErrNotOwner because most likely the previous owner panic'ed or exited badly. 
+	// Ignore ErrNotOwner because most likely the previous owner panic'ed or exited badly.
 	// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
-	// in that case because it will take down more mailboxes and make it worse. 
+	// in that case because it will take down more mailboxes and make it worse.
 	if err != nil && err != registry.ErrNotOwner {
 		panic(fmt.Sprintf("unable to deregister actor: %v, error: %v", nsName, err))
 	}
@@ -486,4 +466,13 @@ func (s *Server) logf(format string, v ...interface{}) {
 	if s.cfg.Logger != nil {
 		s.cfg.Logger.Printf(format, v...)
 	}
+}
+
+func (s *Server) isServing() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !s.serving {
+		return ErrServerNotRunning
+	}
+	return nil
 }
