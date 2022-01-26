@@ -1,6 +1,8 @@
 package testetcd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -77,7 +79,9 @@ func StartAndConnect(t testing.TB, endpoints []string) *clientv3.Client {
 	etcd, err := clientv3.New(cfg)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		require.NoError(t, etcd.Close())
+		if err := etcd.Close(); err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
 	})
 	return etcd
 }
