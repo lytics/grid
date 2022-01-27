@@ -1,6 +1,8 @@
 package testetcd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -9,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 )
@@ -74,8 +77,11 @@ func StartAndConnect(t testing.TB, endpoints []string) *clientv3.Client {
 		DialTimeout: time.Second,
 	}
 	etcd, err := clientv3.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := etcd.Close(); err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	})
 	return etcd
 }

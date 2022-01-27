@@ -428,8 +428,8 @@ func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Gr
 
 	var broadcastErr error
 	var successes int32
-	mu := new(sync.Mutex)
-	wg := new(sync.WaitGroup)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	for _, rec := range receivers {
 		wg.Add(1)
 		go func(receiver string) {

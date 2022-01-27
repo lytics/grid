@@ -18,28 +18,88 @@ var (
 	errDeregisteredFailed = errors.New("grid: deregistered failed")
 )
 
+// mailboxRegistry is a collection of named mailboxes.
+type mailboxRegistry struct {
+	mu sync.RWMutex
+	r  map[string]*Mailbox
+}
+
+func newMailboxRegistry() *mailboxRegistry {
+	return &mailboxRegistry{
+		r: make(map[string]*Mailbox),
+	}
+}
+
+// Get retrieves the mailbox.
+func (r *mailboxRegistry) Get(name string) (m *Mailbox, found bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m, found = r.r[name]
+	return
+}
+
+// Set the mailbox.
+func (r *mailboxRegistry) Set(name string, m *Mailbox) (update bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, update = r.r[name]
+	r.r[name] = m
+	return
+}
+
+// Delete the mailbox.
+func (r *mailboxRegistry) Delete(name string) (found bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, found = r.r[name]
+	if found {
+		delete(r.r, name)
+	}
+	return
+}
+
+// Size of the registry.
+func (r *mailboxRegistry) Size() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.r)
+}
+
+// R returns a shallow copy of the underlying registry.
+func (r *mailboxRegistry) R() map[string]*Mailbox {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]*Mailbox, len(r.r))
+	for k, v := range r.r {
+		out[k] = v
+	}
+	return out
+}
+
 // Mailbox for receiving messages.
 type Mailbox struct {
-	mu      sync.RWMutex
+	// mu protects c and closed
+	mu     sync.RWMutex
+	c      chan Request
+	closed bool
+
 	name    string
 	nsName  string
 	C       <-chan Request
-	c       chan Request
-	closed  bool
+	once    sync.Once
 	cleanup func()
 }
 
 // Close the mailbox.
 func (box *Mailbox) Close() error {
-	box.mu.Lock()
-	defer box.mu.Unlock()
-
-	// Close mailbox.
-	box.closed = true
-	close(box.c)
-
-	box.cleanup()
-	// Run server provided clean up.
+	box.once.Do(func() {
+		box.mu.Lock()
+		close(box.c)
+		box.closed = true
+		box.mu.Unlock()
+		// Run server-provided clean up.
+		box.cleanup()
+	})
 	return nil
 }
 
@@ -57,12 +117,23 @@ func (box *Mailbox) String() string {
 // otherwise return an error indicating that the
 // receiver is busy.
 func (box *Mailbox) put(req *request) error {
+	// NOTE (2022-01) (mh): We have to defer the unlock here
+	// as it's not safe otherwise.
+	//
+	// If we RUnlock() after reading box.closed:
+	// goroutine 1 (put)  : RLock -  RUnlock() -   send (!!!)
+	// goroutine 2 (close):       Lock - close - Unlock
+	//
+	// If we RUnlock() at the end:
+	// goroutine 1 (put)  : RLock - send - RUnlock()
+	// goroutine 2 (close):      Lock -              close - Unlock
 	box.mu.RLock()
 	defer box.mu.RUnlock()
 
 	if box.closed {
 		return ErrReceiverBusy
 	}
+
 	select {
 	case box.c <- req:
 		return nil
@@ -113,26 +184,19 @@ func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
 }
 
 func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
-	s.mu.Lock()
-	if s.mailboxes == nil {
-		s.mu.Unlock()
-		return nil, ErrServerNotRunning
+	if err := s.isServing(); err != nil {
+		return nil, err
 	}
-	s.mu.Unlock()
 
-	s.mumb.Lock()
-	_, ok := s.mailboxes[nsName]
+	_, ok := s.mailboxes.Get(nsName)
 	if ok {
-		s.mumb.Unlock()
 		return nil, fmt.Errorf("%w: nsName=%s", ErrAlreadyRegistered, nsName)
 	}
 
 	cleanup := func() {
-		s.mumb.Lock()
 		// Immediately delete the subscription so that no one
 		// can send to it, at least from this host.
-		delete(s.mailboxes, nsName)
-		s.mumb.Unlock()
+		s.mailboxes.Delete(nsName)
 
 		// Deregister the name.
 		var err error
@@ -143,7 +207,7 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 				cancel()
 				return err != nil
 			})
-		// Ingnore ErrNotOwner because most likely the previous owner panic'ed or exited badly.
+		// Ignore ErrNotOwner because most likely the previous owner panic'ed or exited badly.
 		// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
 		// in that case because it will take down more mailboxes and make it worse.
 		if err != nil && err != registry.ErrNotOwner {
@@ -164,11 +228,9 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 	// recoverable or non-recoverable.
 	if err != nil && strings.Contains(err.Error(), "etcdserver: requested lease not found") {
 		s.reportFatalError(err)
-		s.mumb.Unlock()
 		return nil, err
 	}
 	if err != nil {
-		s.mumb.Unlock()
 		cleanup()
 		return nil, err
 	}
@@ -181,7 +243,6 @@ func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
 		c:       boxC,
 		cleanup: cleanup,
 	}
-	s.mailboxes[nsName] = box
-	s.mumb.Unlock()
+	s.mailboxes.Set(nsName, box)
 	return box, nil
 }
