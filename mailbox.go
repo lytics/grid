@@ -65,12 +65,15 @@ func (r *mailboxRegistry) Size() int {
 	return len(r.r)
 }
 
-// R returns the underlying registry.
-// It does _not_ return a copy.
+// R returns a shallow copy of the underlying registry.
 func (r *mailboxRegistry) R() map[string]*Mailbox {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.r
+	out := make(map[string]*Mailbox, len(r.r))
+	for k, v := range r.r {
+		out[k] = v
+	}
+	return out
 }
 
 // Mailbox for receiving messages.

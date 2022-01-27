@@ -1,8 +1,10 @@
 package grid
 
 import (
+	"fmt"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -127,9 +129,71 @@ func TestMailboxRegistryR(t *testing.T) {
 	}
 }
 
-func TestMailboxClose(t *testing.T) {
+// TestMailboxRegistryConcurrent tests that mailboxRegistry
+// is safe to use concurrently. It relies on the -race test flag
+// to detect races: the test itself has no assertions.
+func TestMailboxRegistryConcurrent(t *testing.T) {
 	t.Parallel()
 
+	// NOTE (2022-01) (mh): Only doing one combo for sanity.
+	// Could test performance/correctness at higher contention.
+	// Leaving as a table-test.
+
+	//numWorkersSet contains all the different numWorkers we want to test.
+	numWorkersSet := []int{1}
+	//numKeysSet contains all the different number of different keys we want to test.
+	numKeysSet := []int{1}
+
+	for _, numWorkers := range numWorkersSet {
+		numWorkers := numWorkers
+		for _, numKeys := range numKeysSet {
+			numKeys := numKeys
+			t.Run(fmt.Sprintf("%v-%v", numWorkers, numKeys), func(t *testing.T) {
+				t.Parallel()
+
+				r := newMailboxRegistry()
+
+				var wg sync.WaitGroup
+				for i := 0; i < numKeys; i++ {
+					name := strconv.Itoa(i)
+
+					// Add methods you want to test here
+					// NOTE (2022-01) (mh): Adding here to reduce boilerplate.
+					ops := []func(){
+						func() { r.Get(name) },
+						func() { r.Set(name, new(Mailbox)) },
+						func() { r.Delete(name) },
+						func() { r.Size() },
+						func() {
+							for _, m := range r.R() {
+								_ = m
+							}
+						},
+						func() {
+							reg := r.R()
+							reg[name] = new(Mailbox)
+						},
+					}
+
+					for j := 0; j < numWorkers; j++ {
+						wg.Add(len(ops))
+						for _, op := range ops {
+							op := op
+							go func() {
+								defer wg.Done()
+								op()
+							}()
+						}
+					}
+				}
+
+				wg.Wait()
+			})
+		}
+	}
+}
+
+func TestMailboxClose(t *testing.T) {
 	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
 
 	s, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
