@@ -215,7 +215,7 @@ func TestMailboxClose(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 
-	m, err := NewMailbox(s, "name", 1)
+	m, err := s.NewMailbox("name", 1)
 	require.NoError(t, err)
 
 	select {

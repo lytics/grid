@@ -1,15 +1,8 @@
 package grid
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"sync"
-	"time"
-
-	"github.com/lytics/grid/v3/registry"
-	"github.com/lytics/retry"
 )
 
 var (
@@ -170,79 +163,5 @@ func (box *Mailbox) put(req *request) error {
 // Using a mailbox requires that the process creating the mailbox also
 // started a grid Server.
 func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
-	if !isNameValid(name) {
-		return nil, fmt.Errorf("%w: name=%s", ErrInvalidMailboxName, name)
-	}
-
-	// Namespaced name.
-	nsName, err := namespaceName(Mailboxes, s.cfg.Namespace, name)
-	if err != nil {
-		return nil, err
-	}
-
-	return newMailbox(s, name, nsName, size)
-}
-
-func newMailbox(s *Server, name, nsName string, size int) (*Mailbox, error) {
-	if err := s.isServing(); err != nil {
-		return nil, err
-	}
-
-	_, ok := s.mailboxes.Get(nsName)
-	if ok {
-		return nil, fmt.Errorf("%w: nsName=%s", ErrAlreadyRegistered, nsName)
-	}
-
-	cleanup := func() {
-		// Immediately delete the subscription so that no one
-		// can send to it, at least from this host.
-		s.mailboxes.Delete(nsName)
-
-		// Deregister the name.
-		var err error
-		retry.X(3, 3*time.Second,
-			func() bool {
-				timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-				err = s.registry.Deregister(timeout, nsName)
-				cancel()
-				return err != nil
-			})
-		// Ignore ErrNotOwner because most likely the previous owner panic'ed or exited badly.
-		// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
-		// in that case because it will take down more mailboxes and make it worse.
-		if err != nil && err != registry.ErrNotOwner {
-			panic(fmt.Errorf("%w: unable to deregister mailbox: %v, error: %v", errDeregisteredFailed, nsName, err))
-		}
-	}
-
-	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-	err := s.registry.Register(timeout, nsName)
-	cancel()
-	// Check if the error is a particular fatal error
-	// from etcd. Some errors have no recovery. See
-	// the list of all possible errors here:
-	//
-	// https://github.com/etcd-io/etcd/blob/master/etcdserver/api/v3rpc/rpctypes/error.go
-	//
-	// They are unfortunately not classidied into
-	// recoverable or non-recoverable.
-	if err != nil && strings.Contains(err.Error(), "etcdserver: requested lease not found") {
-		s.reportFatalError(err)
-		return nil, err
-	}
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-
-	boxC := make(chan Request, size)
-	box := &Mailbox{
-		name:    name,
-		nsName:  nsName,
-		C:       boxC,
-		c:       boxC,
-		cleanup: cleanup,
-	}
-	s.mailboxes.Set(nsName, box)
-	return box, nil
+	return s.NewMailbox(name, size)
 }
