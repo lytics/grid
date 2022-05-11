@@ -30,6 +30,7 @@ type contextVal struct {
 
 // Server of a grid.
 type Server struct {
+	UnimplementedWireServer
 	// mu protects the follow fields, use accessors
 	mu       sync.RWMutex
 	finalErr error
