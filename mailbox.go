@@ -14,17 +14,17 @@ var (
 // mailboxRegistry is a collection of named mailboxes.
 type mailboxRegistry struct {
 	mu sync.RWMutex
-	r  map[string]Mailbox
+	r  map[string]*GRPCMailbox
 }
 
 func newMailboxRegistry() *mailboxRegistry {
 	return &mailboxRegistry{
-		r: make(map[string]Mailbox),
+		r: make(map[string]*GRPCMailbox),
 	}
 }
 
 // Get retrieves the mailbox.
-func (r *mailboxRegistry) Get(name string) (m Mailbox, found bool) {
+func (r *mailboxRegistry) Get(name string) (m *GRPCMailbox, found bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	m, found = r.r[name]
@@ -32,7 +32,7 @@ func (r *mailboxRegistry) Get(name string) (m Mailbox, found bool) {
 }
 
 // Set the mailbox.
-func (r *mailboxRegistry) Set(name string, m Mailbox) (update bool) {
+func (r *mailboxRegistry) Set(name string, m *GRPCMailbox) (update bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	_, update = r.r[name]
@@ -59,10 +59,10 @@ func (r *mailboxRegistry) Size() int {
 }
 
 // R returns a shallow copy of the underlying registry.
-func (r *mailboxRegistry) R() map[string]Mailbox {
+func (r *mailboxRegistry) R() map[string]*GRPCMailbox {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make(map[string]Mailbox, len(r.r))
+	out := make(map[string]*GRPCMailbox, len(r.r))
 	for k, v := range r.r {
 		out[k] = v
 	}

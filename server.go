@@ -335,7 +335,7 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	// can stop listenting when it wants, so
 	// the receiver may return an error saying
 	// it is busy.
-	err = mailbox.(*GRPCMailbox).put(req)
+	err = mailbox.put(req)
 	if err != nil {
 		return nil, err
 	}
