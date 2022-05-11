@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/google/go-replayers/grpcreplay"
 	"github.com/lytics/grid/v3/codec"
 	"github.com/lytics/grid/v3/registry"
 	"github.com/lytics/retry"
@@ -325,11 +327,39 @@ func (c *Client) getWireClient(ctx context.Context, nsReceiver string) (WireClie
 			// Test hook.
 			c.cs.Inc(numGRPCDial)
 
-			// Dial the destination.
-			conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second))
+			var conn *grpc.ClientConn
+			var err error
+			dialOptions := []grpc.DialOption{
+				grpc.WithInsecure(),
+				grpc.WithBackoffMaxDelay(20 * time.Second),
+			}
+
+			replayFile := os.Getenv("GRPC_REPLAY_FILE")
+			replayAction := os.Getenv("GRPC_REPLAY_ACTION")
+			switch replayAction {
+			case "record":
+				var rec *grpcreplay.Recorder
+				rec, err = grpcreplay.NewRecorder(replayFile, nil)
+				if err != nil {
+					panic("couldn't make recorder")
+				}
+				dialOptions = append(dialOptions, rec.DialOptions()...)
+				conn, err = grpc.Dial(address, dialOptions...)
+			case "replay":
+				var rep *grpcreplay.Replayer
+				rep, err = grpcreplay.NewReplayer(replayFile, nil)
+				if err != nil {
+					panic("couldn't make replayer")
+				}
+				conn, err = rep.Connection()
+			default:
+				conn, err = grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second))
+			}
 			if err != nil {
 				return nil, noID, err
 			}
+
+			// Dial the destination.
 			client := NewWireClient(conn)
 			cc := &clientAndConn{
 				conn:   conn,
