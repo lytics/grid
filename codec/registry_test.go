@@ -28,7 +28,7 @@ func TestRegisterMarshalUnmarshal(t *testing.T) {
 	msg := &protomessage.Person{
 		Name: "James Tester",
 		Phones: []*protomessage.Person_PhoneNumber{
-			&protomessage.Person_PhoneNumber{
+			{
 				Number:    "555-555-5555",
 				PhoneType: protomessage.Person_HOME,
 			},

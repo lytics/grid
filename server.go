@@ -98,6 +98,111 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	return server, nil
 }
 
+// NewMailbox for requests addressed to name. Size will be the mailbox's
+// channel size.
+//
+// Example Usage:
+//
+//     mailbox, err := server.NewMailbox("incoming", 10)
+//     ...
+//     defer mailbox.Close()
+//
+//     for {
+//         select {
+//         case req := <-mailbox.C:
+//             // Do something with request, and then respond
+//             // or ack. A response or ack is required.
+//             switch m := req.Msg().(type) {
+//             case HiMsg:
+//                 req.Respond(&HelloMsg{})
+//             }
+//         }
+//     }
+//
+// If the mailbox has already been created, in the calling process or
+// any other process, an error is returned, since only one mailbox
+// can claim a particular name.
+//
+// Using a mailbox requires that the process creating the mailbox also
+// started a grid Server.
+func (s *Server) NewMailbox(name string, size int) (Mailbox, error) {
+	if !isNameValid(name) {
+		return nil, fmt.Errorf("%w: name=%s", ErrInvalidMailboxName, name)
+	}
+
+	// Namespaced name.
+	nsName, err := namespaceName(Mailboxes, s.cfg.Namespace, name)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.newMailbox(name, nsName, size)
+}
+
+func (s *Server) newMailbox(name, nsName string, size int) (*GRPCMailbox, error) {
+	if err := s.isServing(); err != nil {
+		return nil, err
+	}
+
+	_, ok := s.mailboxes.Get(nsName)
+	if ok {
+		return nil, fmt.Errorf("%w: nsName=%s", ErrAlreadyRegistered, nsName)
+	}
+
+	cleanup := func() {
+		// Immediately delete the subscription so that no one
+		// can send to it, at least from this host.
+		s.mailboxes.Delete(nsName)
+
+		// Deregister the name.
+		var err error
+		retry.X(3, 3*time.Second,
+			func() bool {
+				timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+				err = s.registry.Deregister(timeout, nsName)
+				cancel()
+				return err != nil
+			})
+		// Ignore ErrNotOwner because most likely the previous owner panic'ed or exited badly.
+		// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
+		// in that case because it will take down more mailboxes and make it worse.
+		if err != nil && err != registry.ErrNotOwner {
+			panic(fmt.Errorf("%w: unable to deregister mailbox: %v, error: %v", errDeregisteredFailed, nsName, err))
+		}
+	}
+
+	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+	err := s.registry.Register(timeout, nsName)
+	cancel()
+	// Check if the error is a particular fatal error
+	// from etcd. Some errors have no recovery. See
+	// the list of all possible errors here:
+	//
+	// https://github.com/etcd-io/etcd/blob/master/etcdserver/api/v3rpc/rpctypes/error.go
+	//
+	// They are unfortunately not classidied into
+	// recoverable or non-recoverable.
+	if err != nil && strings.Contains(err.Error(), "etcdserver: requested lease not found") {
+		s.reportFatalError(err)
+		return nil, err
+	}
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+
+	boxC := make(chan Request, size)
+	box := &GRPCMailbox{
+		name:     name,
+		nsName:   nsName,
+		requests: boxC,
+		c:        boxC,
+		cleanup:  cleanup,
+	}
+	s.mailboxes.Set(nsName, box)
+	return box, nil
+}
+
 // RegisterDef of an actor. When a ActorStart message is sent to
 // a peer it will use the registered definitions to make and run
 // the actor. If an actor with actorType "leader" is registered
@@ -149,7 +254,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	// actors in a grid is just done via a normal request
 	// sending the message ActorDef to a listening peer's
 	// mailbox.
-	mailbox, err := NewMailbox(s, name, 100)
+	mailbox, err := s.NewMailbox(name, 100)
 	if err != nil {
 		return err
 	}
@@ -248,13 +353,13 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 }
 
 // runMailbox for this server.
-func (s *Server) runMailbox(mailbox *Mailbox) {
+func (s *Server) runMailbox(mailbox Mailbox) {
 	defer mailbox.Close()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		case req := <-mailbox.C:
+		case req := <-mailbox.C():
 			switch msg := req.Msg().(type) {
 			case *ActorStart:
 				err := s.startActorC(req.Context(), msg)
