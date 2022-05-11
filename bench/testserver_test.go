@@ -53,7 +53,7 @@ func (a *pingPongProtoActor) Act(ctx context.Context) {
 	logger := log.New(os.Stderr, "pingpong-actor :: ", log.LstdFlags|log.Lshortfile)
 	// Listen to a mailbox with the same
 	// name as the actor.
-	mailbox, err := grid.NewMailbox(a.server, mailboxName, 10)
+	mailbox, err := a.server.NewMailbox(mailboxName, 10)
 	successOrDie(logger, err)
 	defer mailbox.Close()
 

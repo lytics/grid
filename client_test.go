@@ -36,7 +36,7 @@ func (a *busyActor) Act(c context.Context) {
 		return
 	}
 
-	mailbox, err := NewMailbox(a.server, name, 0)
+	mailbox, err := a.server.NewMailbox(name, 0)
 	if err != nil {
 		return
 	}
@@ -60,7 +60,7 @@ func (a *echoActor) Act(c context.Context) {
 		return
 	}
 
-	mailbox, err := NewMailbox(a.server, name, 1)
+	mailbox, err := a.server.NewMailbox(name, 1)
 	if err != nil {
 		return
 	}

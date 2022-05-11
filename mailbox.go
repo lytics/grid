@@ -14,17 +14,17 @@ var (
 // mailboxRegistry is a collection of named mailboxes.
 type mailboxRegistry struct {
 	mu sync.RWMutex
-	r  map[string]*Mailbox
+	r  map[string]Mailbox
 }
 
 func newMailboxRegistry() *mailboxRegistry {
 	return &mailboxRegistry{
-		r: make(map[string]*Mailbox),
+		r: make(map[string]Mailbox),
 	}
 }
 
 // Get retrieves the mailbox.
-func (r *mailboxRegistry) Get(name string) (m *Mailbox, found bool) {
+func (r *mailboxRegistry) Get(name string) (m Mailbox, found bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	m, found = r.r[name]
@@ -32,7 +32,7 @@ func (r *mailboxRegistry) Get(name string) (m *Mailbox, found bool) {
 }
 
 // Set the mailbox.
-func (r *mailboxRegistry) Set(name string, m *Mailbox) (update bool) {
+func (r *mailboxRegistry) Set(name string, m Mailbox) (update bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	_, update = r.r[name]
@@ -59,18 +59,23 @@ func (r *mailboxRegistry) Size() int {
 }
 
 // R returns a shallow copy of the underlying registry.
-func (r *mailboxRegistry) R() map[string]*Mailbox {
+func (r *mailboxRegistry) R() map[string]Mailbox {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make(map[string]*Mailbox, len(r.r))
+	out := make(map[string]Mailbox, len(r.r))
 	for k, v := range r.r {
 		out[k] = v
 	}
 	return out
 }
 
-// Mailbox for receiving messages.
-type Mailbox struct {
+type Mailbox interface {
+	C() <-chan Request
+	Close() error
+}
+
+// GRPCMailbox for receiving messages.
+type GRPCMailbox struct {
 	// mu protects c and closed
 	mu     sync.RWMutex
 	c      chan Request
@@ -83,12 +88,12 @@ type Mailbox struct {
 	cleanup  func()
 }
 
-func (box *Mailbox) C() <-chan Request {
+func (box *GRPCMailbox) C() <-chan Request {
 	return box.requests
 }
 
 // Close the mailbox.
-func (box *Mailbox) Close() error {
+func (box *GRPCMailbox) Close() error {
 	box.once.Do(func() {
 		box.mu.Lock()
 		close(box.c)
@@ -101,19 +106,19 @@ func (box *Mailbox) Close() error {
 }
 
 // Name of mailbox, without namespace.
-func (box *Mailbox) Name() string {
+func (box *GRPCMailbox) Name() string {
 	return box.name
 }
 
 // String of mailbox name, with full namespace.
-func (box *Mailbox) String() string {
+func (box *GRPCMailbox) String() string {
 	return box.nsName
 }
 
 // put a request into the mailbox if it is not closed,
 // otherwise return an error indicating that the
 // receiver is busy.
-func (box *Mailbox) put(req *request) error {
+func (box *GRPCMailbox) put(req *request) error {
 	// NOTE (2022-01) (mh): We have to defer the unlock here
 	// as it's not safe otherwise.
 	//
@@ -137,35 +142,4 @@ func (box *Mailbox) put(req *request) error {
 	default:
 		return ErrReceiverBusy
 	}
-}
-
-// NewMailbox for requests addressed to name. Size will be the mailbox's
-// channel size.
-//
-// Example Usage:
-//
-//     mailbox, err := NewMailbox(server, "incoming", 10)
-//     ...
-//     defer mailbox.Close()
-//
-//     for {
-//         select {
-//         case req := <-mailbox.C:
-//             // Do something with request, and then respond
-//             // or ack. A response or ack is required.
-//             switch m := req.Msg().(type) {
-//             case HiMsg:
-//                 req.Respond(&HelloMsg{})
-//             }
-//         }
-//     }
-//
-// If the mailbox has already been created, in the calling process or
-// any other process, an error is returned, since only one mailbox
-// can claim a particular name.
-//
-// Using a mailbox requires that the process creating the mailbox also
-// started a grid Server.
-func NewMailbox(s *Server, name string, size int) (*Mailbox, error) {
-	return s.NewMailbox(name, size)
 }

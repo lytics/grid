@@ -86,7 +86,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
 
 	// Listen to a mailbox with the same
 	// name as the actor.
-	mailbox, err := grid.NewMailbox(a.server, name, 10)
+	mailbox, err := a.server.NewMailbox(name, 10)
 	successOrDie(err)
 	defer mailbox.Close()
 

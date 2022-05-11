@@ -125,7 +125,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 //
 // Using a mailbox requires that the process creating the mailbox also
 // started a grid Server.
-func (s *Server) NewMailbox(name string, size int) (*Mailbox, error) {
+func (s *Server) NewMailbox(name string, size int) (Mailbox, error) {
 	if !isNameValid(name) {
 		return nil, fmt.Errorf("%w: name=%s", ErrInvalidMailboxName, name)
 	}
@@ -139,7 +139,7 @@ func (s *Server) NewMailbox(name string, size int) (*Mailbox, error) {
 	return s.newMailbox(name, nsName, size)
 }
 
-func (s *Server) newMailbox(name, nsName string, size int) (*Mailbox, error) {
+func (s *Server) newMailbox(name, nsName string, size int) (*GRPCMailbox, error) {
 	if err := s.isServing(); err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (s *Server) newMailbox(name, nsName string, size int) (*Mailbox, error) {
 	}
 
 	boxC := make(chan Request, size)
-	box := &Mailbox{
+	box := &GRPCMailbox{
 		name:     name,
 		nsName:   nsName,
 		requests: boxC,
@@ -254,7 +254,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	// actors in a grid is just done via a normal request
 	// sending the message ActorDef to a listening peer's
 	// mailbox.
-	mailbox, err := NewMailbox(s, name, 100)
+	mailbox, err := s.NewMailbox(name, 100)
 	if err != nil {
 		return err
 	}
@@ -335,7 +335,7 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 	// can stop listenting when it wants, so
 	// the receiver may return an error saying
 	// it is busy.
-	err = mailbox.put(req)
+	err = mailbox.(*GRPCMailbox).put(req)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +353,7 @@ func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
 }
 
 // runMailbox for this server.
-func (s *Server) runMailbox(mailbox *Mailbox) {
+func (s *Server) runMailbox(mailbox Mailbox) {
 	defer mailbox.Close()
 	for {
 		select {
