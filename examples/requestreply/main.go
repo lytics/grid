@@ -95,7 +95,7 @@ func (a *WorkerActor) Act(ctx context.Context) {
 		case <-ctx.Done():
 			fmt.Println("goodbye...")
 			return
-		case req, ok := <-mailbox.C:
+		case req, ok := <-mailbox.C():
 			if !ok {
 				return
 			}

@@ -63,7 +63,7 @@ func (a *pingPongProtoActor) Act(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case req, closed := <-mailbox.C:
+		case req, closed := <-mailbox.C():
 			if !closed {
 				logger.Printf(" closed == true ")
 				return

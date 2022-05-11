@@ -71,7 +71,7 @@ func (a *echoActor) Act(c context.Context) {
 		select {
 		case <-c.Done():
 			return
-		case req, ok := <-mailbox.C:
+		case req, ok := <-mailbox.C():
 			if !ok {
 				return
 			}

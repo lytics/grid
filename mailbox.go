@@ -76,11 +76,15 @@ type Mailbox struct {
 	c      chan Request
 	closed bool
 
-	name    string
-	nsName  string
-	C       <-chan Request
-	once    sync.Once
-	cleanup func()
+	name     string
+	nsName   string
+	requests <-chan Request
+	once     sync.Once
+	cleanup  func()
+}
+
+func (box *Mailbox) C() <-chan Request {
+	return box.requests
 }
 
 // Close the mailbox.

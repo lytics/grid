@@ -28,14 +28,6 @@ type contextVal struct {
 	actorName string
 }
 
-// Most underlying usage of grid.Server's only needs to
-// be able to create a grid.Mailbox so this provides a
-// way for users to implement test servers without spinning
-// up a whole grpc server/client and etcd client/watch
-type MailboxServer interface {
-	NewMailbox(name string, size int)
-}
-
 // Server of a grid.
 type Server struct {
 	// mu protects the follow fields, use accessors
@@ -201,11 +193,11 @@ func (s *Server) newMailbox(name, nsName string, size int) (*Mailbox, error) {
 
 	boxC := make(chan Request, size)
 	box := &Mailbox{
-		name:    name,
-		nsName:  nsName,
-		C:       boxC,
-		c:       boxC,
-		cleanup: cleanup,
+		name:     name,
+		nsName:   nsName,
+		requests: boxC,
+		c:        boxC,
+		cleanup:  cleanup,
 	}
 	s.mailboxes.Set(nsName, box)
 	return box, nil
@@ -367,7 +359,7 @@ func (s *Server) runMailbox(mailbox *Mailbox) {
 		select {
 		case <-s.ctx.Done():
 			return
-		case req := <-mailbox.C:
+		case req := <-mailbox.C():
 			switch msg := req.Msg().(type) {
 			case *ActorStart:
 				err := s.startActorC(req.Context(), msg)

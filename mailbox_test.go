@@ -219,7 +219,7 @@ func TestMailboxClose(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case <-m.C:
+	case <-m.C():
 		t.Fatal("didn't expect any values")
 	default:
 		// expected
@@ -229,7 +229,7 @@ func TestMailboxClose(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case _, ok := <-m.C:
+	case _, ok := <-m.C():
 		assert.False(t, ok)
 	default:
 		t.Fatal("didn't expect channel to be open")
