@@ -10,8 +10,7 @@ git repository.
 protoc --version
 
 # Go get and generate.
-go get google.golang.org/grpc
-go get github.com/golang/protobuf/proto
-go get github.com/golang/protobuf/protoc-gen-go
-protoc -I grid.v3 grid.v3/wire.proto --go_out=plugins=grpc:grid.v3
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
+go install google.golang.org/protobuf/cmd/protoc-gen-go
+protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative wire.proto
 ```

@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package grid;
+option go_package = "github.com/lytics/grid";
 
 message Delivery {
     enum Ver {
@@ -24,6 +25,6 @@ message EchoMsg {
     string msg = 1;
 }
 
-service wire {
+service Wire {
     rpc Process(Delivery) returns (Delivery) {}
 }
