@@ -26,9 +26,9 @@ func TestMailboxRegistryGetSetDeleteSize(t *testing.T) {
 	const n1 = "n1"
 	const n2 = "n2"
 
-	m1 := &Mailbox{name: "m1"}
-	m2 := &Mailbox{name: "m2"}
-	m3 := &Mailbox{name: "m3"}
+	m1 := &GRPCMailbox{name: "m1"}
+	m2 := &GRPCMailbox{name: "m2"}
+	m3 := &GRPCMailbox{name: "m3"}
 
 	r := newMailboxRegistry()
 
@@ -110,10 +110,10 @@ func TestMailboxRegistryR(t *testing.T) {
 			assert.NotNil(t, ms)
 			assert.Empty(t, ms)
 
-			msl := make([]*Mailbox, n)
+			msl := make([]*GRPCMailbox, n)
 			for i := 0; i < n; i++ {
 				name := strconv.Itoa(i)
-				m := Mailbox{name: name}
+				m := GRPCMailbox{name: name}
 				msl[i] = &m
 				r.Set(name, &m)
 			}
@@ -161,7 +161,7 @@ func TestMailboxRegistryConcurrent(t *testing.T) {
 					// NOTE (2022-01) (mh): Adding here to reduce boilerplate.
 					ops := []func(){
 						func() { r.Get(name) },
-						func() { r.Set(name, new(Mailbox)) },
+						func() { r.Set(name, new(GRPCMailbox)) },
 						func() { r.Delete(name) },
 						func() { r.Size() },
 						func() {
@@ -171,7 +171,7 @@ func TestMailboxRegistryConcurrent(t *testing.T) {
 						},
 						func() {
 							reg := r.R()
-							reg[name] = new(Mailbox)
+							reg[name] = new(GRPCMailbox)
 						},
 					}
 
@@ -215,11 +215,11 @@ func TestMailboxClose(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 
-	m, err := NewMailbox(s, "name", 1)
+	m, err := s.NewMailbox("name", 1)
 	require.NoError(t, err)
 
 	select {
-	case <-m.C:
+	case <-m.C():
 		t.Fatal("didn't expect any values")
 	default:
 		// expected
@@ -229,7 +229,7 @@ func TestMailboxClose(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case _, ok := <-m.C:
+	case _, ok := <-m.C():
 		assert.False(t, ok)
 	default:
 		t.Fatal("didn't expect channel to be open")
