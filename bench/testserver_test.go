@@ -76,7 +76,7 @@ func runPingPongGrid(t testing.TB) (*grid.Server, *grid.Client) {
 	embed := testetcd.NewEmbedded(t)
 
 	cfg := clientv3.Config{
-		Endpoints:   []string{embed.Cfg.ACUrls[0].String()},
+		Endpoints:   embed.Endpoints(),
 		DialTimeout: time.Second,
 	}
 	etcd, err := clientv3.New(cfg)
