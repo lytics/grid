@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/lytics/grid/v3/codec/protomessage"
@@ -40,6 +41,9 @@ func TestRegisterMarshalUnmarshal(t *testing.T) {
 	}
 
 	res, err := Unmarshal(data, typeName)
+	if err != nil {
+		t.Fatal(err)
+	}
 	switch res := res.(type) {
 	case *protomessage.Person:
 		if msg.Name != res.Name {
@@ -58,8 +62,8 @@ func TestNonProtobuf(t *testing.T) {
 	notProto := "notProto"
 
 	err := Register(notProto)
-	if err != ErrUnsupportedMessage {
-		t.Fatal("expected error")
+	if !errors.Is(err, ErrUnsupportedMessage) {
+		t.Fatalf("expected %[1]v, got %[2]T: %[2]v", ErrUnsupportedMessage, err)
 	}
 }
 

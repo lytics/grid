@@ -7,8 +7,7 @@ import (
 )
 
 const (
-	name      = "reader"
-	namespace = "testing"
+	name = "reader"
 )
 
 func TestByInt(t *testing.T) {

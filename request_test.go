@@ -18,7 +18,10 @@ func TestResponedWithError(t *testing.T) {
 	expected := errors.New("expected-error")
 
 	req := &request{failure: make(chan error, 1)}
-	req.Respond(expected)
+	err := req.Respond(expected)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	select {
 	case err := <-req.failure:

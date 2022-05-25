@@ -19,14 +19,18 @@ func TestQuery(t *testing.T) {
 
 	namespace := newNamespace()
 
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
-	defer etcd.Close()
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("closing client: %v", err)
+		}
+	})
 
 	for i := 1; i <= nrPeers; i++ {
 		s, err := NewServer(etcd, ServerCfg{Namespace: namespace})
@@ -39,15 +43,15 @@ func TestQuery(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		done := make(chan error, 1)
+		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			err := s.Serve(lis)
-			if err != nil {
-				done <- err
+			if err := s.Serve(lis); err != nil {
+				t.Logf("serving: %v", err)
 			}
 		}()
-		defer s.Stop()
+		t.Cleanup(func() { <-done })
+		t.Cleanup(s.Stop)
 
 		// Check for server as a peer.
 		var peers []*QueryEvent
@@ -73,15 +77,18 @@ func TestQueryWatch(t *testing.T) {
 	)
 
 	namespace := newNamespace()
-
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
-	defer etcd.Close()
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("closing client: %v", err)
+		}
+	})
 
 	initialPeers, watch, err := client.QueryWatch(context.Background(), Peers)
 	if err != nil {
@@ -102,8 +109,15 @@ func TestQueryWatch(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		go s.Serve(lis)
-		defer s.Stop()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if err := s.Serve(lis); err != nil {
+				t.Logf("error serving: %v", err)
+			}
+		}()
+		t.Cleanup(func() { <-done })
+		t.Cleanup(s.Stop)
 	}
 
 	// Monitor the watch channel to confirm that started

@@ -4,7 +4,7 @@ import "context"
 
 // ContextActorID returns the ID that is used to register the actor in etcd.
 func ContextActorID(c context.Context) (string, error) {
-	v := c.Value(contextKey)
+	v := c.Value(ctxKey)
 	if v == nil {
 		return "", ErrInvalidContext
 	}
@@ -18,7 +18,7 @@ func ContextActorID(c context.Context) (string, error) {
 // ContextActorName returns just the actor name, ie: no namespace, associated
 // with this context.
 func ContextActorName(c context.Context) (string, error) {
-	v := c.Value(contextKey)
+	v := c.Value(ctxKey)
 	if v == nil {
 		return "", ErrInvalidContext
 	}
@@ -32,7 +32,7 @@ func ContextActorName(c context.Context) (string, error) {
 // ContextActorNamespace returns the namespace of the grid this actor
 // is associated with.
 func ContextActorNamespace(c context.Context) (string, error) {
-	v := c.Value(contextKey)
+	v := c.Value(ctxKey)
 	if v == nil {
 		return "", ErrInvalidContext
 	}

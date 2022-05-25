@@ -2,57 +2,45 @@ package bench
 
 import (
 	"context"
-	"log"
-	"os"
 	"testing"
 	"time"
+
+	"github.com/lytics/grid/v3"
 )
 
 // go test -run=^BenchmarkClientServerRoundTrip -bench=. -benchmem
 // go test -run=^BenchmarkClientServerRoundTrip -bench=. -benchmem -memprofile /tmp/memprofile.out -cpuprofile /tmp/cpuprofile.out
 
 func BenchmarkClientServerRoundTripSmallMsg(b *testing.B) {
-	logger := log.New(os.Stderr, "rountrip-bench :: ", log.LstdFlags|log.Lshortfile)
-
-	wg.Wait()
-
+	_, client := runPingPongGrid(b)
 	b.ResetTimer()
-	benchRunner(b, logger, requestSmallMsg)
-	b.StopTimer()
+	benchRunner(b, client, requestSmallMsg)
 }
 
 func BenchmarkClientServerRoundTripBigStrMsg(b *testing.B) {
-	logger := log.New(os.Stderr, "rountrip-bench :: ", log.LstdFlags|log.Lshortfile)
-
-	wg.Wait()
-
+	_, client := runPingPongGrid(b)
 	b.ResetTimer()
-	benchRunner(b, logger, requestBigStrMsg)
-	b.StopTimer()
+	benchRunner(b, client, requestBigStrMsg)
 }
 
 func BenchmarkClientServerRoundTripBigMapBigStrMsg(b *testing.B) {
-	logger := log.New(os.Stderr, "rountrip-bench :: ", log.LstdFlags|log.Lshortfile)
-
-	wg.Wait()
-
+	_, client := runPingPongGrid(b)
 	b.ResetTimer()
-	benchRunner(b, logger, requestBigMapBigStrMsg)
-	b.StopTimer()
+	benchRunner(b, client, requestBigMapBigStrMsg)
 }
 
-func benchRunner(b *testing.B, logger *log.Logger, evtMsg *Event) {
-	ctx := context.Background()
+func benchRunner(b *testing.B, client *grid.Client, evtMsg *Event) {
 	for n := 0; n < b.N; n++ {
-		timeoutC, cancel := context.WithTimeout(ctx, 10*time.Second)
-		response, err := client.RequestC(timeoutC, mailboxName, evtMsg)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		response, err := client.RequestC(ctx, mailboxName, evtMsg)
 		cancel()
-		successOrDie(logger, err)
+		if err != nil {
+			b.Fatal(err)
+		}
 		switch response.(type) {
 		case *EventResponse:
 		default:
-			logger.Printf("ERROR:  wrong type %#v :: %T", response, response)
-			break
+			b.Fatalf("ERROR:  wrong type %#v :: %T", response, response)
 		}
 	}
 }

@@ -14,8 +14,8 @@ func TestIsNameValidEmpty(t *testing.T) {
 }
 
 func TestIsNameValidBadChars(t *testing.T) {
-	for _, c := range strings.Split("( ) ` ~ ! @ # $ % ^ & * - + = | \\ { } [ ] : ; ' < > , . ? /", "") {
-		name := fmt.Sprintf("some-name-@s-that-is-bad")
+	for _, c := range strings.Split("( ) ` ~ ! @ # $ % ^ & * + = | \\ { } [ ] : ; ' < > , . ? /", "") {
+		name := fmt.Sprintf("some-name-%s-that-is-bad", c)
 		if isNameValid(name) {
 			t.Fatalf("expected false with name containing: %s", c)
 		}

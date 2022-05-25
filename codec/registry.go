@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	// FIXME (2022-05) (mh): Recompile proto and use google.golang.org/protobuf
 	"github.com/golang/protobuf/proto"
 )
 

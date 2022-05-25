@@ -194,7 +194,8 @@ func TestMailboxRegistryConcurrent(t *testing.T) {
 }
 
 func TestMailboxClose(t *testing.T) {
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	s, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	require.NoError(t, err)
@@ -202,13 +203,14 @@ func TestMailboxClose(t *testing.T) {
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	done := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		if err := s.Serve(lis); err != nil {
-			done <- err
+			t.Logf("serving: %v", err)
 		}
 	}()
+	t.Cleanup(func() { <-done })
 	t.Cleanup(s.Stop)
 
 	for s.isServing() != nil {

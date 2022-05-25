@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -18,16 +17,6 @@ import (
 type busyActor struct {
 	ready  chan bool
 	server *Server
-}
-
-var etcdEndpoints []string
-
-func TestMain(m *testing.M) {
-	embed := testetcd.NewEmbedded()
-	defer embed.Etcd.Close()
-	etcdEndpoints = []string{embed.Cfg.ACUrls[0].String()}
-	r := m.Run()
-	os.Exit(r)
 }
 
 func (a *busyActor) Act(c context.Context) {
@@ -85,7 +74,8 @@ func init() {
 }
 
 func TestNewClient(t *testing.T) {
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
 	if err != nil {
@@ -103,7 +93,8 @@ func TestNewClientWithNilEtcd(t *testing.T) {
 
 func TestClientClose(t *testing.T) {
 	// Start etcd.
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	// Create client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
@@ -125,10 +116,7 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 	const timeout = 3 * time.Second
 
 	// Bootstrap.
-	etcd, server, client := bootstrapClientTest(t)
-	defer etcd.Close()
-	defer server.Stop()
-	defer client.Close()
+	_, _, client := bootstrapClientTest(t)
 
 	// Set client stats.
 	client.cs = newClientStats()
@@ -152,10 +140,7 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 	const timeout = 3 * time.Second
 
 	// Bootstrap.
-	etcd, server, client := bootstrapClientTest(t)
-	defer etcd.Close()
-	defer server.Stop()
-	defer client.Close()
+	_, server, client := bootstrapClientTest(t)
 
 	// Set client stats.
 	client.cs = newClientStats()
@@ -189,10 +174,7 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 
 func TestClientBroadcast(t *testing.T) {
 	const timeout = 3 * time.Second
-	etcd, server, client := bootstrapClientTest(t)
-	defer etcd.Close()
-	defer server.Stop()
-	defer client.Close()
+	_, server, client := bootstrapClientTest(t)
 
 	a := &echoActor{ready: make(chan bool), server: server}
 	server.RegisterDef("echo", func([]byte) (Actor, error) { return a, nil })
@@ -312,10 +294,7 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
-	etcd, server, client := bootstrapClientTest(t)
-	defer etcd.Close()
-	defer server.Stop()
-	defer client.Close()
+	_, server, client := bootstrapClientTest(t)
 
 	// Set client stats.
 	client.cs = newClientStats()
@@ -379,9 +358,7 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
-	etcd, server, client := bootstrapClientTest(t)
-	defer etcd.Close()
-	defer client.Close()
+	_, server, client := bootstrapClientTest(t)
 
 	// Set client stats.
 	client.cs = newClientStats()
@@ -453,10 +430,7 @@ func TestClientWithBusyReceiver(t *testing.T) {
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
 	// Bootstrap.
-	etcd, server, client := bootstrapClientTest(t)
-	defer etcd.Close()
-	defer server.Stop()
-	defer client.Close()
+	_, server, client := bootstrapClientTest(t)
 
 	// Set client stats.
 	client.cs = newClientStats()
@@ -531,12 +505,13 @@ func TestNilClientStats(t *testing.T) {
 	cs.Inc(numGetWireClient)
 }
 
-func bootstrapClientTest(t *testing.T) (*clientv3.Client, *Server, *Client) {
+func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 	// Namespace for test.
 	namespace := newNamespace()
 
 	// Start etcd.
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	// Logger for actors.
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags)
@@ -544,34 +519,37 @@ func bootstrapClientTest(t *testing.T) (*clientv3.Client, *Server, *Client) {
 	// Create the server.
 	server, err := NewServer(etcd, ServerCfg{Namespace: namespace, Logger: logger})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("starting server: %v", err)
 	}
 
 	// Create the listener on a random port.
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("starting listener: %v", err)
 	}
 
 	// Start the server in the background.
-	done := make(chan error, 1)
-	wg := sync.WaitGroup{}
-	wg.Add(1)
+	done := make(chan struct{})
 	go func() {
-		wg.Done()
-		err = server.Serve(lis)
-		if err != nil {
-			done <- err
+		defer close(done)
+		if err := server.Serve(lis); err != nil {
+			t.Logf("error running server: %v", err)
 		}
 	}()
-	wg.Wait()
+	t.Cleanup(func() { <-done })
+	t.Cleanup(server.Stop)
 	time.Sleep(3 * time.Second)
 
 	// Create a grid client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace, Logger: logger})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("creating test client: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("closing client: %v", err)
+		}
+	})
 
 	return etcd, server, client
 }
