@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package protomessage;
+option go_package = "github.com/lytics/grid/v3/codec/protomessage";
 
 message Person {
 	string name = 1;

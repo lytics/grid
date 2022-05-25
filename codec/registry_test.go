@@ -13,7 +13,7 @@ func TestTypeName(t *testing.T) {
 	)
 
 	msg := protomessage.Person{}
-	name := TypeName(msg)
+	name := TypeName(&msg)
 
 	if name != expected {
 		t.Fatal("expected:", expected, " got:", name)
