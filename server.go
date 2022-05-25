@@ -14,7 +14,6 @@ import (
 	"github.com/lytics/grid/v3/registry"
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/client/v3"
-	netcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
@@ -317,7 +316,7 @@ func (s *Server) Stop() {
 
 // Process a request and return a response. Implements the interface for
 // gRPC definition of the wire service. Consider this a private method.
-func (s *Server) Process(c netcontext.Context, d *Delivery) (*Delivery, error) {
+func (s *Server) Process(c context.Context, d *Delivery) (*Delivery, error) {
 	mailbox, ok := s.mailboxes.Get(d.Receiver)
 	if !ok {
 		return nil, ErrUnknownMailbox
