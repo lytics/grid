@@ -11,6 +11,7 @@ import (
 )
 
 func TestQuery(t *testing.T) {
+	t.Parallel()
 	const (
 		nrPeers = 2
 		backoff = 10 * time.Second
@@ -70,6 +71,7 @@ func TestQuery(t *testing.T) {
 }
 
 func TestQueryWatch(t *testing.T) {
+	t.Parallel()
 	const (
 		nrPeers = 2
 		backoff = 10 * time.Second

@@ -8,9 +8,8 @@ import (
 )
 
 func TestTypeName(t *testing.T) {
-	const (
-		expected = "github.com/lytics/grid/v3/codec/protomessage/Person"
-	)
+	t.Parallel()
+	const expected = "github.com/lytics/grid/v3/codec/protomessage/Person"
 
 	msg := protomessage.Person{}
 	name := TypeName(&msg)

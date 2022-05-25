@@ -22,6 +22,7 @@ func (a *startStopActor) Act(c context.Context) {
 }
 
 func TestServerStartStop(t *testing.T) {
+	t.Parallel()
 	const (
 		timeout = 20 * time.Second
 	)
@@ -84,6 +85,7 @@ func TestServerStartStop(t *testing.T) {
 }
 
 func TestServerWithFatalError(t *testing.T) {
+	t.Parallel()
 	const (
 		timeout = 20 * time.Second
 	)
@@ -138,6 +140,7 @@ func TestServerWithFatalError(t *testing.T) {
 }
 
 func TestServerStartNoEtcdRunning(t *testing.T) {
+	t.Parallel()
 	// Start etcd, but shut it down right away.
 	embed := testetcd.NewEmbedded(t)
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
@@ -160,6 +163,7 @@ func TestServerStartNoEtcdRunning(t *testing.T) {
 }
 
 func TestServerStartThenEtcdStop(t *testing.T) {
+	t.Parallel()
 	t.Skip()
 
 	a := &startStopActor{

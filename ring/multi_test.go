@@ -3,6 +3,7 @@ package ring
 import "testing"
 
 func TestMultiRing(t *testing.T) {
+	t.Parallel()
 	const (
 		name      = "reader"
 		namespace = "testing"
@@ -32,6 +33,7 @@ func TestMultiRing(t *testing.T) {
 }
 
 func TestMultiRingByHashedString(t *testing.T) {
+	t.Parallel()
 	const (
 		name      = "reader"
 		namespace = "namespace"

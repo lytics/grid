@@ -12,6 +12,7 @@ import (
 // systems that don't parse multi-line log messages, and to make the
 // message easy to read.
 func TestNiceStack(t *testing.T) {
+	t.Parallel()
 	// Expected is actually "fixed up" to remove line
 	// numbers and local paths.
 	expected := `stack.go <-- stack_test.go <-- panic.go <-- stack_test.go <-- stack_test.go <-- testing.go <-- testing.go`

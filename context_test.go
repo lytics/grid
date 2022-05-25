@@ -30,6 +30,7 @@ func (a *contextActor) Context() context.Context {
 }
 
 func TestContextError(t *testing.T) {
+	t.Parallel()
 	// Create a context that is not valid to use
 	// with the grid context methods. The context
 	// is not valid because it does not contain
@@ -62,6 +63,7 @@ func TestContextError(t *testing.T) {
 }
 
 func TestValidContext(t *testing.T) {
+	t.Parallel()
 	const timeout = 2 * time.Second
 
 	embed := testetcd.NewEmbedded(t)

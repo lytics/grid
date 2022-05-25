@@ -69,6 +69,7 @@ func (a *pingPongProtoActor) Act(ctx context.Context) {
 }
 
 func runPingPongGrid(t testing.TB) (*grid.Server, *grid.Client) {
+	t.Helper()
 	namespace := fmt.Sprintf("bench-pingpong-namespace-%d", rand.Int63())
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags|log.Lshortfile)
 

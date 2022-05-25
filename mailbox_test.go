@@ -194,6 +194,7 @@ func TestMailboxRegistryConcurrent(t *testing.T) {
 }
 
 func TestMailboxClose(t *testing.T) {
+	t.Parallel()
 	embed := testetcd.NewEmbedded(t)
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
