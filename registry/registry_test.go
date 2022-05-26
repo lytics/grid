@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -21,19 +20,9 @@ const (
 	dontStart = false
 )
 
-var etcdEndpoints []string
-
-func TestMain(m *testing.M) {
-	embed := testetcd.NewEmbedded()
-	defer embed.Etcd.Close()
-	etcdEndpoints = []string{embed.Cfg.ACUrls[0].String()}
-	r := m.Run()
-	os.Exit(r)
-}
-
 func TestInitialLeaseID(t *testing.T) {
-	client, r, _ := bootstrap(t, dontStart)
-	defer client.Close()
+	t.Parallel()
+	_, r, _ := bootstrap(t, dontStart)
 
 	if r.leaseID != -1 {
 		t.Fatal("lease id not initialized correctly")
@@ -41,10 +30,13 @@ func TestInitialLeaseID(t *testing.T) {
 }
 
 func TestStartStop(t *testing.T) {
-	client, r, _ := bootstrap(t, start)
-	defer client.Close()
+	t.Parallel()
+	_, r, _ := bootstrap(t, start)
 
-	r.Stop()
+	err := r.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-r.done:
 	default:
@@ -53,12 +45,15 @@ func TestStartStop(t *testing.T) {
 }
 
 func TestStartStopWaitForLeaseToExpireBetween(t *testing.T) {
+	t.Parallel()
 	client, r, addr := bootstrap(t, start)
-	defer client.Close()
 
 	// this should remove the lease which should clean up the registry lock on the address
 	// which allows the next call to Start to begin without waiting.
-	r.Stop()
+	err := r.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-r.done:
 	default:
@@ -66,7 +61,7 @@ func TestStartStopWaitForLeaseToExpireBetween(t *testing.T) {
 	}
 
 	st := time.Now()
-	r, err := New(client)
+	r, err = New(client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +75,10 @@ func TestStartStopWaitForLeaseToExpireBetween(t *testing.T) {
 		t.Fatalf("runtime was too long, maybe because of waiting for leases to expire? ")
 	}
 
-	r.Stop()
+	err = r.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-r.done:
 	default:
@@ -91,9 +89,7 @@ func TestStartStopWaitForLeaseToExpireBetween(t *testing.T) {
 func TestWaitForLeaseThatNeverExpires(t *testing.T) {
 	t.Parallel()
 
-	start := false
-	client, _, addr := bootstrap(t, start)
-	defer client.Close()
+	client, _, addr := bootstrap(t, dontStart)
 
 	kv := etcdv3.NewKV(client)
 
@@ -106,13 +102,13 @@ func TestWaitForLeaseThatNeverExpires(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		// cleanup for test
 		_, err = kv.Delete(context.Background(), registryLockKey(address))
 		if err != nil {
 			t.Fatal(err)
 		}
-	}()
+	})
 
 	r1, err := New(client)
 	if err != nil {
@@ -141,7 +137,6 @@ func TestWaitForLeaseThatDoesExpires(t *testing.T) {
 
 	start := false
 	client, _, addr := bootstrap(t, start)
-	defer client.Close()
 
 	kv := etcdv3.NewKV(client)
 
@@ -179,7 +174,10 @@ func TestWaitForLeaseThatDoesExpires(t *testing.T) {
 		t.Fatalf("runtime was too long, we freed the lock after 5 seconds")
 	}
 
-	r1.Stop()
+	err = r1.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-r1.done:
 	default:
@@ -188,9 +186,8 @@ func TestWaitForLeaseThatDoesExpires(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
+	t.Parallel()
 	client, r, _ := bootstrap(t, start)
-	defer client.Close()
-	defer r.Stop()
 
 	timeout, cancel := timeoutContext()
 	err := r.Register(timeout, "test-registration")
@@ -218,9 +215,8 @@ func TestRegister(t *testing.T) {
 }
 
 func TestDeregistration(t *testing.T) {
+	t.Parallel()
 	client, r, _ := bootstrap(t, start)
-	defer client.Close()
-	defer r.Stop()
 
 	timeout, cancel := timeoutContext()
 	err := r.Register(timeout, "test-registration")
@@ -267,9 +263,8 @@ func TestDeregistration(t *testing.T) {
 }
 
 func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
-	client, r, _ := bootstrap(t, dontStart)
-	defer client.Close()
-	defer r.Stop()
+	t.Parallel()
+	_, r, _ := bootstrap(t, dontStart)
 
 	timeout, cancel := timeoutContext()
 	err := r.Register(timeout, "test-registration")
@@ -287,9 +282,8 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 }
 
 func TestRegisterTwiceNotAllowed(t *testing.T) {
-	client, r, _ := bootstrap(t, start)
-	defer client.Close()
-	defer r.Stop()
+	t.Parallel()
+	_, r, _ := bootstrap(t, start)
 
 	for i := 0; i < 2; i++ {
 		timeout, cancel := timeoutContext()
@@ -302,8 +296,8 @@ func TestRegisterTwiceNotAllowed(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
+	t.Parallel()
 	client, r, _ := bootstrap(t, start)
-	defer client.Close()
 
 	timeout, cancel := timeoutContext()
 	err := r.Register(timeout, "test-registration")
@@ -311,7 +305,9 @@ func TestStop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.Stop()
+	if err := r.Stop(); err != nil {
+		t.Fatal(err)
+	}
 	res, err := client.Get(timeout, "test-registration")
 	cancel()
 	if err != nil {
@@ -323,9 +319,8 @@ func TestStop(t *testing.T) {
 }
 
 func TestFindRegistration(t *testing.T) {
-	client, r, _ := bootstrap(t, start)
-	defer client.Close()
-	defer r.Stop()
+	t.Parallel()
+	_, r, _ := bootstrap(t, start)
 
 	timeout, cancel := timeoutContext()
 	err := r.Register(timeout, "test-registration-a")
@@ -353,9 +348,8 @@ func TestFindRegistration(t *testing.T) {
 }
 
 func TestFindRegistrations(t *testing.T) {
-	client, r, _ := bootstrap(t, start)
-	defer client.Close()
-	defer r.Stop()
+	t.Parallel()
+	_, r, _ := bootstrap(t, start)
 
 	timeout, cancel := timeoutContext()
 	err := r.Register(timeout, "test-registration-a")
@@ -394,8 +388,8 @@ func TestFindRegistrations(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	client, r, addr := bootstrap(t, dontStart)
-	defer client.Close()
+	t.Parallel()
+	_, r, addr := bootstrap(t, dontStart)
 
 	// Change the minimum for sake of testing quickly.
 	minLeaseDuration = 1 * time.Second
@@ -411,15 +405,17 @@ func TestKeepAlive(t *testing.T) {
 	// expected minimum. Keep in mind that each lease duration
 	// should produce "hearbratsPerLeaseDuration" heartbeats.
 	time.Sleep(5 * time.Second)
-	r.Stop()
+	if err := r.Stop(); err != nil {
+		t.Fatal(err)
+	}
 	if r.keepAliveStats.success < 1 {
 		t.Fatal("expected at least one successful heartbeat")
 	}
 }
 
 func TestWatch(t *testing.T) {
-	client, r, addr := bootstrap(t, dontStart)
-	defer client.Close()
+	t.Parallel()
+	_, r, addr := bootstrap(t, dontStart)
 
 	// Change the minimum for sake of testing quickly.
 	minLeaseDuration = 1 * time.Second
@@ -524,10 +520,13 @@ func TestWatch(t *testing.T) {
 	}
 
 	time.Sleep(3 * time.Second)
-	r.Stop()
+	if err := r.Stop(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestWatchEventString(t *testing.T) {
+	t.Parallel()
 	we := &WatchEvent{
 		Key:  "foo",
 		Type: Create,
@@ -560,8 +559,10 @@ func TestWatchEventString(t *testing.T) {
 	}
 }
 
-func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.TCPAddr) {
-	client := testetcd.StartAndConnect(t, etcdEndpoints)
+func bootstrap(t testing.TB, shouldStart bool) (*etcdv3.Client, *Registry, *net.TCPAddr) {
+	t.Helper()
+	embed := testetcd.NewEmbedded(t)
+	client := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	addr := &net.TCPAddr{
 		IP:   []byte("localhost"),
@@ -573,6 +574,11 @@ func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.
 		t.Fatal(err)
 	}
 	r.LeaseDuration = 10 * time.Second
+	t.Cleanup(func() {
+		if err := r.Stop(); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	if shouldStart {
 		err = r.Start(addr)
@@ -584,6 +590,6 @@ func bootstrap(t *testing.T, shouldStart bool) (*etcdv3.Client, *Registry, *net.
 	return client, r, addr
 }
 
-func timeoutContext() (context.Context, func()) {
+func timeoutContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 2*time.Second)
 }

@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/lytics/grid/v3/codec"
-	netcontext "golang.org/x/net/context"
 )
 
 var (
@@ -30,9 +29,9 @@ type Request interface {
 // newRequest state for use in the server. This actually converts
 // between the "context" and "golang.org/x/net/context" types of
 // Context so that method signatures are satisfied.
-func newRequest(ctx netcontext.Context, msg interface{}) *request {
+func newRequest(ctx context.Context, msg interface{}) *request {
 	return &request{
-		ctx:      context.WithValue(ctx, "", ""),
+		ctx:      ctx,
 		msg:      msg,
 		failure:  make(chan error, 1),
 		response: make(chan *Delivery, 1),

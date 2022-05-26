@@ -7,11 +7,11 @@ import (
 )
 
 const (
-	name      = "reader"
-	namespace = "testing"
+	name = "reader"
 )
 
 func TestByInt(t *testing.T) {
+	t.Parallel()
 	r := New(name, 10)
 	for i := int(0); i < 100; i++ {
 		name := r.ByInt(i)
@@ -22,6 +22,7 @@ func TestByInt(t *testing.T) {
 }
 
 func TestByUint32(t *testing.T) {
+	t.Parallel()
 	r := New(name, 10)
 	for i := uint32(0); i < 100; i++ {
 		name := r.ByUint32(i)
@@ -32,6 +33,7 @@ func TestByUint32(t *testing.T) {
 }
 
 func TestByUint64(t *testing.T) {
+	t.Parallel()
 	r := New(name, 10)
 	for i := uint64(0); i < 100; i++ {
 		name := r.ByUint64(i)
@@ -42,6 +44,7 @@ func TestByUint64(t *testing.T) {
 }
 
 func TestByHashedBytes(t *testing.T) {
+	t.Parallel()
 	r := New(name, 10)
 	stats := make(map[string]int)
 	for i := int(0); i < 10000; i++ {
@@ -56,6 +59,7 @@ func TestByHashedBytes(t *testing.T) {
 }
 
 func TestByHashedString(t *testing.T) {
+	t.Parallel()
 	r := New(name, 10)
 	stats := make(map[string]int)
 	for i := int(0); i < 10000; i++ {
@@ -70,6 +74,7 @@ func TestByHashedString(t *testing.T) {
 }
 
 func TestByRandom(t *testing.T) {
+	t.Parallel()
 	r := New(name, 10)
 	stats := make(map[string]int)
 	for i := int(0); i < 10000; i++ {

@@ -8,14 +8,16 @@ import (
 )
 
 func TestIsNameValidEmpty(t *testing.T) {
+	t.Parallel()
 	if isNameValid("") {
 		t.Fatal("expected false")
 	}
 }
 
 func TestIsNameValidBadChars(t *testing.T) {
-	for _, c := range strings.Split("( ) ` ~ ! @ # $ % ^ & * - + = | \\ { } [ ] : ; ' < > , . ? /", "") {
-		name := fmt.Sprintf("some-name-@s-that-is-bad")
+	t.Parallel()
+	for _, c := range strings.Split("( ) ` ~ ! @ # $ % ^ & * + = | \\ { } [ ] : ; ' < > , . ? /", "") {
+		name := fmt.Sprintf("some-name-%s-that-is-bad", c)
 		if isNameValid(name) {
 			t.Fatalf("expected false with name containing: %s", c)
 		}
@@ -23,6 +25,7 @@ func TestIsNameValidBadChars(t *testing.T) {
 }
 
 func TestStripNamespaceWithInvalidName(t *testing.T) {
+	t.Parallel()
 	_, err := stripNamespace(Peers, "ns", "hello")
 	if !errors.Is(err, ErrInvalidName) {
 		t.Fatal("expected invalid name error")
@@ -30,6 +33,7 @@ func TestStripNamespaceWithInvalidName(t *testing.T) {
 }
 
 func TestStripNamespace(t *testing.T) {
+	t.Parallel()
 	// Peers
 	{
 		res, err := stripNamespace(Peers, "ns", "ns.peer.hello")
@@ -65,6 +69,7 @@ func TestStripNamespace(t *testing.T) {
 }
 
 func TestNamespaceNameInvalidName(t *testing.T) {
+	t.Parallel()
 	_, err := namespaceName(Peers, "valid", "invalid-!")
 	if !errors.Is(err, ErrInvalidName) {
 		t.Fatal("expected invalid name error")
@@ -72,6 +77,7 @@ func TestNamespaceNameInvalidName(t *testing.T) {
 }
 
 func TestNamespaceNameInvalidNamespace(t *testing.T) {
+	t.Parallel()
 	_, err := namespaceName(Peers, "invalid-!", "valid")
 	if !errors.Is(err, ErrInvalidNamespace) {
 		t.Fatal("expected invalid namespace error")
@@ -79,6 +85,7 @@ func TestNamespaceNameInvalidNamespace(t *testing.T) {
 }
 
 func TestNamespacePrefixInvalidNamespace(t *testing.T) {
+	t.Parallel()
 	_, err := namespacePrefix(Peers, "invalid-!")
 	if !errors.Is(err, ErrInvalidNamespace) {
 		t.Fatal("expected invalid namespace error")

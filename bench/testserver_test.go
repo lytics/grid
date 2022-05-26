@@ -16,33 +16,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-var (
-	etcdEndpoints []string
-	server        *grid.Server
-	client        *grid.Client
-	wg            *sync.WaitGroup
-)
-
 const mailboxName = "pingpong-leader"
-
-func TestMain(m *testing.M) {
-	embed := testetcd.NewEmbedded()
-	defer embed.Etcd.Close()
-	etcdEndpoints = []string{embed.Cfg.ACUrls[0].String()}
-	time.Sleep(10 * time.Millisecond) // Give the test main, time to start it's etcd server
-	serverT, clientT, cleanup, wgT := runPingPongGrid()
-	server = serverT
-	client = clientT
-	wg = wgT
-
-	r := m.Run()
-	time.Sleep(10 * time.Millisecond)
-	server.Stop()
-	time.Sleep(10 * time.Millisecond)
-	cleanup()
-	time.Sleep(10 * time.Millisecond)
-	os.Exit(r)
-}
 
 type pingPongProtoActor struct {
 	server *grid.Server
@@ -94,54 +68,76 @@ func (a *pingPongProtoActor) Act(ctx context.Context) {
 	}
 }
 
-func runPingPongGrid() (*grid.Server, *grid.Client, func(), *sync.WaitGroup) {
-	const (
-		timeout = 20 * time.Second
-	)
-
+func runPingPongGrid(t testing.TB) (*grid.Server, *grid.Client) {
+	t.Helper()
 	namespace := fmt.Sprintf("bench-pingpong-namespace-%d", rand.Int63())
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags|log.Lshortfile)
 
+	embed := testetcd.NewEmbedded(t)
+
 	cfg := clientv3.Config{
-		Endpoints:   etcdEndpoints,
+		Endpoints:   embed.Endpoints(),
 		DialTimeout: time.Second,
 	}
 	etcd, err := clientv3.New(cfg)
-	successOrDie(logger, err)
+	if err != nil {
+		t.Fatalf("creating etcd client: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := etcd.Close(); err != nil {
+			t.Fatalf("closing etcd client: %v", err)
+		}
+	})
 
 	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: namespace})
-	successOrDie(logger, err)
+	if err != nil {
+		t.Fatalf("creating Grid server: %v", err)
+	}
 
-	client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: namespace, Logger: logger})
-	successOrDie(logger, err)
-
-	wg := &sync.WaitGroup{}
+	var wg sync.WaitGroup
 	wg.Add(1)
 	server.RegisterDef("leader", func(_ []byte) (grid.Actor, error) {
-		return &pingPongProtoActor{server: server, wg: wg}, nil
+		return &pingPongProtoActor{server: server, wg: &wg}, nil
 	})
 
 	err = grid.Register(Event{})
-	successOrDie(logger, err)
+	if err != nil {
+		t.Fatalf("registering Event: %v", err)
+	}
 	err = grid.Register(EventResponse{})
-	successOrDie(logger, err)
+	if err != nil {
+		t.Fatalf("registering EventResponse: %v", err)
+	}
 
 	lis, err := net.Listen("tcp", "localhost:0")
-	successOrDie(logger, err)
+	if err != nil {
+		t.Fatalf("creating listener: %v", err)
+	}
 
-	done := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		err := server.Serve(lis)
-		if err != nil {
-			done <- err
+		if err := server.Serve(lis); err != nil {
+			// NOTE (2022-05) (mh): Should we let the test capture this error?
+			t.Logf("error running Grid server: %v", err)
 		}
 	}()
+	t.Cleanup(func() { <-done })
+	t.Cleanup(server.Stop)
 
-	return server, client, func() {
-		etcd.Close()
-		client.Close()
-	}, wg
+	client, err := grid.NewClient(etcd, grid.ClientCfg{Namespace: namespace, Logger: logger})
+	if err != nil {
+		t.Fatalf("creating Grid client: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("closing client: %v", err)
+		}
+	})
+
+	wg.Wait()
+
+	return server, client
 }
 
 func successOrDie(logger *log.Logger, err error) {

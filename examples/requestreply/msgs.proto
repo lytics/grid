@@ -1,5 +1,6 @@
 syntax = "proto3";
 package main;
+option go_package = "github.com/lytics/grid/v3/examples/requestreply/main";
 
 message Event {
 	string timestamp = 1;

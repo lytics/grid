@@ -1,5 +1,6 @@
 syntax = "proto3";
 package bench;
+option go_package = "github.com/lytics/grid/v3/bench";
 
 message Event {
 	string timestamp = 1;

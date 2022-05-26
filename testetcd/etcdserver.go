@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 
@@ -17,58 +15,60 @@ import (
 )
 
 type Embedded struct {
-	Cfg    *embed.Config
-	Etcd   *embed.Etcd
-	tmpDir string
+	Cfg  *embed.Config
+	Etcd *embed.Etcd
 }
 
-func NewEmbedded() *Embedded {
+func NewEmbedded(t testing.TB) *Embedded {
 	ecfg := embed.NewConfig()
 	ecfg.Logger = "zap"
 	ecfg.LogLevel = "error"
-	tmpDir, err := ioutil.TempDir("", "etcd_")
-	if err != nil {
-		panic(fmt.Sprintf("error making temp dir for embedded etcd: %v", err))
-	}
-	ecfg.Dir = tmpDir
+	ecfg.Dir = t.TempDir()
 
 	clientPort := 1024 + rand.Intn(30000)
 	peerPort := 1024 + rand.Intn(30000)
 
 	ecfg.InitialCluster = fmt.Sprintf("default=http://localhost:%v", peerPort)
 
-	peerURL, _ := url.Parse(fmt.Sprintf("http://localhost:%v", peerPort))
+	peerURL, err := url.Parse(fmt.Sprintf("http://localhost:%v", peerPort))
+	if err != nil {
+		t.Fatalf("parsing peerURL: %v", err)
+	}
 	ecfg.APUrls = []url.URL{*peerURL}
 	ecfg.LPUrls = []url.URL{*peerURL}
 
-	clientURL, _ := url.Parse(fmt.Sprintf("http://localhost:%v", clientPort))
+	clientURL, err := url.Parse(fmt.Sprintf("http://localhost:%v", clientPort))
+	if err != nil {
+		t.Fatalf("creating clientURL: %v", err)
+	}
 	ecfg.ACUrls = []url.URL{*clientURL}
 	ecfg.LCUrls = []url.URL{*clientURL}
 
 	e, err := embed.StartEtcd(ecfg)
 	if err != nil {
-		panic(fmt.Sprintf("failed to start embedded etcd: %v", err))
+		t.Fatalf("starting embedded etcd: %v", err)
 	}
+	t.Cleanup(e.Close)
 
 	select {
 	case <-e.Server.ReadyNotify():
-		fmt.Printf("Started embedded etcd on url: %v\n", clientURL)
-
+		t.Logf("Started embedded etcd on url: %v\n", clientURL)
 	case <-time.After(10 * time.Second):
-		e.Server.Stop() // trigger a shutdown
-		panic("Embedded etcd server took too long to start!")
+		t.Fatal("Embedded etcd server took too long to start!")
 	}
 
 	return &Embedded{
-		Cfg:    ecfg,
-		Etcd:   e,
-		tmpDir: tmpDir,
+		Cfg:  ecfg,
+		Etcd: e,
 	}
 }
 
-func (e *Embedded) Close() {
-	os.RemoveAll(e.tmpDir)
-	e.Etcd.Close()
+func (e *Embedded) Endpoints() []string {
+	ep := make([]string, len(e.Cfg.ACUrls))
+	for i, u := range e.Cfg.ACUrls {
+		ep[i] = u.String()
+	}
+	return ep
 }
 
 func StartAndConnect(t testing.TB, endpoints []string) *clientv3.Client {

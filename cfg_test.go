@@ -1,9 +1,12 @@
 package grid
 
-import "testing"
-import "time"
+import (
+	"testing"
+	"time"
+)
 
 func TestSetClientCfgDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := ClientCfg{Namespace: "testing"}
 
 	if cfg.Timeout != 0 {
@@ -24,6 +27,7 @@ func TestSetClientCfgDefaults(t *testing.T) {
 }
 
 func TestSetServerCfgDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := ServerCfg{Namespace: "testing"}
 
 	if cfg.Timeout != 0 {

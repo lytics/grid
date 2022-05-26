@@ -17,9 +17,11 @@ import (
 	"google.golang.org/grpc"
 )
 
-const (
-	contextKey = "grid-context-key-xboKEsHA26"
+var (
+	ctxKey contextKey = "grid-context-key-xboKEsHA26"
 )
+
+type contextKey string
 
 type contextVal struct {
 	server    *Server
@@ -89,7 +91,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	// call the cancel function, which should cause all the
 	// actors it is responsible for to shutdown.
 	ctx, cancel := context.WithCancel(context.Background())
-	ctx = context.WithValue(ctx, contextKey, &contextVal{
+	ctx = context.WithValue(ctx, ctxKey, &contextVal{
 		server: server,
 	})
 	server.ctx = ctx
@@ -309,7 +311,9 @@ func (s *Server) Stop() {
 			}
 		}
 
-		s.registry.Stop()
+		if err := s.registry.Stop(); err != nil {
+			s.logf("%v: stopping registry: %v", s.cfg.Namespace, err)
+		}
 		s.grpc.Stop()
 	})
 }
@@ -522,7 +526,7 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 
 	// The actor's context contains its full id, it's name and the
 	// full registration, which contains the actor's namespace.
-	actorCtx := context.WithValue(s.ctx, contextKey, &contextVal{
+	actorCtx := context.WithValue(s.ctx, ctxKey, &contextVal{
 		server:    s,
 		actorID:   nsName,
 		actorName: start.Name,

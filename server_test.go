@@ -22,12 +22,13 @@ func (a *startStopActor) Act(c context.Context) {
 }
 
 func TestServerStartStop(t *testing.T) {
+	t.Parallel()
 	const (
 		timeout = 20 * time.Second
 	)
 
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
-	defer etcd.Close()
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	a := &startStopActor{
 		started: make(chan bool),
@@ -84,12 +85,13 @@ func TestServerStartStop(t *testing.T) {
 }
 
 func TestServerWithFatalError(t *testing.T) {
+	t.Parallel()
 	const (
 		timeout = 20 * time.Second
 	)
 
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
-	defer etcd.Close()
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	a := &startStopActor{
 		started: make(chan bool),
@@ -138,12 +140,10 @@ func TestServerWithFatalError(t *testing.T) {
 }
 
 func TestServerStartNoEtcdRunning(t *testing.T) {
-	const (
-		timeout = 20 * time.Second
-	)
-
+	t.Parallel()
 	// Start etcd, but shut it down right away.
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 	etcd.Close()
 
 	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
@@ -163,6 +163,7 @@ func TestServerStartNoEtcdRunning(t *testing.T) {
 }
 
 func TestServerStartThenEtcdStop(t *testing.T) {
+	t.Parallel()
 	t.Skip()
 
 	a := &startStopActor{
@@ -170,8 +171,8 @@ func TestServerStartThenEtcdStop(t *testing.T) {
 		stopped: make(chan bool),
 	}
 
-	etcd := testetcd.StartAndConnect(t, etcdEndpoints)
-	defer etcd.Close()
+	embed := testetcd.NewEmbedded(t)
+	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
 	if err != nil {

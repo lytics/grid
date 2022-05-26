@@ -7,7 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
+	// FIXME (2022-05) (mh): Recompile proto and use google.golang.org/protobuf
+	"google.golang.org/protobuf/proto"
 )
 
 var (

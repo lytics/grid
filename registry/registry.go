@@ -289,6 +289,13 @@ func (rr *Registry) Stop() error {
 	// that this registry is done to its
 	// background go-routines, such as the
 	// keep-alive go-routine.
+	select {
+	case <-rr.done:
+		// already done
+		return nil
+	default:
+	}
+
 	close(rr.done)
 	// Wait for those background go-routines
 	// to actually exit.
@@ -369,27 +376,21 @@ func (rr *Registry) Watch(c context.Context, prefix string) ([]*Registration, <-
 	// at the revision of the get call above.
 	deltas := rr.client.Watch(c, prefix, etcdv3.WithPrefix(), etcdv3.WithRev(getRes.Header.Revision+1))
 	go func() {
-		for {
-			select {
-			case delta, open := <-deltas:
-				if !open {
-					select {
-					case <-c.Done():
-						close(watchEvents)
-						return
-					default:
-						putTerminalError(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
-						return
-					}
-				}
-				if delta.Err() != nil {
-					putTerminalError(&WatchEvent{Error: delta.Err()})
-					return
-				}
-				for _, event := range delta.Events {
-					put(createWatchEvent(event))
-				}
+		for delta := range deltas {
+			if delta.Err() != nil {
+				putTerminalError(&WatchEvent{Error: delta.Err()})
+				return
 			}
+			for _, event := range delta.Events {
+				put(createWatchEvent(event))
+			}
+		}
+
+		select {
+		case <-c.Done():
+			close(watchEvents)
+		default:
+			putTerminalError(&WatchEvent{Error: ErrWatchClosedUnexpectedly})
 		}
 	}()
 
@@ -537,7 +538,6 @@ func (rr *Registry) logf(format string, v ...interface{}) {
 
 type keepAliveStats struct {
 	success int
-	failure int
 }
 
 // formatName formats the address into a human readable form,

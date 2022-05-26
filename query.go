@@ -129,6 +129,7 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 		return nil, nil, err
 	}
 
+	// NOTE (2022-05) (mh): We should be checking this error, right?
 	regs, changes, err := c.registry.Watch(ctx, nsName)
 	var current []*QueryEvent
 	for _, reg := range regs {
@@ -157,67 +158,62 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 		}()
 	}
 	go func() {
-		for {
-			select {
-			case change, open := <-changes:
-				if !open {
-					select {
-					case <-ctx.Done():
-					default:
-						putTerminalError(&QueryEvent{err: ErrWatchClosedUnexpectedly})
-					}
-					return
-				}
-				if change.Error != nil {
-					putTerminalError(&QueryEvent{err: change.Error})
-					return
-				}
-				switch change.Type {
-				case registry.Delete:
-					annotations := []string{}
-					if change.Reg != nil {
-						annotations = change.Reg.Annotations
-					}
-					qe := &QueryEvent{
-						name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
-						entity:      filter,
-						annotations: annotations,
-						eventType:   EntityLost,
-					}
-					// Maintain contract that for peer events
-					// the Peer() and Name() methods return
-					// the same value.
-					//
-					// Also keep in mind that when the grid
-					// library registers a "peer", the peer
-					// name is in fact the string returned by
-					// the registry.Registry() method.
-					if filter == Peers {
-						qe.peer = qe.name
-					}
-					put(qe)
-				case registry.Create, registry.Modify:
-					qe := &QueryEvent{
-						name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
-						peer:        change.Reg.Registry,
-						entity:      filter,
-						annotations: change.Reg.Annotations,
-						eventType:   EntityFound,
-					}
-					// Maintain contract that for peer events
-					// the Peer() and Name() methods return
-					// the same value.
-					//
-					// Also keep in mind that when the grid
-					// library registers a "peer", the peer
-					// name is in fact the string returned by
-					// the registry.Registry() method.
-					if filter == Peers {
-						qe.peer = qe.name
-					}
-					put(qe)
-				}
+		for change := range changes {
+			if change.Error != nil {
+				putTerminalError(&QueryEvent{err: change.Error})
+				return
 			}
+			switch change.Type {
+			case registry.Delete:
+				annotations := []string{}
+				if change.Reg != nil {
+					annotations = change.Reg.Annotations
+				}
+				qe := &QueryEvent{
+					name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
+					entity:      filter,
+					annotations: annotations,
+					eventType:   EntityLost,
+				}
+				// Maintain contract that for peer events
+				// the Peer() and Name() methods return
+				// the same value.
+				//
+				// Also keep in mind that when the grid
+				// library registers a "peer", the peer
+				// name is in fact the string returned by
+				// the registry.Registry() method.
+				if filter == Peers {
+					qe.peer = qe.name
+				}
+				put(qe)
+			case registry.Create, registry.Modify:
+				qe := &QueryEvent{
+					name:        nameFromKey(filter, c.cfg.Namespace, change.Key),
+					peer:        change.Reg.Registry,
+					entity:      filter,
+					annotations: change.Reg.Annotations,
+					eventType:   EntityFound,
+				}
+				// Maintain contract that for peer events
+				// the Peer() and Name() methods return
+				// the same value.
+				//
+				// Also keep in mind that when the grid
+				// library registers a "peer", the peer
+				// name is in fact the string returned by
+				// the registry.Registry() method.
+				if filter == Peers {
+					qe.peer = qe.name
+				}
+				put(qe)
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+		default:
+			putTerminalError(&QueryEvent{err: ErrWatchClosedUnexpectedly})
 		}
 	}()
 
