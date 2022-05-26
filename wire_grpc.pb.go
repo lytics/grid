@@ -35,7 +35,7 @@ func NewWireClient(cc grpc.ClientConnInterface) WireClient {
 
 func (c *wireClient) Process(ctx context.Context, in *Delivery, opts ...grpc.CallOption) (*Delivery, error) {
 	out := new(Delivery)
-	err := c.cc.Invoke(ctx, "/grid.Wire/Process", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/grid.wire/Process", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func _Wire_Process_Handler(srv interface{}, ctx context.Context, dec func(interf
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/grid.Wire/Process",
+		FullMethod: "/grid.wire/Process",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WireServer).Process(ctx, req.(*Delivery))
@@ -92,7 +92,7 @@ func _Wire_Process_Handler(srv interface{}, ctx context.Context, dec func(interf
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Wire_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "grid.Wire",
+	ServiceName: "grid.wire",
 	HandlerType: (*WireServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

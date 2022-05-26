@@ -25,6 +25,6 @@ message EchoMsg {
     string msg = 1;
 }
 
-service Wire {
+service wire {
     rpc Process(Delivery) returns (Delivery) {}
 }
