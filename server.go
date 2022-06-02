@@ -15,6 +15,8 @@ import (
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
@@ -42,6 +44,7 @@ type Server struct {
 	cfg       ServerCfg
 	etcd      *etcdv3.Client
 	grpc      *grpc.Server
+	health    *health.Server
 	stop      sync.Once
 	fatalErr  chan error
 	actors    *makeActorRegistry
@@ -80,6 +83,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		cfg:       cfg,
 		etcd:      etcd,
 		grpc:      grpc.NewServer(),
+		health:    health.NewServer(),
 		actors:    newMakeActorRegistry(),
 		fatalErr:  make(chan error, 1),
 		registry:  r,
@@ -274,6 +278,8 @@ func (s *Server) Serve(lis net.Listener) error {
 	// gRPC dance to start the gRPC server. The Serve
 	// method blocks still stopped via a call to Stop.
 	RegisterWireServer(s.grpc, s)
+	healthpb.RegisterHealthServer(s.grpc, s.health)
+
 	err = s.grpc.Serve(lis)
 	// Something in gRPC returns the "use of..." error
 	// message even though it stopped fine. Catch that
