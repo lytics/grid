@@ -71,7 +71,7 @@ func TestValidContext(t *testing.T) {
 
 	a := &contextActor{started: make(chan bool)}
 
-	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
+	server, err := NewServer(etcd, ServerCfg{Namespace: newNamespace(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

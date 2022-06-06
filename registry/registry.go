@@ -93,6 +93,7 @@ func (we *WatchEvent) String() string {
 // Registry for discovery.
 type Registry struct {
 	mu            sync.RWMutex
+	started       bool
 	done          chan bool
 	exited        chan bool
 	kv            etcdv3.KV
@@ -259,6 +260,7 @@ func (rr *Registry) Start(addr net.Addr) error {
 		}
 	}()
 
+	rr.started = true
 	return nil
 }
 
@@ -275,6 +277,12 @@ func (rr *Registry) Registry() string {
 	rr.mu.RLock()
 	defer rr.mu.RUnlock()
 	return rr.name
+}
+
+func (rr *Registry) Started() bool {
+	rr.mu.RLock()
+	defer rr.mu.RUnlock()
+	return rr.started
 }
 
 // Stop Registry.
@@ -304,9 +312,16 @@ func (rr *Registry) Stop() error {
 	// all keys associated with this registry
 	// from etcd.
 	timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
-	_, err := rr.lease.Revoke(timeout, rr.leaseID)
-	cancel()
-	return err
+	defer cancel()
+	if _, err := rr.lease.Revoke(timeout, rr.leaseID); err != nil {
+		return err
+	}
+
+	if err := rr.lease.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Watch a prefix in the registry.

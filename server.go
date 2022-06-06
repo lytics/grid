@@ -37,7 +37,6 @@ type Server struct {
 	// mu protects the follow fields, use accessors
 	mu       sync.RWMutex
 	finalErr error
-	serving  bool
 
 	ctx       context.Context
 	cancel    func()
@@ -146,8 +145,8 @@ func (s *Server) NewMailbox(name string, size int) (Mailbox, error) {
 }
 
 func (s *Server) newMailbox(name, nsName string, size int) (*GRPCMailbox, error) {
-	if err := s.isServing(); err != nil {
-		return nil, err
+	if !s.registry.Started() {
+		return nil, ErrServerNotRunning
 	}
 
 	_, ok := s.mailboxes.Get(nsName)
@@ -227,6 +226,13 @@ func (s *Server) Context() context.Context {
 	return s.ctx
 }
 
+// Name of the server. Only valid after Serve() is called and
+// the registry has started (server's name is the registry's name).
+// Use
+func (s *Server) Name() string {
+	return s.registry.Registry()
+}
+
 // Serve the grid on the listener. The listener address type must be
 // net.TCPAddr, otherwise an error will be returned.
 func (s *Server) Serve(lis net.Listener) error {
@@ -234,11 +240,8 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 
-	// Peer's name is the registry's name.
-	name := s.registry.Registry()
-
 	// Namespaced name, which just includes the namespace.
-	nsName, err := namespaceName(Peers, s.cfg.Namespace, name)
+	nsName, err := namespaceName(Peers, s.cfg.Namespace, s.Name())
 	if err != nil {
 		return err
 	}
@@ -252,15 +255,11 @@ func (s *Server) Serve(lis net.Listener) error {
 		return err
 	}
 
-	s.mu.Lock()
-	s.serving = true
-	s.mu.Unlock()
-
 	// Start a mailbox, this is critical because starting
 	// actors in a grid is just done via a normal request
 	// sending the message ActorDef to a listening peer's
 	// mailbox.
-	mailbox, err := s.NewMailbox(name, 100)
+	mailbox, err := s.NewMailbox(s.Name(), 100)
 	if err != nil {
 		return err
 	}
@@ -291,6 +290,26 @@ func (s *Server) Serve(lis net.Listener) error {
 	// Return the final error state, which
 	// could be set by other locations.
 	return s.getFinalErr()
+}
+
+// WaitUntilStarted waits until the registry has started or until the context is done.
+// This allows users to safely access some runtime-specific parameters (e.g., Name()).
+// There is no guarantee that the gRPC client has started: use Client.WaitUntilServing()
+// for that.
+func (s *Server) WaitUntilStarted(ctx context.Context) error {
+	b := newBackoff()
+	defer b.Stop()
+
+	for {
+		if err := b.Backoff(ctx); err != nil {
+			return fmt.Errorf("backing off: %w", err)
+		}
+		if !s.registry.Started() {
+			s.logf("not yet started")
+			continue
+		}
+		return nil
+	}
 }
 
 // Stop the server, blocking until all mailboxes registered with
@@ -581,13 +600,4 @@ func (s *Server) logf(format string, v ...interface{}) {
 	if s.cfg.Logger != nil {
 		s.cfg.Logger.Printf(format, v...)
 	}
-}
-
-func (s *Server) isServing() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if !s.serving {
-		return ErrServerNotRunning
-	}
-	return nil
 }

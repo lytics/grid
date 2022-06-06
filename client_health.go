@@ -73,9 +73,9 @@ func (c *Client) Watch(ctx context.Context, peer string) (healthpb.Health_WatchC
 	return recv, nil
 }
 
-// WaitUntilServing blocks until the receiver is serving or the context is done.
+// WaitUntilServing blocks until the peer is serving or the context is done.
 // Will retry with exponential backoff.
-func (c *Client) WaitUntilServing(ctx context.Context, receiver string) error {
+func (c *Client) WaitUntilServing(ctx context.Context, peer string) error {
 	b := newBackoff()
 	defer b.Stop()
 
@@ -85,9 +85,9 @@ LOOP:
 			return fmt.Errorf("backing off: %w", err)
 		}
 
-		stream, err := c.Watch(ctx, receiver)
+		stream, err := c.Watch(ctx, peer)
 		if err != nil {
-			c.logf("watching receiver: %v", err)
+			c.logf("watching peer: %v", err)
 			continue
 		}
 
@@ -105,40 +105,6 @@ LOOP:
 
 		return nil
 	}
-}
-
-type backoff struct {
-	timer *time.Timer
-	d     time.Duration
-}
-
-func newBackoff() *backoff {
-	return &backoff{timer: time.NewTimer(0)}
-}
-
-func (b *backoff) Backoff(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-b.timer.C:
-		b.bumpd()
-		b.timer.Reset(b.d)
-		return nil
-	}
-}
-
-func (b *backoff) bumpd() {
-	switch b.d {
-	case 0:
-		b.d = 125 * time.Millisecond
-	case 64 * time.Second:
-	default:
-		b.d = b.d * 2
-	}
-}
-
-func (b *backoff) Stop() {
-	b.timer.Stop()
 }
 
 func (c *Client) getHealthClient(ctx context.Context, nsReceiver string) (healthpb.HealthClient, int64, error) {

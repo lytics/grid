@@ -2,9 +2,9 @@ package grid
 
 import (
 	"fmt"
-	"math/rand"
+	"testing"
 )
 
-func newNamespace() string {
-	return fmt.Sprintf("test-namespace-%d", rand.Int63())
+func newNamespace(t testing.TB) string {
+	return fmt.Sprintf("test-namespace-%v", t.Name())
 }

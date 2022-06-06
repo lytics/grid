@@ -88,7 +88,7 @@ func TestNewClient(t *testing.T) {
 	embed := testetcd.NewEmbedded(t)
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
-	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
+	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestNewClient(t *testing.T) {
 
 func TestNewClientWithNilEtcd(t *testing.T) {
 	t.Parallel()
-	_, err := NewClient(nil, ClientCfg{Namespace: newNamespace()})
+	_, err := NewClient(nil, ClientCfg{Namespace: newNamespace(t)})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -113,7 +113,7 @@ func TestClientClose(t *testing.T) {
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	// Create client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
+	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +532,7 @@ func TestNilClientStats(t *testing.T) {
 func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 	t.Helper()
 	// Namespace for test.
-	namespace := newNamespace()
+	namespace := newNamespace(t)
 
 	// Start etcd.
 	embed := testetcd.NewEmbedded(t)
@@ -559,17 +559,18 @@ func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 	}()
 	t.Cleanup(func() { <-done })
 	t.Cleanup(server.Stop)
+	err = server.WaitUntilStarted(context.Background())
+	require.NoError(t, err)
 
 	// Create a grid client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace, Logger: logger})
 	require.NoError(t, err)
-
 	t.Cleanup(func() {
 		err := client.Close()
 		require.NoError(t, err)
 	})
 
-	err = client.WaitUntilServing(context.Background(), server.registry.Registry())
+	err = client.WaitUntilServing(context.Background(), server.Name())
 	require.NoError(t, err)
 
 	return etcd, server, client
