@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lytics/grid/v3/testetcd"
+	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
@@ -542,15 +543,11 @@ func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 
 	// Create the server.
 	server, err := NewServer(etcd, ServerCfg{Namespace: namespace, Logger: logger})
-	if err != nil {
-		t.Fatalf("starting server: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Create the listener on a random port.
 	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatalf("starting listener: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Start the server in the background.
 	done := make(chan struct{})
@@ -562,18 +559,18 @@ func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 	}()
 	t.Cleanup(func() { <-done })
 	t.Cleanup(server.Stop)
-	time.Sleep(3 * time.Second)
 
 	// Create a grid client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace, Logger: logger})
-	if err != nil {
-		t.Fatalf("creating test client: %v", err)
-	}
+	require.NoError(t, err)
+
 	t.Cleanup(func() {
-		if err := client.Close(); err != nil {
-			t.Fatalf("closing client: %v", err)
-		}
+		err := client.Close()
+		require.NoError(t, err)
 	})
+
+	err = client.WaitUntilServing(context.Background(), server.registry.Registry())
+	require.NoError(t, err)
 
 	return etcd, server, client
 }
