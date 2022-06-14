@@ -1,12 +1,12 @@
 package grid
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/lytics/grid/v3/testetcd"
 	"github.com/stretchr/testify/assert"
@@ -198,7 +198,7 @@ func TestMailboxClose(t *testing.T) {
 	embed := testetcd.NewEmbedded(t)
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
-	s, err := NewServer(etcd, ServerCfg{Namespace: newNamespace()})
+	s, err := NewServer(etcd, ServerCfg{Namespace: newNamespace(t)})
 	require.NoError(t, err)
 
 	lis, err := net.Listen("tcp", "localhost:0")
@@ -213,10 +213,8 @@ func TestMailboxClose(t *testing.T) {
 	}()
 	t.Cleanup(func() { <-done })
 	t.Cleanup(s.Stop)
-
-	for s.isServing() != nil {
-		time.Sleep(time.Second)
-	}
+	err = s.WaitUntilStarted(context.Background())
+	require.NoError(t, err)
 
 	m, err := s.NewMailbox("name", 1)
 	require.NoError(t, err)

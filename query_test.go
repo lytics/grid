@@ -18,7 +18,7 @@ func TestQuery(t *testing.T) {
 		timeout = 1 * time.Second
 	)
 
-	namespace := newNamespace()
+	namespace := newNamespace(t)
 
 	embed := testetcd.NewEmbedded(t)
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
@@ -78,7 +78,7 @@ func TestQueryWatch(t *testing.T) {
 		timeout = 1 * time.Second
 	)
 
-	namespace := newNamespace()
+	namespace := newNamespace(t)
 	embed := testetcd.NewEmbedded(t)
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 

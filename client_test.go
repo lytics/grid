@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lytics/grid/v3/testetcd"
+	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
@@ -87,7 +88,7 @@ func TestNewClient(t *testing.T) {
 	embed := testetcd.NewEmbedded(t)
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
-	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
+	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestNewClient(t *testing.T) {
 
 func TestNewClientWithNilEtcd(t *testing.T) {
 	t.Parallel()
-	_, err := NewClient(nil, ClientCfg{Namespace: newNamespace()})
+	_, err := NewClient(nil, ClientCfg{Namespace: newNamespace(t)})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -112,7 +113,7 @@ func TestClientClose(t *testing.T) {
 	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
 
 	// Create client.
-	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace()})
+	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +532,7 @@ func TestNilClientStats(t *testing.T) {
 func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 	t.Helper()
 	// Namespace for test.
-	namespace := newNamespace()
+	namespace := newNamespace(t)
 
 	// Start etcd.
 	embed := testetcd.NewEmbedded(t)
@@ -542,15 +543,11 @@ func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 
 	// Create the server.
 	server, err := NewServer(etcd, ServerCfg{Namespace: namespace, Logger: logger})
-	if err != nil {
-		t.Fatalf("starting server: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Create the listener on a random port.
 	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatalf("starting listener: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Start the server in the background.
 	done := make(chan struct{})
@@ -562,18 +559,19 @@ func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 	}()
 	t.Cleanup(func() { <-done })
 	t.Cleanup(server.Stop)
-	time.Sleep(3 * time.Second)
+	err = server.WaitUntilStarted(context.Background())
+	require.NoError(t, err)
 
 	// Create a grid client.
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace, Logger: logger})
-	if err != nil {
-		t.Fatalf("creating test client: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() {
-		if err := client.Close(); err != nil {
-			t.Fatalf("closing client: %v", err)
-		}
+		err := client.Close()
+		require.NoError(t, err)
 	})
+
+	err = client.WaitUntilServing(context.Background(), server.Name())
+	require.NoError(t, err)
 
 	return etcd, server, client
 }
