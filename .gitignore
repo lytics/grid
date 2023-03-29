@@ -27,8 +27,5 @@ _testmain.go
 # ignore vendor - they are only needed for tests.
 vendor/
 
-# ignore bazel things that are local only
-bazel-*
-
 # Visual Studio Code
 .vscode/*
