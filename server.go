@@ -15,8 +15,12 @@ import (
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	xdscreds "google.golang.org/grpc/credentials/xds"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/xds"
 )
 
 var (
@@ -42,13 +46,14 @@ type Server struct {
 	cancel    func()
 	cfg       ServerCfg
 	etcd      *etcdv3.Client
-	grpc      *grpc.Server
+	grpc      *xds.GRPCServer
 	health    *health.Server
 	stop      sync.Once
 	fatalErr  chan error
 	actors    *makeActorRegistry
 	registry  *registry.Registry
 	mailboxes *mailboxRegistry
+	creds     credentials.TransportCredentials
 }
 
 // NewServer for the grid. The namespace must contain only characters
@@ -63,6 +68,13 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		return nil, ErrNilEtcd
 	}
 
+	creds := insecure.NewCredentials()
+	if cfg.XDSCreds {
+		var err error
+		if creds, err = xdscreds.NewServerCredentials(xdscreds.ServerOptions{FallbackCreds: insecure.NewCredentials()}); err != nil {
+			return nil, fmt.Errorf("failed to create server-side xDS credentials: %w", err)
+		}
+	}
 	// Create a registry client, through which other
 	// entities like peers, actors, and mailboxes
 	// will be discovered.
@@ -78,15 +90,17 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		r.Logger = cfg.Logger
 	}
 
+	grpcServer := xds.NewGRPCServer(grpc.Creds(creds))
 	server := &Server{
 		cfg:       cfg,
 		etcd:      etcd,
-		grpc:      grpc.NewServer(),
+		grpc:      grpcServer,
 		health:    health.NewServer(),
 		actors:    newMakeActorRegistry(),
 		fatalErr:  make(chan error, 1),
 		registry:  r,
 		mailboxes: newMailboxRegistry(),
+		creds:     creds,
 	}
 
 	// Create a context that each actor this leader creates
@@ -108,21 +122,21 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 //
 // Example Usage:
 //
-//     mailbox, err := server.NewMailbox("incoming", 10)
-//     ...
-//     defer mailbox.Close()
+//	mailbox, err := server.NewMailbox("incoming", 10)
+//	...
+//	defer mailbox.Close()
 //
-//     for {
-//         select {
-//         case req := <-mailbox.C:
-//             // Do something with request, and then respond
-//             // or ack. A response or ack is required.
-//             switch m := req.Msg().(type) {
-//             case HiMsg:
-//                 req.Respond(&HelloMsg{})
-//             }
-//         }
-//     }
+//	for {
+//	    select {
+//	    case req := <-mailbox.C:
+//	        // Do something with request, and then respond
+//	        // or ack. A response or ack is required.
+//	        switch m := req.Msg().(type) {
+//	        case HiMsg:
+//	            req.Respond(&HelloMsg{})
+//	        }
+//	    }
+//	}
 //
 // If the mailbox has already been created, in the calling process or
 // any other process, an error is returned, since only one mailbox

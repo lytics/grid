@@ -27,6 +27,9 @@ type ClientCfg struct {
 	ConnectionsPerPeer int
 	// Logger optionally used for logging, default is to not log.
 	Logger Logger
+
+	// XDSCreds specifies whether the server should use xDS APIs to receive security configuration
+	XDSCreds bool
 }
 
 // setClientCfgDefaults for those fields that have their zero value.
@@ -57,6 +60,8 @@ type ServerCfg struct {
 	Logger Logger
 	// Annotations optionally used annotating a grid server with metadata
 	Annotations []string
+	// XDSCreds specifies whether the server should use xDS APIs to receive security configuration
+	XDSCreds bool
 }
 
 // setServerCfgDefaults for those fields that have their zero value.

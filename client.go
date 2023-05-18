@@ -17,6 +17,9 @@ import (
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	xdscreds "google.golang.org/grpc/credentials/xds"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -25,9 +28,9 @@ import (
 // the type itself.
 //
 // For example:
-//     Register(MyMsg{})    // Correct
-//     Register(&MyMsg{})   // Incorrect
 //
+//	Register(MyMsg{})    // Correct
+//	Register(&MyMsg{})   // Incorrect
 func Register(v interface{}) error {
 	return codec.Register(v)
 }
@@ -104,13 +107,21 @@ type Client struct {
 	addresses       map[string]string
 	clientsAndConns map[string]*clientAndConnPool
 	// Test hook.
-	cs *clientStats
+	cs    *clientStats
+	creds credentials.TransportCredentials
 }
 
 // NewClient using the given etcd client and configuration.
 func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 	setClientCfgDefaults(&cfg)
 
+	creds := insecure.NewCredentials()
+	if cfg.XDSCreds {
+		var err error
+		if creds, err = xdscreds.NewClientCredentials(xdscreds.ClientOptions{FallbackCreds: insecure.NewCredentials()}); err != nil {
+			return nil, fmt.Errorf("failed to create client-side xDS credentials: %w", err)
+		}
+	}
 	r, err := registry.New(etcd)
 	if err != nil {
 		return nil, err
@@ -123,6 +134,7 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 	}
 
 	return &Client{
+		creds:           creds,
 		cfg:             cfg,
 		registry:        r,
 		addresses:       make(map[string]string),
@@ -277,7 +289,7 @@ func (c *Client) getCCLocked(ctx context.Context, nsReceiver string) (*clientAnd
 			c.cs.Inc(numGRPCDial)
 
 			// Dial the destination.
-			conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(20*time.Second))
+			conn, err := grpc.Dial(address, grpc.WithTransportCredentials(c.creds), grpc.WithBackoffMaxDelay(20*time.Second))
 			if err != nil {
 				return nil, noID, err
 			}
