@@ -46,7 +46,7 @@ type Server struct {
 	cancel    func()
 	cfg       ServerCfg
 	etcd      *etcdv3.Client
-	grpc      *xds.GRPCServer
+	grpc      grpcServer
 	health    *health.Server
 	stop      sync.Once
 	fatalErr  chan error
@@ -54,6 +54,12 @@ type Server struct {
 	registry  *registry.Registry
 	mailboxes *mailboxRegistry
 	creds     credentials.TransportCredentials
+}
+
+type grpcServer interface {
+	RegisterService(desc *grpc.ServiceDesc, impl interface{})
+	Serve(lis net.Listener) error
+	Stop()
 }
 
 // NewServer for the grid. The namespace must contain only characters
@@ -90,11 +96,16 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		r.Logger = cfg.Logger
 	}
 
-	grpcServer := xds.NewGRPCServer(grpc.Creds(creds))
+	var ser grpcServer
+	if cfg.XDSCreds {
+		ser = xds.NewGRPCServer(grpc.Creds(creds))
+	} else {
+		ser = grpc.NewServer(grpc.Creds(creds))
+	}
 	server := &Server{
 		cfg:       cfg,
 		etcd:      etcd,
-		grpc:      grpcServer,
+		grpc:      ser,
 		health:    health.NewServer(),
 		actors:    newMakeActorRegistry(),
 		fatalErr:  make(chan error, 1),

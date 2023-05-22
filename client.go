@@ -17,6 +17,7 @@ import (
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+	grpcBackoff "google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	xdscreds "google.golang.org/grpc/credentials/xds"
@@ -289,7 +290,9 @@ func (c *Client) getCCLocked(ctx context.Context, nsReceiver string) (*clientAnd
 			c.cs.Inc(numGRPCDial)
 
 			// Dial the destination.
-			conn, err := grpc.Dial(address, grpc.WithTransportCredentials(c.creds), grpc.WithBackoffMaxDelay(20*time.Second))
+			conn, err := grpc.Dial(address, grpc.WithTransportCredentials(c.creds), grpc.WithConnectParams(grpc.ConnectParams{
+				Backoff: grpcBackoff.Config{MaxDelay: 20 * time.Second},
+			}))
 			if err != nil {
 				return nil, noID, err
 			}
