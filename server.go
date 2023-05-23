@@ -100,7 +100,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	if cfg.XDSCreds {
 		ser = xds.NewGRPCServer(grpc.Creds(creds))
 	} else {
-		ser = grpc.NewServer(grpc.Creds(creds))
+		ser = grpc.NewServer()
 	}
 	server := &Server{
 		cfg:       cfg,
@@ -302,6 +302,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	// gRPC dance to start the gRPC server. The Serve
 	// method blocks still stopped via a call to Stop.
 	RegisterWireServer(s.grpc, s)
+	s.health.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(s.grpc, s.health)
 
 	err = s.grpc.Serve(lis)
