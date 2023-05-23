@@ -290,8 +290,13 @@ func (c *Client) getCCLocked(ctx context.Context, nsReceiver string) (*clientAnd
 			c.cs.Inc(numGRPCDial)
 
 			// Dial the destination.
-			conn, err := grpc.Dial(address, grpc.WithTransportCredentials(c.creds), grpc.WithConnectParams(grpc.ConnectParams{
-				Backoff: grpcBackoff.Config{MaxDelay: 20 * time.Second},
+			opt := grpc.WithInsecure()
+			if c.cfg.XDSCreds {
+				opt = grpc.WithTransportCredentials(c.creds)
+			}
+			conn, err := grpc.Dial(address, opt, grpc.WithConnectParams(grpc.ConnectParams{
+				Backoff:           grpcBackoff.Config{MaxDelay: 20 * time.Second},
+				MinConnectTimeout: 20 * time.Second,
 			}))
 			if err != nil {
 				return nil, noID, err
