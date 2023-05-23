@@ -18,22 +18,19 @@ func (c *Client) Check(ctx context.Context, peer string) (*healthpb.HealthCheckR
 	}
 
 	var resp *healthpb.HealthCheckResponse
-	retry.X(3, time.Second, func() bool {
+	_ = retry.XWithContext(ctx, 3, time.Second, func(ctx context.Context) error {
 		var client healthpb.HealthClient
 		client, _, err = c.getHealthClient(ctx, nsReceiver)
 		if err != nil {
-			return false
+			return nil
 		}
 
 		resp, err = client.Check(ctx, &healthpb.HealthCheckRequest{})
 		if err != nil {
-			if ctx.Err() != nil {
-				return false
-			}
-			return true
+			return err
 		}
 
-		return false
+		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("checking health: %w", err)
@@ -49,22 +46,19 @@ func (c *Client) Watch(ctx context.Context, peer string) (healthpb.Health_WatchC
 	}
 
 	var recv healthpb.Health_WatchClient
-	retry.X(3, time.Second, func() bool {
+	_ = retry.XWithContext(ctx, 3, time.Second, func(ctx context.Context) error {
 		var client healthpb.HealthClient
 		client, _, err = c.getHealthClient(ctx, nsReceiver)
 		if err != nil {
-			return false
+			return nil
 		}
 
 		recv, err = client.Watch(ctx, &healthpb.HealthCheckRequest{})
 		if err != nil {
-			if ctx.Err() != nil {
-				return false
-			}
-			return true
+			return err
 		}
 
-		return false
+		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("checking health: %w", err)
