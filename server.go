@@ -17,10 +17,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	xdscreds "google.golang.org/grpc/credentials/xds"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/xds"
 )
 
 var (
@@ -75,12 +73,6 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 	}
 
 	creds := insecure.NewCredentials()
-	if cfg.XDSCreds {
-		var err error
-		if creds, err = xdscreds.NewServerCredentials(xdscreds.ServerOptions{FallbackCreds: insecure.NewCredentials()}); err != nil {
-			return nil, fmt.Errorf("failed to create server-side xDS credentials: %w", err)
-		}
-	}
 	// Create a registry client, through which other
 	// entities like peers, actors, and mailboxes
 	// will be discovered.
@@ -96,12 +88,7 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		r.Logger = cfg.Logger
 	}
 
-	var ser grpcServer
-	if cfg.XDSCreds {
-		ser = xds.NewGRPCServer(grpc.Creds(creds))
-	} else {
-		ser = grpc.NewServer()
-	}
+	ser := grpc.NewServer(grpc.Creds(creds))
 	server := &Server{
 		cfg:       cfg,
 		etcd:      etcd,
@@ -262,13 +249,13 @@ func (s *Server) Name() string {
 // net.TCPAddr, otherwise an error will be returned.
 func (s *Server) Serve(lis net.Listener) error {
 	if err := s.registry.Start(lis.Addr()); err != nil {
-		return err
+		return fmt.Errorf("starting registry: %w", err)
 	}
 
 	// Namespaced name, which just includes the namespace.
 	nsName, err := namespaceName(Peers, s.cfg.Namespace, s.Name())
 	if err != nil {
-		return err
+		return fmt.Errorf("namspacing %v: %w", s.Name(), err)
 	}
 
 	// Register the namespace name, other peers can search
@@ -277,7 +264,7 @@ func (s *Server) Serve(lis net.Listener) error {
 	err = s.registry.Register(timeoutC, nsName, s.cfg.Annotations...)
 	cancel()
 	if err != nil {
-		return err
+		return fmt.Errorf("registering: %w", err)
 	}
 
 	// Start a mailbox, this is critical because starting
@@ -286,7 +273,8 @@ func (s *Server) Serve(lis net.Listener) error {
 	// mailbox.
 	mailbox, err := s.NewMailbox(s.Name(), 100)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating mailbox: %w", err)
+
 	}
 	go s.runMailbox(mailbox)
 
@@ -310,12 +298,15 @@ func (s *Server) Serve(lis net.Listener) error {
 	// message even though it stopped fine. Catch that
 	// error and don't pass it up.
 	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-		return err
+		return fmt.Errorf("serving: %w", err)
 	}
 
 	// Return the final error state, which
 	// could be set by other locations.
-	return s.getFinalErr()
+	if err := s.getFinalErr(); err != nil {
+		return fmt.Errorf("fatal error: %w", err)
+	}
+	return nil
 }
 
 // WaitUntilStarted waits until the registry has started or until the context is done.
