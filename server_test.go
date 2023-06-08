@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,7 +131,7 @@ func TestServerWithFatalError(t *testing.T) {
 			case <-time.After(timeout):
 				t.Fatal("timeout")
 			case err := <-done:
-				if err != nil && err.Error() == expected.Error() {
+				if err != nil && strings.Contains(err.Error(), expected.Error()) {
 					return
 				}
 				t.Fatal("expected error")

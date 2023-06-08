@@ -20,7 +20,6 @@ import (
 	grpcBackoff "google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	xdscreds "google.golang.org/grpc/credentials/xds"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -117,12 +116,6 @@ func NewClient(etcd *etcdv3.Client, cfg ClientCfg) (*Client, error) {
 	setClientCfgDefaults(&cfg)
 
 	creds := insecure.NewCredentials()
-	if cfg.XDSCreds {
-		var err error
-		if creds, err = xdscreds.NewClientCredentials(xdscreds.ClientOptions{FallbackCreds: insecure.NewCredentials()}); err != nil {
-			return nil, fmt.Errorf("failed to create client-side xDS credentials: %w", err)
-		}
-	}
 	r, err := registry.New(etcd)
 	if err != nil {
 		return nil, err
@@ -290,13 +283,10 @@ func (c *Client) getCCLocked(ctx context.Context, nsReceiver string) (*clientAnd
 			c.cs.Inc(numGRPCDial)
 
 			// Dial the destination.
-			opt := grpc.WithInsecure()
-			if c.cfg.XDSCreds {
-				opt = grpc.WithTransportCredentials(c.creds)
-			}
+			opt := grpc.WithTransportCredentials(c.creds)
 			conn, err := grpc.Dial(address, opt, grpc.WithConnectParams(grpc.ConnectParams{
 				Backoff:           grpcBackoff.Config{MaxDelay: 20 * time.Second},
-				MinConnectTimeout: 20 * time.Second,
+				MinConnectTimeout: 1 * time.Second,
 			}))
 			if err != nil {
 				return nil, noID, err
