@@ -14,6 +14,7 @@ import (
 	"github.com/lytics/grid/v3/registry"
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/client/v3"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -88,7 +89,12 @@ func NewServer(etcd *etcdv3.Client, cfg ServerCfg) (*Server, error) {
 		r.Logger = cfg.Logger
 	}
 
-	ser := grpc.NewServer(grpc.Creds(creds))
+	ser := grpc.NewServer(
+		grpc.Creds(creds),
+		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+	)
+
 	server := &Server{
 		cfg:       cfg,
 		etcd:      etcd,
