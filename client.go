@@ -16,6 +16,7 @@ import (
 	"github.com/lytics/grid/v3/registry"
 	"github.com/lytics/retry"
 	etcdv3 "go.etcd.io/etcd/client/v3"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	grpcBackoff "google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -283,22 +284,24 @@ func (c *Client) getCCLocked(ctx context.Context, nsReceiver string) (*clientAnd
 			c.cs.Inc(numGRPCDial)
 
 			// Dial the destination.
-			opt := grpc.WithTransportCredentials(c.creds)
-			conn, err := grpc.Dial(address, opt, grpc.WithConnectParams(grpc.ConnectParams{
-				Backoff:           grpcBackoff.Config{MaxDelay: 20 * time.Second},
-				MinConnectTimeout: 1 * time.Second,
-			}))
+			conn, err := grpc.Dial(address,
+				grpc.WithTransportCredentials(c.creds),
+				grpc.WithConnectParams(grpc.ConnectParams{
+					Backoff:           grpcBackoff.Config{MaxDelay: 20 * time.Second},
+					MinConnectTimeout: 1 * time.Second,
+				}),
+				grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
+				grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()),
+			)
 			if err != nil {
 				return nil, noID, err
 			}
-			wclient := NewWireClient(conn)
-			hclient := healthpb.NewHealthClient(conn)
-			cc := &clientAndConn{
+
+			ccpool.clientConns[i] = &clientAndConn{
 				conn:   conn,
-				wire:   wclient,
-				health: hclient,
+				wire:   NewWireClient(conn),
+				health: healthpb.NewHealthClient(conn),
 			}
-			ccpool.clientConns[i] = cc
 		}
 		c.clientsAndConns[address] = ccpool
 	}

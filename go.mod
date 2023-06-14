@@ -7,6 +7,7 @@ require (
 	github.com/stretchr/testify v1.8.2
 	go.etcd.io/etcd/client/v3 v3.5.7
 	go.etcd.io/etcd/server/v3 v3.5.7
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.40.0
 	google.golang.org/grpc v1.55.0
 	google.golang.org/protobuf v1.30.0
 )
@@ -51,7 +52,6 @@ require (
 	go.etcd.io/etcd/client/v2 v2.305.7 // indirect
 	go.etcd.io/etcd/pkg/v3 v3.5.7 // indirect
 	go.etcd.io/etcd/raft/v3 v3.5.7 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.40.0 // indirect
 	go.opentelemetry.io/otel v1.14.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.14.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.14.0 // indirect
