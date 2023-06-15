@@ -130,7 +130,6 @@ func TestClientClose(t *testing.T) {
 
 func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 	t.Parallel()
-	const timeout = 3 * time.Second
 
 	// Bootstrap.
 	_, _, client := bootstrapClientTest(t)
@@ -139,7 +138,9 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 	client.cs = newClientStats()
 
 	// Send a request to some random name.
-	res, err := client.Request(timeout, "mock", NewActorStart("mock"))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+	res, err := client.Request(ctx, "mock", NewActorStart("mock"))
 	if err != ErrUnregisteredMailbox {
 		t.Fatal(err)
 	}
@@ -165,15 +166,17 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 
 	// Place a bogus entry in etcd with
 	// a matching name.
-	timeoutC, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	err := server.registry.Register(timeoutC, client.cfg.Namespace+".mailbox.mock")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	err := server.registry.Register(ctx, client.cfg.Namespace+".mailbox.mock")
 	cancel()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Send a request to some random name.
-	res, err := client.Request(timeout, "mock", NewActorStart("mock"))
+	ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
+	res, err := client.Request(ctx, "mock", NewActorStart("mock"))
+	cancel()
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -192,13 +195,16 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 
 func TestClientBroadcast(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
 	const timeout = 3 * time.Second
 	_, server, client := bootstrapClientTest(t)
 
 	a := &echoActor{t: t, ready: make(chan bool), server: server}
 	server.RegisterDef("echo", func([]byte) (Actor, error) { return a, nil })
 
-	peers, err := client.Query(timeout, Peers)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	peers, err := client.Query(ctx, Peers)
 	if err != nil {
 		t.Fatalf("failed to query peers: %v", err)
 	} else if len(peers) != 1 {
@@ -210,7 +216,9 @@ func TestClientBroadcast(t *testing.T) {
 	startEchoActor := func(name string) {
 		actor := NewActorStart(name)
 		actor.Type = echoType
-		res, err := client.Request(timeout, peer, actor)
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		res, err := client.Request(ctx, peer, actor)
 		if err != nil {
 			t.Fatalf("failed to start echo actor: %v", err)
 		} else if res == nil {
@@ -228,7 +236,9 @@ func TestClientBroadcast(t *testing.T) {
 	msg := &EchoMsg{Msg: "lol"}
 	t.Run("broadcast-all", func(t *testing.T) {
 		g := NewListGroup("echo-0", "echo-1")
-		res, err := client.Broadcast(timeout, g, msg)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		res, err := client.Broadcast(ctx, g, msg)
 		if err != nil {
 			t.Fatalf("failed to broadcast message: %v", err)
 		} else if len(res) != numActors {
@@ -249,7 +259,9 @@ func TestClientBroadcast(t *testing.T) {
 
 	t.Run("broadcast-fastest", func(t *testing.T) {
 		g := NewListGroup("echo-0", "echo-1")
-		res, err := client.Broadcast(timeout, g.Fastest(), msg)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		res, err := client.Broadcast(ctx, g.Fastest(), msg)
 		if err != nil {
 			t.Fatalf("failed to broadcast message: %v", err)
 		} else if len(res) != numActors {
@@ -279,7 +291,9 @@ func TestClientBroadcast(t *testing.T) {
 		g := NewListGroup("echo-0", "echo-1", "echo-2")
 
 		resultSet := make(BroadcastResult)
-		tmpSet, err := client.Broadcast(timeout, g.ExceptSuccesses(resultSet), msg)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		tmpSet, err := client.Broadcast(ctx, g.ExceptSuccesses(resultSet), msg)
 		if err != ErrIncompleteBroadcast {
 			t.Fatal("expected a broadcast-error")
 		} else if tmpSet["echo-2"].Err != ErrUnregisteredMailbox {
@@ -290,7 +304,9 @@ func TestClientBroadcast(t *testing.T) {
 		// start the missing actor
 		startEchoActor("echo-2")
 
-		tmpSet, err = client.Broadcast(timeout, g.ExceptSuccesses(resultSet), msg)
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		tmpSet, err = client.Broadcast(ctx, g.ExceptSuccesses(resultSet), msg)
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -329,7 +345,9 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	a.server = server
 
 	// Discover some peers.
-	peers, err := client.Query(timeout, Peers)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	peers, err := client.Query(ctx, Peers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +356,9 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	}
 
 	// Start the echo actor on the first peer.
-	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("echo"))
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	res, err := client.Request(ctx, peers[0].Name(), NewActorStart("echo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +370,9 @@ func TestClientWithRunningReceiver(t *testing.T) {
 	<-a.ready
 
 	// Make a request to echo actor.
-	res, err = client.Request(timeout, "echo", expected)
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	res, err = client.Request(ctx, "echo", expected)
+	cancel()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +416,9 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	a.server = server
 
 	// Discover some peers.
-	peers, err := client.Query(timeout, Peers)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	peers, err := client.Query(ctx, Peers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +427,9 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	}
 
 	// Start the echo actor on the first peer.
-	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("echo"))
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	res, err := client.Request(ctx, peers[0].Name(), NewActorStart("echo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +441,9 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	<-a.ready
 
 	// Make a request to echo actor.
-	res, err = client.Request(timeout, "echo", expected)
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	res, err = client.Request(ctx, "echo", expected)
+	cancel()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +458,9 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 	time.Sleep(timeout)
 
 	// Make the request again.
-	res, err = client.Request(timeout, "echo", expected)
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	res, err = client.Request(ctx, "echo", expected)
+	cancel()
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -466,7 +496,9 @@ func TestClientWithBusyReceiver(t *testing.T) {
 	a.server = server
 
 	// Discover some peers.
-	peers, err := client.Query(timeout, Peers)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	peers, err := client.Query(ctx, Peers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +507,9 @@ func TestClientWithBusyReceiver(t *testing.T) {
 	}
 
 	// Start the busy actor on the first peer.
-	res, err := client.Request(timeout, peers[0].Name(), NewActorStart("busy"))
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	res, err := client.Request(ctx, peers[0].Name(), NewActorStart("busy"))
+	cancel()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -487,7 +521,9 @@ func TestClientWithBusyReceiver(t *testing.T) {
 	<-a.ready
 
 	// Make a request to busy actor.
-	res, err = client.Request(timeout, "busy", expected)
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	res, err = client.Request(ctx, "busy", expected)
+	cancel()
 	if err == nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 
 var (
 	// errDeregisteredFailed is used internally when we can't deregister a key from etcd.
-	// It's used by Server.startActorC() to ensure we panic.
+	// It's used by Server.startActor() to ensure we panic.
 	errDeregisteredFailed = errors.New("grid: deregistered failed")
 )
 

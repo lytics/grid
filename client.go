@@ -151,20 +151,8 @@ func (c *Client) Close() error {
 	return err
 }
 
-// Request a response for the given message.
-func (c *Client) Request(timeout time.Duration, receiver string, msg interface{}) (interface{}, error) {
-	if c == nil {
-		return nil, ErrNilClient
-	}
-
-	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return c.RequestC(timeoutC, receiver, msg)
-}
-
-// RequestC (request) a response for the given message. The context can be
-// used to control cancelation or timeouts.
-func (c *Client) RequestC(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
+// Request a response for the given message. The context can be used to control cancelation or timeouts.
+func (c *Client) Request(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
 	if c == nil {
 		return nil, ErrNilClient
 	}
@@ -401,23 +389,9 @@ func (c *Client) logf(format string, v ...interface{}) {
 	}
 }
 
-// Broadcast a message to all members in a Group
-func (c *Client) Broadcast(timeout time.Duration, g *Group, msg interface{}) (BroadcastResult, error) {
-	if c == nil {
-		return nil, ErrNilClient
-	}
-	if g == nil {
-		return nil, ErrNilGroup
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return c.broadcast(ctx, cancel, g, msg)
-}
-
 // BroadcastC (broadcast) a message to all members in a Group. The context can be used to control
 // cancellations or timeouts
-func (c *Client) BroadcastC(ctx context.Context, g *Group, msg interface{}) (BroadcastResult, error) {
+func (c *Client) Broadcast(ctx context.Context, g *Group, msg interface{}) (BroadcastResult, error) {
 	if c == nil {
 		return nil, ErrNilClient
 	}
@@ -442,7 +416,7 @@ func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Gr
 		wg.Add(1)
 		go func(receiver string) {
 			defer wg.Done()
-			resp, err := c.RequestC(ctx, receiver, msg)
+			resp, err := c.Request(ctx, receiver, msg)
 			if err != nil {
 				mu.Lock()
 				broadcastErr = ErrIncompleteBroadcast

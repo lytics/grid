@@ -66,7 +66,7 @@ func TestStartStopWaitForLeaseToExpireBetween(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.LeaseDuration = 10 * time.Second
-	err = r.Start(addr)
+	err = r.Start(context.Background(), addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestWaitForLeaseThatNeverExpires(t *testing.T) {
 	r1.LeaseDuration = 10 * time.Second
 
 	st := time.Now()
-	err = r1.Start(addr)
+	err = r1.Start(context.Background(), addr)
 	if err == nil {
 		t.Fatalf("expected an error but got none")
 	}
@@ -162,7 +162,7 @@ func TestWaitForLeaseThatDoesExpires(t *testing.T) {
 	})
 
 	st := time.Now()
-	if err := r1.Start(addr); err != nil {
+	if err := r1.Start(context.Background(), addr); err != nil {
 		t.Fatalf("unexpected error: err: %v", err)
 	}
 	// ensure that we waited 10 seconds...
@@ -189,14 +189,14 @@ func TestRegister(t *testing.T) {
 	t.Parallel()
 	client, r, _ := bootstrap(t, start)
 
-	timeout, cancel := timeoutContext()
-	err := r.Register(timeout, "test-registration")
+	ctx, cancel := timeoutContext()
+	defer cancel()
+	err := r.Register(ctx, "test-registration")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	res, err := client.Get(timeout, "test-registration")
-	cancel()
+	res, err := client.Get(ctx, "test-registration")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,16 +218,16 @@ func TestDeregistration(t *testing.T) {
 	t.Parallel()
 	client, r, _ := bootstrap(t, start)
 
-	timeout, cancel := timeoutContext()
-	err := r.Register(timeout, "test-registration")
-	cancel()
+	ctx, cancel := timeoutContext()
+	defer cancel()
+	err := r.Register(ctx, "test-registration")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	timeout, cancel = timeoutContext()
-	res, err := client.Get(timeout, "test-registration")
-	cancel()
+	ctx, cancel = timeoutContext()
+	defer cancel()
+	res, err := client.Get(ctx, "test-registration")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,16 +244,16 @@ func TestDeregistration(t *testing.T) {
 		t.Fatal("wrong name")
 	}
 
-	timeout, cancel = timeoutContext()
-	err = r.Deregister(timeout, "test-registration")
-	cancel()
+	ctx, cancel = timeoutContext()
+	defer cancel()
+	err = r.Deregister(ctx, "test-registration")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	timeout, cancel = timeoutContext()
-	res, err = client.Get(timeout, "test-registration")
-	cancel()
+	ctx, cancel = timeoutContext()
+	defer cancel()
+	res, err = client.Get(ctx, "test-registration")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,16 +266,16 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 	t.Parallel()
 	_, r, _ := bootstrap(t, dontStart)
 
-	timeout, cancel := timeoutContext()
-	err := r.Register(timeout, "test-registration")
-	cancel()
+	ctx, cancel := timeoutContext()
+	defer cancel()
+	err := r.Register(ctx, "test-registration")
 	if err != ErrNotStarted {
 		t.Fatal(err)
 	}
 
-	timeout, cancel = timeoutContext()
-	err = r.Deregister(timeout, "test-registration")
-	cancel()
+	ctx, cancel = timeoutContext()
+	defer cancel()
+	err = r.Deregister(ctx, "test-registration")
 	if err != ErrNotStarted {
 		t.Fatal(err)
 	}
@@ -286,9 +286,9 @@ func TestRegisterTwiceNotAllowed(t *testing.T) {
 	_, r, _ := bootstrap(t, start)
 
 	for i := 0; i < 2; i++ {
-		timeout, cancel := timeoutContext()
-		err := r.Register(timeout, "test-registration-twice-b")
-		cancel()
+		ctx, cancel := timeoutContext()
+		defer cancel()
+		err := r.Register(ctx, "test-registration-twice-b")
 		if i > 0 && !errors.Is(err, ErrAlreadyRegistered) {
 			t.Fatal("allowed to register twice")
 		}
@@ -299,8 +299,9 @@ func TestStop(t *testing.T) {
 	t.Parallel()
 	client, r, _ := bootstrap(t, start)
 
-	timeout, cancel := timeoutContext()
-	err := r.Register(timeout, "test-registration")
+	ctx, cancel := timeoutContext()
+	defer cancel()
+	err := r.Register(ctx, "test-registration")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,8 +309,7 @@ func TestStop(t *testing.T) {
 	if err := r.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	res, err := client.Get(timeout, "test-registration")
-	cancel()
+	res, err := client.Get(ctx, "test-registration")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,23 +322,23 @@ func TestFindRegistration(t *testing.T) {
 	t.Parallel()
 	_, r, _ := bootstrap(t, start)
 
-	timeout, cancel := timeoutContext()
-	err := r.Register(timeout, "test-registration-a")
-	cancel()
+	ctx, cancel := timeoutContext()
+	defer cancel()
+	err := r.Register(ctx, "test-registration-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	timeout, cancel = timeoutContext()
-	err = r.Register(timeout, "test-registration-aa")
-	cancel()
+	ctx, cancel = timeoutContext()
+	defer cancel()
+	err = r.Register(ctx, "test-registration-aa")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	timeout, cancel = timeoutContext()
-	reg, err := r.FindRegistration(timeout, "test-registration-a")
-	cancel()
+	ctx, cancel = timeoutContext()
+	defer cancel()
+	reg, err := r.FindRegistration(ctx, "test-registration-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,23 +351,23 @@ func TestFindRegistrations(t *testing.T) {
 	t.Parallel()
 	_, r, _ := bootstrap(t, start)
 
-	timeout, cancel := timeoutContext()
-	err := r.Register(timeout, "test-registration-a")
-	cancel()
+	ctx, cancel := timeoutContext()
+	defer cancel()
+	err := r.Register(ctx, "test-registration-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	timeout, cancel = timeoutContext()
-	err = r.Register(timeout, "test-registration-aa")
-	cancel()
+	ctx, cancel = timeoutContext()
+	defer cancel()
+	err = r.Register(ctx, "test-registration-aa")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	timeout, cancel = timeoutContext()
-	regs, err := r.FindRegistrations(timeout, "test-registration-a")
-	cancel()
+	ctx, cancel = timeoutContext()
+	defer cancel()
+	regs, err := r.FindRegistrations(ctx, "test-registration-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestKeepAlive(t *testing.T) {
 
 	// Use the minimum.
 	r.LeaseDuration = 1 * time.Second
-	err := r.Start(addr)
+	err := r.Start(context.Background(), addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +422,7 @@ func TestWatch(t *testing.T) {
 
 	// Use the minimum.
 	r.LeaseDuration = 1 * time.Second
-	err := r.Start(addr)
+	err := r.Start(context.Background(), addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,8 +434,8 @@ func TestWatch(t *testing.T) {
 	}
 
 	for peer := range initial {
-		timeout, cancel := timeoutContext()
-		err := r.Register(timeout, peer)
+		ctx, cancel := timeoutContext()
+		err := r.Register(ctx, peer)
 		cancel()
 		if err != nil {
 			t.Fatal(err)
@@ -479,8 +479,8 @@ func TestWatch(t *testing.T) {
 	}
 
 	for peer := range additions {
-		timeout, cancel := timeoutContext()
-		err := r.Register(timeout, peer)
+		ctx, cancel := timeoutContext()
+		err := r.Register(ctx, peer)
 		cancel()
 		if err != nil {
 			t.Fatal(err)
@@ -489,8 +489,8 @@ func TestWatch(t *testing.T) {
 	}
 
 	for peer := range initial {
-		timeout, cancel := timeoutContext()
-		err := r.Deregister(timeout, peer)
+		ctx, cancel := timeoutContext()
+		err := r.Deregister(ctx, peer)
 		cancel()
 		if err != nil {
 			t.Fatal(err)
@@ -581,7 +581,7 @@ func bootstrap(t testing.TB, shouldStart bool) (*etcdv3.Client, *Registry, *net.
 	})
 
 	if shouldStart {
-		err = r.Start(addr)
+		err = r.Start(context.Background(), addr)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -177,7 +177,7 @@ func (rr *Registry) waitForAddress(ctx context.Context, address string) error {
 }
 
 // Start Registry.
-func (rr *Registry) Start(addr net.Addr) error {
+func (rr *Registry) Start(ctx context.Context, addr net.Addr) error {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
@@ -193,19 +193,18 @@ func (rr *Registry) Start(addr net.Addr) error {
 	}
 	rr.lease = etcdv3.NewLease(rr.client)
 
-	timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
-	res, err := rr.lease.Grant(timeout, int64(rr.LeaseDuration.Seconds()))
-	cancel()
+	rctx, cancel := context.WithTimeout(ctx, rr.Timeout)
+	defer cancel()
+	res, err := rr.lease.Grant(rctx, int64(rr.LeaseDuration.Seconds()))
 	if err != nil {
 		return err
 	}
 	rr.leaseID = res.ID
 
 	// Ensure that we're the owner of the address by taking an etcd lock
-	tctx, cancel := context.WithTimeout(context.TODO(), rr.LeaseDuration*2) // retry until Lease is up...
+	rctx, cancel = context.WithTimeout(ctx, 2*rr.LeaseDuration) // retry until Lease is up...
 	defer cancel()
-	err = rr.waitForAddress(tctx, address)
-	if err != nil {
+	if err := rr.waitForAddress(rctx, address); err != nil {
 		return err
 	}
 
@@ -226,15 +225,17 @@ func (rr *Registry) Start(addr net.Addr) error {
 		defer close(rr.exited)
 
 		// Track stats related to keep alive responses.
-		stats := &keepAliveStats{}
+		var stats keepAliveStats
 		defer func() {
-			rr.keepAliveStats = stats
+			rr.keepAliveStats = &stats
 		}()
 
 		for {
 			select {
 			case <-rr.done:
 				keepAliveCancel()
+				rr.logf("registry: %v: keep alive closed", rr.name)
+				return
 			case res, open := <-keepAlive:
 				if !open {
 					// When the keep alive closes, check
@@ -252,10 +253,7 @@ func (rr *Registry) Start(addr net.Addr) error {
 					panic(fmt.Sprintf("registry: %v: keep alive closed unexpectedly", rr.name))
 				}
 				rr.logf("registry: %v: keep alive responded with heartbeat TTL: %vs", rr.name, res.TTL)
-				// Testing hook.
-				if stats != nil {
-					stats.success++
-				}
+				stats.success++ // Testing hook
 			}
 		}
 	}()
@@ -311,9 +309,9 @@ func (rr *Registry) Stop() error {
 	// Then revoke the lease to cleanly remove
 	// all keys associated with this registry
 	// from etcd.
-	timeout, cancel := context.WithTimeout(context.Background(), rr.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), rr.Timeout)
 	defer cancel()
-	if _, err := rr.lease.Revoke(timeout, rr.leaseID); err != nil {
+	if _, err := rr.lease.Revoke(ctx, rr.leaseID); err != nil {
 		return err
 	}
 
