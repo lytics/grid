@@ -57,7 +57,9 @@ func TestQuery(t *testing.T) {
 		// Check for server as a peer.
 		var peers []*QueryEvent
 		retry.X(6, backoff, func() bool {
-			peers, err = client.Query(timeout, Peers)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			peers, err = client.Query(ctx, Peers)
 			t.Logf("peers: %v", peers)
 			return err != nil || len(peers) != i
 		})

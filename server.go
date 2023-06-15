@@ -179,13 +179,12 @@ func (s *Server) newMailbox(name, nsName string, size int) (*GRPCMailbox, error)
 
 		// Deregister the name.
 		var err error
-		retry.X(3, 3*time.Second,
-			func() bool {
-				timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-				err = s.registry.Deregister(timeout, nsName)
-				cancel()
-				return err != nil
-			})
+		retry.X(3, 3*time.Second, func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			defer cancel()
+			err = s.registry.Deregister(ctx, nsName)
+			return err != nil
+		})
 		// Ignore ErrNotOwner because most likely the previous owner panic'ed or exited badly.
 		// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
 		// in that case because it will take down more mailboxes and make it worse.
@@ -194,9 +193,9 @@ func (s *Server) newMailbox(name, nsName string, size int) (*GRPCMailbox, error)
 		}
 	}
 
-	timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-	err := s.registry.Register(timeout, nsName)
-	cancel()
+	ctx, cancel := context.WithTimeout(s.ctx, s.cfg.Timeout)
+	defer cancel()
+	err := s.registry.Register(ctx, nsName)
 	// Check if the error is a particular fatal error
 	// from etcd. Some errors have no recovery. See
 	// the list of all possible errors here:
@@ -254,7 +253,7 @@ func (s *Server) Name() string {
 // Serve the grid on the listener. The listener address type must be
 // net.TCPAddr, otherwise an error will be returned.
 func (s *Server) Serve(lis net.Listener) error {
-	if err := s.registry.Start(lis.Addr()); err != nil {
+	if err := s.registry.Start(s.ctx, lis.Addr()); err != nil {
 		return fmt.Errorf("starting registry: %w", err)
 	}
 
@@ -266,8 +265,8 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	// Register the namespace name, other peers can search
 	// for this to discover each other.
-	timeoutC, cancel := context.WithTimeout(s.ctx, s.cfg.Timeout)
-	err = s.registry.Register(timeoutC, nsName, s.cfg.Annotations...)
+	ctx, cancel := context.WithTimeout(s.ctx, s.cfg.Timeout)
+	err = s.registry.Register(ctx, nsName, s.cfg.Annotations...)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("registering: %w", err)
@@ -414,7 +413,7 @@ func (s *Server) runMailbox(mailbox Mailbox) {
 		case req := <-mailbox.C():
 			switch msg := req.Msg().(type) {
 			case *ActorStart:
-				err := s.startActorC(req.Context(), msg)
+				err := s.startActor(req.Context(), msg)
 				if err != nil {
 					err2 := req.Respond(err)
 					if err2 != nil {
@@ -455,13 +454,14 @@ func (s *Server) monitorLeader() {
 	startLeader := func() error {
 		var err error
 		for i := 0; i < 6; i++ {
-			select {
-			case <-s.ctx.Done():
-				return nil
-			default:
+			if err := s.ctx.Err(); err != nil {
+				return nil // cancel handled by caller
 			}
 			time.Sleep(1 * time.Second)
-			err = s.startActor(s.cfg.Timeout, &ActorStart{Name: "leader", Type: "leader"})
+
+			ctx, cancel := context.WithTimeout(s.ctx, s.cfg.Timeout)
+			defer cancel()
+			err = s.startActor(ctx, &ActorStart{Name: "leader", Type: "leader"})
 			if err != nil && strings.Contains(err.Error(), registry.ErrAlreadyRegistered.Error()) {
 				return nil
 			}
@@ -523,16 +523,7 @@ func (s *Server) putFinalErr(err error) {
 // startActor in the current process. This method does not communicate with another
 // system to choose where to run the actor. Calling this method will start the
 // actor on the current host in the current process.
-func (s *Server) startActor(timeout time.Duration, start *ActorStart) error {
-	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return s.startActorC(timeoutC, start)
-}
-
-// startActorC in the current process. This method does not communicate with another
-// system to choose where to run the actor. Calling this method will start the
-// actor on the current host in the current process.
-func (s *Server) startActorC(c context.Context, start *ActorStart) error {
+func (s *Server) startActor(ctx context.Context, start *ActorStart) error {
 	if !isNameValid(start.Type) {
 		return fmt.Errorf("%w: type=%s", ErrInvalidActorType, start.Type)
 	}
@@ -561,9 +552,9 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 	// Register the actor. This acts as a distributed mutex to
 	// prevent an actor from starting twice on one system or
 	// many systems.
-	timeout, cancel := context.WithTimeout(c, s.cfg.Timeout)
+	rctx, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
 	defer cancel()
-	if err := s.registry.Register(timeout, nsName); err != nil {
+	if err := s.registry.Register(rctx, nsName); err != nil {
 		// Grid tries to start up leaders continuously so we need to ignore calling deregister
 		// otherwise we will deregister a leader out from under itself starting multiple leaders
 		if !(start.Type == "leader" && strings.Contains(err.Error(), registry.ErrAlreadyRegistered.Error())) {
@@ -604,13 +595,12 @@ func (s *Server) startActorC(c context.Context, start *ActorStart) error {
 
 func (s *Server) deregisterActor(nsName string) {
 	var err error
-	retry.X(3, 3*time.Second,
-		func() bool {
-			timeout, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
-			err = s.registry.Deregister(timeout, nsName)
-			cancel()
-			return err != nil
-		})
+	retry.X(3, 3*time.Second, func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+		defer cancel()
+		err = s.registry.Deregister(ctx, nsName)
+		return err != nil
+	})
 	// Ignore ErrNotOwner because most likely the previous owner panic'ed or exited badly.
 	// So we'll ignore the error and let the mailbox creator retry later.  We don't want to panic
 	// in that case because it will take down more mailboxes and make it worse.

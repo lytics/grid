@@ -24,18 +24,20 @@ type LeaderActor struct {
 
 // Act checks for peers, ie: other processes running this code,
 // in the same namespace and start the worker actor on one of them.
-func (a *LeaderActor) Act(c context.Context) {
+func (a *LeaderActor) Act(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	existing := make(map[string]bool)
 	for {
 		select {
-		case <-c.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			// Ask for current peers.
-			peers, err := a.client.Query(timeout, grid.Peers)
+			ctx, cancel := context.WithTimeout(ctx, timeout)
+			peers, err := a.client.Query(ctx, grid.Peers)
+			cancel()
 			successOrDie(err)
 
 			// Check for new peers.
@@ -50,7 +52,9 @@ func (a *LeaderActor) Act(c context.Context) {
 				start.Type = "worker"
 
 				// On new peers start the worker.
-				_, err := a.client.Request(timeout, peer.Name(), start)
+				ctx, cancel := context.WithTimeout(ctx, timeout)
+				_, err := a.client.Request(ctx, peer.Name(), start)
+				cancel()
 				successOrDie(err)
 			}
 		}

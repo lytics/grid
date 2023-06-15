@@ -226,18 +226,10 @@ func (c *Client) QueryWatch(ctx context.Context, filter EntityType) ([]*QueryEve
 	return current, queryEvents, nil
 }
 
-// Query in this client's namespace. The filter can be any one of
-// Peers, Actors, or Mailboxes.
-func (c *Client) Query(timeout time.Duration, filter EntityType) ([]*QueryEvent, error) {
-	timeoutC, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return c.QueryC(timeoutC, filter)
-}
-
-// QueryC (query) in this client's namespace. The filter can be any
+// Query (query) in this client's namespace. The filter can be any
 // one of Peers, Actors, or Mailboxes. The context can be used to
 // control cancelation or timeouts.
-func (c *Client) QueryC(ctx context.Context, filter EntityType) ([]*QueryEvent, error) {
+func (c *Client) Query(ctx context.Context, filter EntityType) ([]*QueryEvent, error) {
 	nsPrefix, err := namespacePrefix(filter, c.cfg.Namespace)
 	if err != nil {
 		return nil, err
