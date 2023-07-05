@@ -36,35 +36,39 @@ type LeaderActor struct {
 
 // Act checks for peers, ie: other processes running this code,
 // in the same namespace and start the worker actor on one of them.
-func (a *LeaderActor) Act(c context.Context) {
+func (a *LeaderActor) Act(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	fmt.Println("Starting Leader Actor")
 
-	existing := make(map[string]bool)
+	existing := make(map[string]struct{})
 	for {
 		select {
-		case <-c.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			// Ask for current peers.
-			peers, err := a.client.Query(timeout, grid.Peers)
+			ctx, cancel := context.WithTimeout(ctx, timeout)
+			peers, err := a.client.Query(ctx, grid.Peers)
+			cancel()
 			successOrDie(err)
 
 			// Check for new peers.
 			for _, peer := range peers {
-				if existing[peer.Name()] {
+				if _, ok := existing[peer.Name()]; ok {
 					continue
 				}
 
 				// Define a worker.
-				existing[peer.Name()] = true
+				existing[peer.Name()] = struct{}{}
 				start := grid.NewActorStart("worker-%d", len(existing))
 				start.Type = "worker"
 
 				// On new peers start the worker.
-				_, err := a.client.Request(timeout, peer.Name(), start)
+				ctx, cancel := context.WithTimeout(ctx, timeout)
+				_, err := a.client.Request(ctx, peer.Name(), start)
+				cancel()
 				successOrDie(err)
 			}
 		}
@@ -210,7 +214,9 @@ func (m *apiServer) loadWorkers() {
 				return
 			}
 			// Ask for current peers.
-			peers, err := m.c.Query(timeout, grid.Peers)
+			ctx, cancel := context.WithTimeout(m.ctx, timeout)
+			peers, err := m.c.Query(ctx, grid.Peers)
+			cancel()
 			successOrDie(err)
 			existing := make(map[string]bool)
 			m.mu.Lock()
@@ -259,7 +265,9 @@ func (m *apiServer) Run() {
 			worker = m.ConsistentWorker(user)
 		}
 
-		res, err := m.c.Request(timeout, worker, &Event{User: user})
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		res, err := m.c.Request(ctx, worker, &Event{User: user})
 		fmt.Printf("request user: %q   response: %#v  err=%v\n", user, res, err)
 		if er, ok := res.(*EventResponse); ok {
 			fmt.Fprintf(w, "Response %s\n\n", er.Id)

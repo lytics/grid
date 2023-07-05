@@ -32,7 +32,7 @@ func BenchmarkClientServerRoundTripBigMapBigStrMsg(b *testing.B) {
 func benchRunner(b *testing.B, client *grid.Client, evtMsg *Event) {
 	for n := 0; n < b.N; n++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		response, err := client.RequestC(ctx, mailboxName, evtMsg)
+		response, err := client.Request(ctx, mailboxName, evtMsg)
 		cancel()
 		if err != nil {
 			b.Fatal(err)
