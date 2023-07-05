@@ -51,14 +51,18 @@ func (a *LeaderActor) Act(c context.Context) {
 
 				// On new peers start the worker.
 				_, err := a.client.Request(timeout, peer.Name(), start)
-				successOrDie(err)
+				if err != nil {
+					panic("leader 2")
+				}
 			}
 		}
 	}
 }
 
 // WorkerActor started by the leader.
-type WorkerActor struct{}
+type WorkerActor struct {
+	Name string
+}
 
 // Act says hello and then waits for the exit signal.
 func (a *WorkerActor) Act(ctx context.Context) {
