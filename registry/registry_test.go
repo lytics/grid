@@ -191,12 +191,13 @@ func TestRegister(t *testing.T) {
 
 	ctx, cancel := timeoutContext()
 	defer cancel()
-	err := r.Register(ctx, "test-registration")
+	key := "test-registration" + fmt.Sprint(rand.Intn(1000))
+	err := r.Register(ctx, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	res, err := client.Get(ctx, "test-registration")
+	res, err := client.Get(ctx, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,14 +221,15 @@ func TestDeregistration(t *testing.T) {
 
 	ctx, cancel := timeoutContext()
 	defer cancel()
-	err := r.Register(ctx, "test-registration")
+	key := "test-registration" + fmt.Sprint(rand.Intn(1000))
+	err := r.Register(ctx, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ctx, cancel = timeoutContext()
 	defer cancel()
-	res, err := client.Get(ctx, "test-registration")
+	res, err := client.Get(ctx, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,14 +355,16 @@ func TestFindRegistrations(t *testing.T) {
 
 	ctx, cancel := timeoutContext()
 	defer cancel()
-	err := r.Register(ctx, "test-registration-a")
+	key1 := "test-registration-a" + fmt.Sprint(rand.Intn(1000))
+	err := r.Register(ctx, key1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ctx, cancel = timeoutContext()
 	defer cancel()
-	err = r.Register(ctx, "test-registration-aa")
+	key2 := "test-registration-a" + fmt.Sprint(rand.Intn(1000))
+	err = r.Register(ctx, key2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,8 +380,8 @@ func TestFindRegistrations(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"test-registration-a":  true,
-		"test-registration-aa": true,
+		key1: true,
+		key2: true,
 	}
 	for _, reg := range regs {
 		delete(expected, reg.Key)
