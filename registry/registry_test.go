@@ -392,7 +392,6 @@ func TestFindRegistrations(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	t.Parallel()
 	_, r, addr := bootstrap(t, dontStart)
 
 	// Change the minimum for sake of testing quickly.
@@ -418,7 +417,6 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestWatch(t *testing.T) {
-	t.Parallel()
 	_, r, addr := bootstrap(t, dontStart)
 
 	// Change the minimum for sake of testing quickly.
