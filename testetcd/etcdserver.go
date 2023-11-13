@@ -3,72 +3,33 @@ package testetcd
 import (
 	"context"
 	"errors"
-	"fmt"
-	"math/rand"
-	"net/url"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/server/v3/embed"
 )
 
 type Embedded struct {
-	Cfg  *embed.Config
-	Etcd *embed.Etcd
+	endpoints []string
 }
 
 func NewEmbedded(t testing.TB) *Embedded {
-	ecfg := embed.NewConfig()
-	ecfg.Logger = "zap"
-	ecfg.LogLevel = "error"
-	ecfg.Dir = t.TempDir()
-
-	clientPort := 1024 + rand.Intn(30000)
-	peerPort := 1024 + rand.Intn(30000)
-
-	ecfg.InitialCluster = fmt.Sprintf("default=http://localhost:%v", peerPort)
-
-	peerURL, err := url.Parse(fmt.Sprintf("http://localhost:%v", peerPort))
-	if err != nil {
-		t.Fatalf("parsing peerURL: %v", err)
+	endpointsStr := os.Getenv("GRID_ETCD_ENDPOINTS")
+	if endpointsStr == "" {
+		t.Log("GRID_ETCD_ENDPOINTS is not set")
+		endpointsStr = "http://127.0.0.1:2379"
 	}
-	ecfg.APUrls = []url.URL{*peerURL}
-	ecfg.LPUrls = []url.URL{*peerURL}
-
-	clientURL, err := url.Parse(fmt.Sprintf("http://localhost:%v", clientPort))
-	if err != nil {
-		t.Fatalf("creating clientURL: %v", err)
-	}
-	ecfg.ACUrls = []url.URL{*clientURL}
-	ecfg.LCUrls = []url.URL{*clientURL}
-
-	e, err := embed.StartEtcd(ecfg)
-	if err != nil {
-		t.Fatalf("starting embedded etcd: %v", err)
-	}
-	t.Cleanup(e.Close)
-
-	select {
-	case <-e.Server.ReadyNotify():
-		t.Logf("Started embedded etcd on url: %v\n", clientURL)
-	case <-time.After(10 * time.Second):
-		t.Fatal("Embedded etcd server took too long to start!")
-	}
-
+	endpoints := strings.Split(endpointsStr, ",")
 	return &Embedded{
-		Cfg:  ecfg,
-		Etcd: e,
+		endpoints: endpoints,
 	}
 }
 
 func (e *Embedded) Endpoints() []string {
-	ep := make([]string, len(e.Cfg.ACUrls))
-	for i, u := range e.Cfg.ACUrls {
-		ep[i] = u.String()
-	}
-	return ep
+	return e.endpoints
 }
 
 func StartAndConnect(t testing.TB, endpoints []string) *clientv3.Client {
