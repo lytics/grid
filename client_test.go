@@ -84,10 +84,7 @@ func (a *echoActor) Act(c context.Context) {
 	}
 }
 func TestNewClient(t *testing.T) {
-	t.Parallel()
-	embed := testetcd.NewEmbedded(t)
-	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
-
+	etcd := testetcd.StartAndConnect(t)
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +96,6 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClientWithNilEtcd(t *testing.T) {
-	t.Parallel()
 	_, err := NewClient(nil, ClientCfg{Namespace: newNamespace(t)})
 	if err == nil {
 		t.Fatal("expected error")
@@ -107,12 +103,7 @@ func TestNewClientWithNilEtcd(t *testing.T) {
 }
 
 func TestClientClose(t *testing.T) {
-	t.Parallel()
-	// Start etcd.
-	embed := testetcd.NewEmbedded(t)
-	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
-
-	// Create client.
+	etcd := testetcd.StartAndConnect(t)
 	client, err := NewClient(etcd, ClientCfg{Namespace: newNamespace(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +120,6 @@ func TestClientClose(t *testing.T) {
 }
 
 func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
-	t.Parallel()
 
 	// Bootstrap.
 	_, _, client := bootstrapClientTest(t)
@@ -155,7 +145,6 @@ func TestClientRequestWithUnregisteredMailbox(t *testing.T) {
 }
 
 func TestClientRequestWithUnknownMailbox(t *testing.T) {
-	t.Parallel()
 	const timeout = 3 * time.Second
 
 	// Bootstrap.
@@ -194,7 +183,6 @@ func TestClientRequestWithUnknownMailbox(t *testing.T) {
 }
 
 func TestClientBroadcast(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	const timeout = 3 * time.Second
 	_, server, client := bootstrapClientTest(t)
@@ -325,7 +313,6 @@ func TestClientBroadcast(t *testing.T) {
 }
 
 func TestClientWithRunningReceiver(t *testing.T) {
-	t.Parallel()
 	const timeout = 3 * time.Second
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
@@ -396,7 +383,6 @@ func TestClientWithRunningReceiver(t *testing.T) {
 }
 
 func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
-	t.Parallel()
 	const timeout = 3 * time.Second
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
@@ -477,7 +463,6 @@ func TestClientWithErrConnectionIsUnregistered(t *testing.T) {
 }
 
 func TestClientWithBusyReceiver(t *testing.T) {
-	t.Parallel()
 	const timeout = 3 * time.Second
 	expected := &EchoMsg{Msg: "testing 1, 2, 3"}
 
@@ -536,7 +521,6 @@ func TestClientWithBusyReceiver(t *testing.T) {
 }
 
 func TestClientStats(t *testing.T) {
-	t.Parallel()
 	cs := newClientStats()
 	cs.Inc(numGetWireClient)
 	cs.Inc(numDeleteAddress)
@@ -555,7 +539,6 @@ func TestClientStats(t *testing.T) {
 }
 
 func TestNilClientStats(t *testing.T) {
-	t.Parallel()
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatal("expected no panic")
@@ -567,17 +550,10 @@ func TestNilClientStats(t *testing.T) {
 
 func bootstrapClientTest(t testing.TB) (*clientv3.Client, *Server, *Client) {
 	t.Helper()
-	// Namespace for test.
 	namespace := newNamespace(t)
-
-	// Start etcd.
-	embed := testetcd.NewEmbedded(t)
-	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
-
-	// Logger for actors.
+	etcd := testetcd.StartAndConnect(t)
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags)
 
-	// Create the server.
 	server, err := NewServer(etcd, ServerCfg{Namespace: namespace, Logger: logger})
 	require.NoError(t, err)
 

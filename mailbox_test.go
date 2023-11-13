@@ -14,14 +14,12 @@ import (
 )
 
 func TestNewMailboxRegistry(t *testing.T) {
-	t.Parallel()
 	m := newMailboxRegistry()
 	require.NotZero(t, m)
 	assert.NotZero(t, m.r)
 }
 
 func TestMailboxRegistryGetSetDeleteSize(t *testing.T) {
-	t.Parallel()
 
 	const n1 = "n1"
 	const n2 = "n2"
@@ -98,12 +96,10 @@ func TestMailboxRegistryGetSetDeleteSize(t *testing.T) {
 }
 
 func TestMailboxRegistryR(t *testing.T) {
-	t.Parallel()
 
 	for _, n := range []int{0, 1, 2} {
 		n := n
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
-			t.Parallel()
 
 			r := newMailboxRegistry()
 			ms := r.R()
@@ -133,7 +129,6 @@ func TestMailboxRegistryR(t *testing.T) {
 // is safe to use concurrently. It relies on the -race test flag
 // to detect races: the test itself has no assertions.
 func TestMailboxRegistryConcurrent(t *testing.T) {
-	t.Parallel()
 
 	// NOTE (2022-01) (mh): Only doing one combo for sanity.
 	// Could test performance/correctness at higher contention.
@@ -149,7 +144,6 @@ func TestMailboxRegistryConcurrent(t *testing.T) {
 		for _, numKeys := range numKeysSet {
 			numKeys := numKeys
 			t.Run(fmt.Sprintf("%v-%v", numWorkers, numKeys), func(t *testing.T) {
-				t.Parallel()
 
 				r := newMailboxRegistry()
 
@@ -194,9 +188,7 @@ func TestMailboxRegistryConcurrent(t *testing.T) {
 }
 
 func TestMailboxClose(t *testing.T) {
-	t.Parallel()
-	embed := testetcd.NewEmbedded(t)
-	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
+	etcd := testetcd.StartAndConnect(t)
 
 	s, err := NewServer(etcd, ServerCfg{Namespace: newNamespace(t)})
 	require.NoError(t, err)

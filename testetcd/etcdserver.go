@@ -12,36 +12,23 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-type Embedded struct {
-	endpoints []string
-}
+func StartAndConnect(t testing.TB) *clientv3.Client {
+	t.Helper()
 
-func NewEmbedded(t testing.TB) *Embedded {
-	endpointsStr := os.Getenv("GRID_ETCD_ENDPOINTS")
-	if endpointsStr == "" {
+	endpoints := os.Getenv("GRID_ETCD_ENDPOINTS")
+	if endpoints == "" {
 		t.Log("GRID_ETCD_ENDPOINTS is not set")
-		endpointsStr = "http://127.0.0.1:2379"
+		endpoints = "http://127.0.0.1:2379"
 	}
-	endpoints := strings.Split(endpointsStr, ",")
-	return &Embedded{
-		endpoints: endpoints,
-	}
-}
 
-func (e *Embedded) Endpoints() []string {
-	return e.endpoints
-}
-
-func StartAndConnect(t testing.TB, endpoints []string) *clientv3.Client {
-	cfg := clientv3.Config{
-		Endpoints:   endpoints,
+	etcd, err := clientv3.New(clientv3.Config{
+		Endpoints:   strings.Split(endpoints, ","),
 		DialTimeout: time.Second,
-	}
-	etcd, err := clientv3.New(cfg)
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		if err := etcd.Close(); err != nil && !errors.Is(err, context.Canceled) {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	})
 	return etcd

@@ -10,7 +10,6 @@ import (
 )
 
 func TestClientCheck(t *testing.T) {
-	t.Parallel()
 	_, server, client := bootstrapClientTest(t)
 
 	peer := server.registry.Registry()

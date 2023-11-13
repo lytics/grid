@@ -13,7 +13,6 @@ import (
 
 	"github.com/lytics/grid/v3"
 	"github.com/lytics/grid/v3/testetcd"
-	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 const mailboxName = "pingpong-leader"
@@ -73,21 +72,7 @@ func runPingPongGrid(t testing.TB) (*grid.Server, *grid.Client) {
 	namespace := fmt.Sprintf("bench-pingpong-namespace-%d", rand.Int63())
 	logger := log.New(os.Stderr, namespace+": ", log.LstdFlags|log.Lshortfile)
 
-	embed := testetcd.NewEmbedded(t)
-
-	cfg := clientv3.Config{
-		Endpoints:   embed.Endpoints(),
-		DialTimeout: time.Second,
-	}
-	etcd, err := clientv3.New(cfg)
-	if err != nil {
-		t.Fatalf("creating etcd client: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := etcd.Close(); err != nil {
-			t.Fatalf("closing etcd client: %v", err)
-		}
-	})
+	etcd := testetcd.StartAndConnect(t)
 
 	server, err := grid.NewServer(etcd, grid.ServerCfg{Namespace: namespace})
 	if err != nil {

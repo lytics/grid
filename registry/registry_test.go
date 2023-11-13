@@ -21,7 +21,6 @@ const (
 )
 
 func TestInitialLeaseID(t *testing.T) {
-	t.Parallel()
 	_, r, _ := bootstrap(t, dontStart)
 
 	if r.leaseID != -1 {
@@ -30,7 +29,6 @@ func TestInitialLeaseID(t *testing.T) {
 }
 
 func TestStartStop(t *testing.T) {
-	t.Parallel()
 	_, r, _ := bootstrap(t, start)
 
 	err := r.Stop()
@@ -45,7 +43,6 @@ func TestStartStop(t *testing.T) {
 }
 
 func TestStartStopWaitForLeaseToExpireBetween(t *testing.T) {
-	t.Parallel()
 	client, r, addr := bootstrap(t, start)
 
 	// this should remove the lease which should clean up the registry lock on the address
@@ -87,7 +84,6 @@ func TestStartStopWaitForLeaseToExpireBetween(t *testing.T) {
 }
 
 func TestWaitForLeaseThatNeverExpires(t *testing.T) {
-	t.Parallel()
 
 	client, _, addr := bootstrap(t, dontStart)
 
@@ -133,7 +129,6 @@ func TestWaitForLeaseThatNeverExpires(t *testing.T) {
 }
 
 func TestWaitForLeaseThatDoesExpires(t *testing.T) {
-	t.Parallel()
 
 	start := false
 	client, _, addr := bootstrap(t, start)
@@ -186,7 +181,6 @@ func TestWaitForLeaseThatDoesExpires(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
-	t.Parallel()
 	client, r, _ := bootstrap(t, start)
 
 	ctx, cancel := timeoutContext()
@@ -216,7 +210,6 @@ func TestRegister(t *testing.T) {
 }
 
 func TestDeregistration(t *testing.T) {
-	t.Parallel()
 	client, r, _ := bootstrap(t, start)
 
 	ctx, cancel := timeoutContext()
@@ -265,7 +258,6 @@ func TestDeregistration(t *testing.T) {
 }
 
 func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
-	t.Parallel()
 	_, r, _ := bootstrap(t, dontStart)
 
 	ctx, cancel := timeoutContext()
@@ -284,7 +276,6 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 }
 
 func TestRegisterTwiceNotAllowed(t *testing.T) {
-	t.Parallel()
 	_, r, _ := bootstrap(t, start)
 
 	for i := 0; i < 2; i++ {
@@ -298,7 +289,6 @@ func TestRegisterTwiceNotAllowed(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	t.Parallel()
 	client, r, _ := bootstrap(t, start)
 
 	ctx, cancel := timeoutContext()
@@ -321,7 +311,6 @@ func TestStop(t *testing.T) {
 }
 
 func TestFindRegistration(t *testing.T) {
-	t.Parallel()
 	_, r, _ := bootstrap(t, start)
 
 	ctx, cancel := timeoutContext()
@@ -350,7 +339,6 @@ func TestFindRegistration(t *testing.T) {
 }
 
 func TestFindRegistrations(t *testing.T) {
-	t.Parallel()
 	_, r, _ := bootstrap(t, start)
 
 	ctx, cancel := timeoutContext()
@@ -392,7 +380,6 @@ func TestFindRegistrations(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	t.Parallel()
 	_, r, addr := bootstrap(t, dontStart)
 
 	// Change the minimum for sake of testing quickly.
@@ -418,7 +405,6 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestWatch(t *testing.T) {
-	t.Parallel()
 	_, r, addr := bootstrap(t, dontStart)
 
 	// Change the minimum for sake of testing quickly.
@@ -530,7 +516,6 @@ func TestWatch(t *testing.T) {
 }
 
 func TestWatchEventString(t *testing.T) {
-	t.Parallel()
 	we := &WatchEvent{
 		Key:  "foo",
 		Type: Create,
@@ -565,8 +550,7 @@ func TestWatchEventString(t *testing.T) {
 
 func bootstrap(t testing.TB, shouldStart bool) (*etcdv3.Client, *Registry, *net.TCPAddr) {
 	t.Helper()
-	embed := testetcd.NewEmbedded(t)
-	client := testetcd.StartAndConnect(t, embed.Endpoints())
+	client := testetcd.StartAndConnect(t)
 
 	addr := &net.TCPAddr{
 		IP:   []byte("localhost"),

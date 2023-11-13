@@ -11,7 +11,6 @@ import (
 )
 
 func TestQuery(t *testing.T) {
-	t.Parallel()
 	const (
 		nrPeers = 2
 		backoff = 10 * time.Second
@@ -19,9 +18,7 @@ func TestQuery(t *testing.T) {
 	)
 
 	namespace := newNamespace(t)
-
-	embed := testetcd.NewEmbedded(t)
-	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
+	etcd := testetcd.StartAndConnect(t)
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
 	if err != nil {
@@ -73,7 +70,6 @@ func TestQuery(t *testing.T) {
 }
 
 func TestQueryWatch(t *testing.T) {
-	t.Parallel()
 	const (
 		nrPeers = 2
 		backoff = 10 * time.Second
@@ -81,8 +77,7 @@ func TestQueryWatch(t *testing.T) {
 	)
 
 	namespace := newNamespace(t)
-	embed := testetcd.NewEmbedded(t)
-	etcd := testetcd.StartAndConnect(t, embed.Endpoints())
+	etcd := testetcd.StartAndConnect(t)
 
 	client, err := NewClient(etcd, ClientCfg{Namespace: namespace})
 	if err != nil {
