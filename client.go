@@ -278,8 +278,7 @@ func (c *Client) getCCLocked(ctx context.Context, nsReceiver string) (*clientAnd
 					Backoff:           grpcBackoff.Config{MaxDelay: 20 * time.Second},
 					MinConnectTimeout: 1 * time.Second,
 				}),
-				grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
-				grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()),
+				grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 			)
 			if err != nil {
 				return nil, noID, err
