@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -32,7 +33,7 @@ import (
 //
 //	Register(MyMsg{})    // Correct
 //	Register(&MyMsg{})   // Incorrect
-func Register(v interface{}) error {
+func Register(v any) error {
 	return codec.Register(v)
 }
 
@@ -152,7 +153,7 @@ func (c *Client) Close() error {
 }
 
 // Request a response for the given message. The context can be used to control cancelation or timeouts.
-func (c *Client) Request(ctx context.Context, receiver string, msg interface{}) (interface{}, error) {
+func (c *Client) Request(ctx context.Context, receiver string, msg any) (any, error) {
 	if c == nil {
 		return nil, ErrNilClient
 	}
@@ -382,7 +383,7 @@ func (c *Client) handleGRPCErrs(ctx context.Context, err error, nsReceiver strin
 	return false
 }
 
-func (c *Client) logf(format string, v ...interface{}) {
+func (c *Client) logf(format string, v ...any) {
 	if c.cfg.Logger != nil {
 		c.cfg.Logger.Printf(format, v...)
 	}
@@ -390,7 +391,7 @@ func (c *Client) logf(format string, v ...interface{}) {
 
 // BroadcastC (broadcast) a message to all members in a Group. The context can be used to control
 // cancellations or timeouts
-func (c *Client) Broadcast(ctx context.Context, g *Group, msg interface{}) (BroadcastResult, error) {
+func (c *Client) Broadcast(ctx context.Context, g *Group, msg any) (BroadcastResult, error) {
 	if c == nil {
 		return nil, ErrNilClient
 	}
@@ -403,7 +404,7 @@ func (c *Client) Broadcast(ctx context.Context, g *Group, msg interface{}) (Broa
 	return c.broadcast(cont, cancel, g, msg)
 }
 
-func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Group, msg interface{}) (BroadcastResult, error) {
+func (c *Client) broadcast(ctx context.Context, cancel context.CancelFunc, g *Group, msg any) (BroadcastResult, error) {
 	res := make(BroadcastResult)
 	receivers := g.Members()
 
@@ -495,15 +496,13 @@ type BroadcastResult map[string]*Result
 // Result stores the result of a Request
 type Result struct {
 	Err error
-	Val interface{}
+	Val any
 }
 
 // Add combines two BroadcastResults, by overwriting previous
 // results if they exist
 func (b BroadcastResult) Add(other BroadcastResult) {
-	for k, v := range other {
-		b[k] = v
-	}
+	maps.Copy(b, other)
 }
 
 // statName of interesting statistic to track

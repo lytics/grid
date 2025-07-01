@@ -21,7 +21,7 @@ type multi struct {
 
 func NewMultiRing(name string, members, totalRings, reservedRings int) MultiRing {
 	rings := make([]Ring, totalRings)
-	for i := 0; i < totalRings; i++ {
+	for i := range totalRings {
 		ringName := fmt.Sprintf("%v-%v", name, i)
 		r := New(ringName, members)
 		r.(*ring).actortype = name

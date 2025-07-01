@@ -217,7 +217,7 @@ func TestClientBroadcast(t *testing.T) {
 
 	// start up the actors
 	const numActors = 2
-	for i := 0; i < numActors; i++ {
+	for i := range numActors {
 		startEchoActor(fmt.Sprintf("echo-%d", i))
 	}
 
@@ -232,7 +232,7 @@ func TestClientBroadcast(t *testing.T) {
 		} else if len(res) != numActors {
 			t.Fatal("expected response")
 		}
-		for i := 0; i < numActors; i++ {
+		for i := range numActors {
 			actor := fmt.Sprintf("echo-%d", i)
 			r, ok := res[actor]
 			if !ok {

@@ -56,7 +56,7 @@ type Server struct {
 }
 
 type grpcServer interface {
-	RegisterService(desc *grpc.ServiceDesc, impl interface{})
+	RegisterService(desc *grpc.ServiceDesc, impl any)
 	Serve(lis net.Listener) error
 	Stop()
 }
@@ -452,7 +452,7 @@ func (s *Server) monitorFatalErrors() {
 func (s *Server) monitorLeader() {
 	startLeader := func() error {
 		var err error
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			if err := s.ctx.Err(); err != nil {
 				return nil // cancel handled by caller
 			}
@@ -608,7 +608,7 @@ func (s *Server) deregisterActor(nsName string) {
 	}
 }
 
-func (s *Server) logf(format string, v ...interface{}) {
+func (s *Server) logf(format string, v ...any) {
 	if s.cfg.Logger != nil {
 		s.cfg.Logger.Printf(format, v...)
 	}

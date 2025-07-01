@@ -98,7 +98,6 @@ func TestMailboxRegistryGetSetDeleteSize(t *testing.T) {
 func TestMailboxRegistryR(t *testing.T) {
 
 	for _, n := range []int{0, 1, 2} {
-		n := n
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 
 			r := newMailboxRegistry()
@@ -107,7 +106,7 @@ func TestMailboxRegistryR(t *testing.T) {
 			assert.Empty(t, ms)
 
 			msl := make([]*GRPCMailbox, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				name := strconv.Itoa(i)
 				m := GRPCMailbox{name: name}
 				msl[i] = &m
@@ -140,15 +139,13 @@ func TestMailboxRegistryConcurrent(t *testing.T) {
 	numKeysSet := []int{1}
 
 	for _, numWorkers := range numWorkersSet {
-		numWorkers := numWorkers
 		for _, numKeys := range numKeysSet {
-			numKeys := numKeys
 			t.Run(fmt.Sprintf("%v-%v", numWorkers, numKeys), func(t *testing.T) {
 
 				r := newMailboxRegistry()
 
 				var wg sync.WaitGroup
-				for i := 0; i < numKeys; i++ {
+				for i := range numKeys {
 					name := strconv.Itoa(i)
 
 					// Add methods you want to test here
@@ -169,10 +166,9 @@ func TestMailboxRegistryConcurrent(t *testing.T) {
 						},
 					}
 
-					for j := 0; j < numWorkers; j++ {
+					for range numWorkers {
 						wg.Add(len(ops))
 						for _, op := range ops {
-							op := op
 							go func() {
 								defer wg.Done()
 								op()
