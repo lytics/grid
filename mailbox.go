@@ -2,6 +2,7 @@ package grid
 
 import (
 	"errors"
+	"maps"
 	"sync"
 )
 
@@ -63,9 +64,7 @@ func (r *mailboxRegistry) R() map[string]*GRPCMailbox {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make(map[string]*GRPCMailbox, len(r.r))
-	for k, v := range r.r {
-		out[k] = v
-	}
+	maps.Copy(out, r.r)
 	return out
 }
 

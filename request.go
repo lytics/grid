@@ -21,15 +21,15 @@ var (
 // Request which must receive an ack or response.
 type Request interface {
 	Context() context.Context
-	Msg() interface{}
+	Msg() any
 	Ack() error
-	Respond(msg interface{}) error
+	Respond(msg any) error
 }
 
 // newRequest state for use in the server. This actually converts
 // between the "context" and "golang.org/x/net/context" types of
 // Context so that method signatures are satisfied.
-func newRequest(ctx context.Context, msg interface{}) *request {
+func newRequest(ctx context.Context, msg any) *request {
 	return &request{
 		ctx:      ctx,
 		msg:      msg,
@@ -40,7 +40,7 @@ func newRequest(ctx context.Context, msg interface{}) *request {
 
 type request struct {
 	mu       sync.Mutex
-	msg      interface{}
+	msg      any
 	ctx      context.Context
 	failure  chan error
 	response chan *Delivery
@@ -53,7 +53,7 @@ func (req *request) Context() context.Context {
 }
 
 // Msg of the request.
-func (req *request) Msg() interface{} {
+func (req *request) Msg() any {
 	return req.msg
 }
 
@@ -64,7 +64,7 @@ func (req *request) Ack() error {
 }
 
 // Respond to request with a message.
-func (req *request) Respond(msg interface{}) error {
+func (req *request) Respond(msg any) error {
 	req.mu.Lock()
 	defer req.mu.Unlock()
 

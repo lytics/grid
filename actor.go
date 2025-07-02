@@ -24,15 +24,14 @@ type Actor interface {
 // to start, its type will be equal to its name
 // unless its changed:
 //
-//     start := NewActorStart("worker")
+//	start := NewActorStart("worker")
 //
 // Format names can also be used for more complicated
 // names, just remember to override the type:
 //
-//     start := NewActorStart("worker-%d-group-%d", i, j)
-//     start.Type = "worker"
-//
-func NewActorStart(name string, v ...interface{}) *ActorStart {
+//	start := NewActorStart("worker-%d-group-%d", i, j)
+//	start.Type = "worker"
+func NewActorStart(name string, v ...any) *ActorStart {
 	fullName := name
 	if len(v) > 0 {
 		fullName = fmt.Sprintf(name, v...)

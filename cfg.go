@@ -8,7 +8,7 @@ import (
 // Logger hides the logging function Printf behind a simple
 // interface so libraries such as logrus can be used.
 type Logger interface {
-	Printf(string, ...interface{})
+	Printf(string, ...any)
 }
 
 // ClientCfg where the only required argument is Namespace,

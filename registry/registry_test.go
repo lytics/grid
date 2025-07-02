@@ -278,7 +278,7 @@ func TestRegisterDeregisterWhileNotStarted(t *testing.T) {
 func TestRegisterTwiceNotAllowed(t *testing.T) {
 	_, r, _ := bootstrap(t, start)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		ctx, cancel := timeoutContext()
 		defer cancel()
 		err := r.Register(ctx, "test-registration-twice-b")

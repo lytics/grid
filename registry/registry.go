@@ -19,7 +19,7 @@ import (
 // interface so libraries such as logrus can be used.
 // Copied from package grid to avoid interndependencies.
 type Logger interface {
-	Printf(string, ...interface{})
+	Printf(string, ...any)
 }
 
 var (
@@ -543,7 +543,7 @@ func (rr *Registry) Deregister(c context.Context, key string) error {
 	return nil
 }
 
-func (rr *Registry) logf(format string, v ...interface{}) {
+func (rr *Registry) logf(format string, v ...any) {
 	if rr.Logger != nil {
 		rr.Logger.Printf(format, v...)
 	}

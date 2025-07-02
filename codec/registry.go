@@ -22,12 +22,12 @@ var (
 
 var (
 	mu       = &sync.RWMutex{}
-	registry = map[string]interface{}{}
+	registry = map[string]any{}
 )
 
 // Register a type for marshalling and unmarshalling.
 // The type must currently implement proto.Message.
-func Register(v interface{}) error {
+func Register(v any) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -45,9 +45,9 @@ func Register(v interface{}) error {
 	name := TypeName(v)
 	registry[name] = v
 	// TODO(aj) Temporary migration solution for go module upgrade
-	if strings.HasPrefix(name, "github.com/lytics/lio/vendor/") {
+	if after, ok0 := strings.CutPrefix(name, "github.com/lytics/lio/vendor/"); ok0 {
 		// If we're the pre go.mod, register the other namespace
-		otherName := strings.TrimPrefix(name, "github.com/lytics/lio/vendor/")
+		otherName := after
 		registry[otherName] = v
 	} else {
 		// If we're using go.mod, register the old namespace
@@ -59,7 +59,7 @@ func Register(v interface{}) error {
 
 // Marshal the value into bytes. The function returns
 // the type name, the bytes, or an error.
-func Marshal(v interface{}) (string, []byte, error) {
+func Marshal(v any) (string, []byte, error) {
 	mu.RLock()
 	defer mu.RUnlock()
 
@@ -78,7 +78,7 @@ func Marshal(v interface{}) (string, []byte, error) {
 
 // Unmarshal the bytes into a value whos type is given,
 // or return an error.
-func Unmarshal(buf []byte, name string) (interface{}, error) {
+func Unmarshal(buf []byte, name string) (any, error) {
 	mu.RLock()
 	defer mu.RUnlock()
 
@@ -96,7 +96,7 @@ func Unmarshal(buf []byte, name string) (interface{}, error) {
 
 // TypeName of a value. This name is used in the registry
 // to distinguish types.
-func TypeName(v interface{}) string {
+func TypeName(v any) string {
 	rt := reflect.TypeOf(v)
 	pkg := rt.PkgPath()
 	name := rt.Name()
@@ -108,12 +108,12 @@ func TypeName(v interface{}) string {
 	return pkg + "/" + name
 }
 
-func protoMarshal(v interface{}) ([]byte, error) {
+func protoMarshal(v any) ([]byte, error) {
 	pb := v.(proto.Message)
 	return proto.Marshal(pb)
 }
 
-func protoUnmarshal(buf []byte, v interface{}) error {
+func protoUnmarshal(buf []byte, v any) error {
 	pb := v.(proto.Message)
 	return proto.Unmarshal(buf, pb)
 }
